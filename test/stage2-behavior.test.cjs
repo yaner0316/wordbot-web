@@ -22,9 +22,18 @@ test('frontend assets are loaded from focused external files', () => {
     assert.match(html, /<link rel="stylesheet" href="src\/styles\.css"\s*\/?>/);
     assert.match(html, /<script src="src\/quiz-logic\.js"><\/script>/);
     assert.match(html, /<script src="src\/review-flow\.js"><\/script>/);
+    assert.match(html, /<script src="config\.js"><\/script>/);
     assert.match(html, /<script src="src\/app\.js"><\/script>/);
     assert.doesNotMatch(html, /<style>/);
     assert.doesNotMatch(html, /<script>\s*\/\/ ========== State/);
+});
+
+test('deployed frontend can point API calls at the Render backend', () => {
+    const config = fs.readFileSync(path.join(__dirname, '..', 'config.js'), 'utf8');
+
+    assert.match(config, /wordbot-1-w9il\.onrender\.com/);
+    assert.match(app, /WORDBOT_CONFIG\?\.API_BASE/);
+    assert.match(app, /replace\(\/\\\/\$\/,\s*''\)/);
 });
 
 test('wrong-answer review is offered only after answer analysis', () => {

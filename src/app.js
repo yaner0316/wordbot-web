@@ -36,7 +36,7 @@ const state = {
   },
 };
 
-const API_BASE = '';
+const API_BASE = (window.WORDBOT_CONFIG?.API_BASE || '').replace(/\/$/, '');
 const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
 
 // ========== Demo Mode ==========
