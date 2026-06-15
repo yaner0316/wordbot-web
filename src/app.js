@@ -173,23 +173,41 @@ function formatDate(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-async function api(path, opts) {
-  const response = await fetch(API_BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts
-  });
-  let data = {};
+async function api(path, opts = {}) {
+  const timeoutMs = opts.timeoutMs || 45000;
+  const { timeoutMs: _timeoutMs, signal, ...fetchOptions } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    data = await response.json();
-  } catch {
-    data = {};
-  }
-  if (!response.ok) {
-    const error = new Error(data.error || `请求失败（HTTP ${response.status}）`);
-    error.code = data.code || 'HTTP_ERROR';
+    const response = await fetch(API_BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...fetchOptions,
+      signal: signal || controller.signal
+    });
+    let data = {};
+    try {
+      data = await response.json();
+    } catch {
+      data = {};
+    }
+    if (!response.ok) {
+      const error = new Error(data.error || `请求失败（HTTP ${response.status}）`);
+      error.code = data.code || 'HTTP_ERROR';
+      throw error;
+    }
+    return data;
+  } catch (error) {
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
+}
+
+function normalizeApiError(error) {
+  if (error?.name === 'AbortError') {
+    return new Error('请求超时，请稍后重试；如果后端刚部署，Render 可能正在冷启动。');
+  }
+  return error;
 }
 
 function navigateTo(page) {
@@ -472,6 +490,7 @@ async function startQuiz() {
     }
     const data = await api('/api/quiz', {
       method: 'POST',
+      timeoutMs: 70000,
       body: JSON.stringify({ user: state.user, level: state.level, mode: state.mode })
     });
     if (data.warning) showToast(data.warning, 'info');
@@ -482,7 +501,7 @@ async function startQuiz() {
     navigateTo('quiz');
     renderQuestion(0);
   } catch(e) {
-    showToast('生成题目失败: ' + e.message, 'error');
+    showToast('生成题目失败: ' + normalizeApiError(e).message, 'error');
   } finally {
     hideLoading();
   }
