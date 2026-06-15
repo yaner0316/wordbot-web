@@ -927,6 +927,7 @@ async function startWrongAnswerReview(parentReviewId = '') {
       ? generateDemoReviewQuiz()
       : await api('/api/reviews', {
           method: 'POST',
+          timeoutMs: 30000,
           body: JSON.stringify({
             user: state.user,
             sourceTestId: state.session.sourceTestId,
@@ -950,7 +951,7 @@ async function startWrongAnswerReview(parentReviewId = '') {
     navigateTo('quiz');
     renderQuestion(0);
   } catch (error) {
-    showToast('生成错题复习失败: ' + error.message, 'error');
+    showToast('生成错题复习失败: ' + normalizeApiError(error).message, 'error');
   } finally {
     hideLoading();
   }
