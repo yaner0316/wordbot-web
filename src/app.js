@@ -11,8 +11,12 @@ const {
   getResultActions,
 } = WordBotReviewFlow;
 const DEFAULT_LEVEL = '中学';
+const SESSION_USER_KEY = 'wordbot:session-user';
+const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
+const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
 const state = {
   user: null,
+  authMode: 'login',
   level: DEFAULT_LEVEL,
   mode: 'real',
   historyMode: 'real',
@@ -37,7 +41,9 @@ const state = {
 };
 
 const API_BASE = (window.WORDBOT_CONFIG?.API_BASE || '').replace(/\/$/, '');
-const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const DEMO_MODE = URL_PARAMS.get('demo') === '1';
+const DEV_MODE = URL_PARAMS.get('dev') === '1' || DEMO_MODE;
 
 // ========== Demo Mode ==========
 const DEMO_WORDS = [
@@ -166,6 +172,79 @@ function showToast(msg, type) {
   clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+function getLocalAuthUsers() {
+  try {
+    const raw = localStorage.getItem(LOCAL_AUTH_USERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const users = Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    return Array.from(new Set([...SEEDED_LOCAL_USERS, ...users]));
+  } catch {
+    return [...SEEDED_LOCAL_USERS];
+  }
+}
+
+function saveLocalAuthUsers(users) {
+  localStorage.setItem(LOCAL_AUTH_USERS_KEY, JSON.stringify(Array.from(new Set(users))));
+}
+
+function getSessionUser() {
+  return localStorage.getItem(SESSION_USER_KEY) || '';
+}
+
+function setSessionUser(user) {
+  localStorage.setItem(SESSION_USER_KEY, user);
+}
+
+function clearSessionUser() {
+  localStorage.removeItem(SESSION_USER_KEY);
+}
+
+function updateAuthMode(mode) {
+  state.authMode = mode;
+  const isRegister = mode === 'register';
+  $('loginTab')?.classList.toggle('active', !isRegister);
+  $('registerTab')?.classList.toggle('active', isRegister);
+  $('authSubmitBtn').textContent = isRegister ? '注册并登录' : '登录';
+  $('authConfirmWrap').style.display = isRegister ? 'flex' : 'none';
+  $('authHint').textContent = isRegister
+    ? '注册信息先保存在当前浏览器，适合开发预览；正式版后端账号系统会替换这里。'
+    : '预览版账号保存在当前浏览器；正式密码系统下一步接后端账号表。';
+}
+
+function setAuthMode(mode) {
+  updateAuthMode(mode);
+}
+
+function showLoginPage() {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  $('pageLogin').classList.add('active');
+}
+
+function showAppPage() {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  $('pageHome').classList.add('active');
+}
+
+function applyEnvironmentControls() {
+  const modeWrap = $('modeSelectorWrap');
+  const historyWrap = $('historyModeSelectorWrap');
+  if (modeWrap) modeWrap.style.display = DEV_MODE ? 'block' : 'none';
+  if (historyWrap) historyWrap.style.display = DEV_MODE ? 'flex' : 'none';
+  if (!DEV_MODE && state.mode === 'test') state.mode = 'real';
+  if (!DEV_MODE && state.historyMode === 'test') state.historyMode = 'real';
+  const realModeBtn = document.querySelector('.mode-btn[data-mode="real"]');
+  if (realModeBtn && !state.user) {
+    realModeBtn.classList.add('level-active');
+  }
+  document.querySelectorAll('.mode-btn, .history-mode-btn').forEach(button => {
+    if (button.dataset.mode === 'test' && !DEV_MODE) {
+      button.style.display = 'none';
+    } else {
+      button.style.display = '';
+    }
+  });
+}
+
 function formatDate(ts) {
   if (!ts) return '暂无';
   const d = new Date(Number(ts));
@@ -211,36 +290,120 @@ function normalizeApiError(error) {
 }
 
 function navigateTo(page) {
+  if (!state.user && page !== 'login') {
+    showLoginPage();
+    return;
+  }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   $('page' + page.charAt(0).toUpperCase() + page.slice(1)).classList.add('active');
   if (page === 'home') loadHome();
   if (page === 'history') loadHistory();
 }
 
+// ========== Auth ==========
+function normalizeUsername(value) {
+  return String(value || '').trim().replace(/\s+/g, '');
+}
+
+function submitAuth() {
+  const username = normalizeUsername($('authUsername').value);
+  const password = $('authPassword').value;
+  const confirm = $('authPasswordConfirm').value;
+  if (!username) {
+    showToast('请输入用户名', 'error');
+    return;
+  }
+  if (!password || password.length < 4) {
+    showToast('密码至少需要 4 位', 'error');
+    return;
+  }
+
+  const users = getLocalAuthUsers();
+  if (state.authMode === 'register') {
+    if (password !== confirm) {
+      showToast('两次输入的密码不一致', 'error');
+      return;
+    }
+    if (!users.includes(username)) {
+      users.push(username);
+      saveLocalAuthUsers(users);
+    }
+    loginAs(username);
+    showToast('注册成功，已登录', 'success');
+    return;
+  }
+
+  if (!users.includes(username)) {
+    showToast('用户不存在，可以先注册', 'error');
+    return;
+  }
+  loginAs(username);
+  showToast('登录成功', 'success');
+}
+
+function loginAs(user) {
+  state.user = user;
+  state.users = [user];
+  state.level = loadUserDifficulty(user);
+  state.mode = 'real';
+  state.historyMode = 'real';
+  setSessionUser(user);
+  showAppPage();
+  applyEnvironmentControls();
+  renderUsers(state.users);
+  updateLevelButtons();
+  loadHome();
+}
+
+function logout() {
+  clearSessionUser();
+  state.user = null;
+  state.quiz = null;
+  state.answers = [];
+  state.confidences = [];
+  showLoginPage();
+  showToast('已退出登录', 'info');
+}
+
 // ========== User ==========
 function renderUsers(users) {
   const el = $('userList');
   el.replaceChildren();
-  if (!users.length) {
+  const currentUser = state.user || users[0];
+  if (!currentUser) {
     const empty = document.createElement('div');
     empty.style.cssText = 'color:var(--text-secondary);font-size:14px;';
-    empty.textContent = '暂无用户';
+    empty.textContent = '尚未登录';
     el.appendChild(empty);
     return;
   }
-  users.forEach(user => {
-    const button = document.createElement('button');
-    button.className = `user-btn${state.user === user ? ' active' : ''}`;
-    const avatar = document.createElement('span');
-    avatar.className = 'avatar';
-    avatar.textContent = user.charAt(0).toUpperCase();
-    button.append(avatar, document.createTextNode(user));
-    button.addEventListener('click', () => selectUser(user));
-    el.appendChild(button);
-  });
+  const card = document.createElement('div');
+  card.className = 'current-user-card';
+  const avatar = document.createElement('span');
+  avatar.className = 'avatar';
+  avatar.textContent = currentUser.charAt(0).toUpperCase();
+  const text = document.createElement('div');
+  text.style.flex = '1';
+  text.append(
+    document.createTextNode(`当前用户：${currentUser}`),
+    Object.assign(document.createElement('small'), {
+      textContent: DEV_MODE ? '开发预览模式' : '正式学习模式',
+    })
+  );
+  const logoutButton = document.createElement('button');
+  logoutButton.className = 'level-btn';
+  logoutButton.type = 'button';
+  logoutButton.textContent = '退出';
+  logoutButton.addEventListener('click', logout);
+  card.append(avatar, text, logoutButton);
+  el.appendChild(card);
 }
 
 function selectUser(user) {
+  if (!state.user) {
+    loginAs(user);
+    return;
+  }
   state.user = user;
   state.level = loadUserDifficulty(user);
   updateLevelButtons();
@@ -309,33 +472,27 @@ function updateLevelButtons() {
 
 // ========== Home ==========
 async function loadHome() {
+  if (!state.user) {
+    showLoginPage();
+    return;
+  }
   showLoading('加载用户数据...');
   try {
     if (DEMO_MODE) {
-      state.users = ['demo'];
+      state.users = [state.user];
       renderUsers(state.users);
-      selectUser('demo');
+      await loadStats(state.user);
       showToast('当前为演示模式，数据不会写入服务器', 'info');
       hideLoading();
       return;
     }
     const data = await api('/api/admin/users');
-    state.users = data.users || [];
+    state.users = [state.user];
     renderUsers(state.users);
-    if (state.user && state.users.includes(state.user)) {
-      renderUsers(state.users);
-      await loadStats(state.user);
-    } else if (state.users.length > 0) {
-      selectUser(state.users[0]);
-    } else {
-      // 无用户时显示手动输入
-      $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">💡 API未返回用户，请输入用户名预览</div>';
-      $('userInputWrap').style.display = 'block';
-    }
+    await loadStats(state.user);
   } catch(e) {
     showToast('加载用户失败: ' + e.message, 'error');
-    $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">💡 后端连接异常，请输入用户名预览</div>';
-    $('userInputWrap').style.display = 'block';
+    $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">💡 后端连接异常，当前仅可查看登录后的本地预览</div>';
   }
   hideLoading();
 }
@@ -379,6 +536,7 @@ function selectLevel(el, level) {
 }
 
 function selectMode(el, mode) {
+  if (!DEV_MODE && mode === 'test') return;
   state.mode = mode;
   document.querySelectorAll('.mode-btn').forEach(button => {
     button.classList.toggle('level-active', button.dataset.mode === mode);
@@ -389,6 +547,7 @@ function selectMode(el, mode) {
 }
 
 function selectHistoryMode(el, mode) {
+  if (!DEV_MODE && mode === 'test') return;
   state.historyMode = mode;
   document.querySelectorAll('.history-mode-btn').forEach(button => {
     button.classList.toggle('level-active', button.dataset.mode === mode);
@@ -446,11 +605,11 @@ async function loadStats(user) {
         </div>
       </div>
       ${lastTestTime ? `<div style="margin-top:12px;text-align:center;font-size:13px;color:var(--text-secondary);">🕐 上次考核：${formatDate(lastTestTime)}</div>` : ''}
-      <div style="margin-top:14px;text-align:center;">
+      ${DEV_MODE ? `<div style="margin-top:14px;text-align:center;">
         <button class="btn btn-outline btn-small" onclick="showCleanupConfirm()" style="color:var(--red);border-color:var(--red);font-size:12px;">
           🗑 清理测试模式记录（${escapeHtml(user)}）
         </button>
-      </div>
+      </div>` : ''}
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');
@@ -1096,5 +1255,22 @@ async function loadHistory() {
   hideLoading();
 }
 
+function initApp() {
+  updateAuthMode('login');
+  applyEnvironmentControls();
+  const savedUser = getSessionUser();
+  if (savedUser) {
+    state.user = savedUser;
+    state.users = [savedUser];
+    state.level = loadUserDifficulty(savedUser);
+    showAppPage();
+    renderUsers(state.users);
+    updateLevelButtons();
+    loadHome();
+    return;
+  }
+  showLoginPage();
+}
+
 // ========== Init ==========
-loadHome();
+initApp();

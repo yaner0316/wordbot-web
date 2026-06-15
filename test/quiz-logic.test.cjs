@@ -45,6 +45,20 @@ test('adapts demo contexts without changing the tested word', () => {
     assert.equal(adaptDemoContextByLevel(word, 3, '小学'), '重要的');
 });
 
+test('high-school demo fill-in contexts do not add meta explanation tails', () => {
+    const word = {
+        word: 'compelling',
+        meaning: 'very convincing or interesting',
+        cn: '令人信服的',
+        context: 'The detective found compelling evidence at the scene.',
+    };
+
+    const context = adaptDemoContextByLevel(word, 1, '楂樹腑');
+    assert.equal(context, word.context);
+    assert.doesNotMatch(context, /which clearly illustrates/i);
+    assert.doesNotMatch(context, /how the word .* is used/i);
+});
+
 test('finds the option word by answer letter', () => {
     const question = { options: ['A. abandon', 'B. resilient'] };
     assert.equal(optionWord(question, 'B'), 'resilient');

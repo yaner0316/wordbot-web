@@ -23,14 +23,57 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
+  <!-- ===== PAGE: LOGIN ===== -->
+  <div class="page active" id="pageLogin">
+    <div class="auth-shell">
+      <div class="auth-hero">
+        <div class="auth-logo">📖</div>
+        <div>
+          <h1>单词机器人</h1>
+          <p>先登录，再开始今天的单词练习。</p>
+        </div>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="loginTab" onclick="setAuthMode('login')">登录</button>
+          <button class="auth-tab" id="registerTab" onclick="setAuthMode('register')">注册</button>
+        </div>
+
+        <div class="auth-form">
+          <label>
+            <span>用户名</span>
+            <input type="text" id="authUsername" autocomplete="username" placeholder="例如 yusi" />
+          </label>
+          <label>
+            <span>密码</span>
+            <input type="password" id="authPassword" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key==='Enter')submitAuth()" />
+          </label>
+          <label id="authConfirmWrap" style="display:none;">
+            <span>确认密码</span>
+            <input type="password" id="authPasswordConfirm" autocomplete="new-password" placeholder="再输入一次密码" onkeydown="if(event.key==='Enter')submitAuth()" />
+          </label>
+          <button class="btn btn-primary" onclick="submitAuth()" id="authSubmitBtn">登录</button>
+        </div>
+
+        <div class="auth-hint" id="authHint">
+          预览版账号保存在当前浏览器；正式密码系统下一步接后端账号表。
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== PAGE: HOME ===== -->
-  <div class="page active" id="pageHome">
+  <div class="page" id="pageHome">
     <div class="header">
       <div class="header-title">
         <div class="logo">📖</div>
         单词机器人
       </div>
       <div class="header-actions">
+        <button class="header-btn" onclick="logout()" title="退出登录">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-7"/></svg>
+        </button>
         <button class="header-btn" onclick="navigateTo('history')" title="历史记录">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
@@ -63,7 +106,7 @@
       </div>
     </div>
 
-    <div style="margin:10px auto 18px;text-align:center;max-width:340px;">
+    <div id="modeSelectorWrap" style="margin:10px auto 18px;text-align:center;max-width:340px;">
       <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">数据模式</div>
       <div style="display:flex;gap:8px;">
         <button class="level-btn level-active mode-btn" data-mode="real" onclick="selectMode(this,'real')" style="flex:1;">正式学习</button>
@@ -143,7 +186,7 @@
         考核历史
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin:0 0 16px;">
+    <div id="historyModeSelectorWrap" style="display:flex;gap:8px;margin:0 0 16px;">
       <button class="level-btn level-active history-mode-btn" data-mode="real" onclick="selectHistoryMode(this,'real')" style="flex:1;">正式记录</button>
       <button class="level-btn history-mode-btn" data-mode="test" onclick="selectHistoryMode(this,'test')" style="flex:1;">测试记录</button>
     </div>

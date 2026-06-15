@@ -22,7 +22,7 @@
       return `Something that means "${wordInfo.meaning}" can be called ${wordInfo.word}.`;
     }
     if (level === '高中') {
-      return `${wordInfo.context.replace(/\.$/, '')}, which clearly illustrates how the word ${wordInfo.word} is used.`;
+      return wordInfo.context;
     }
     if (level === 'CET4_6_TOEFL') {
       return `Within this broader context, ${wordInfo.context.charAt(0).toLowerCase()}${wordInfo.context.slice(1)}`;
