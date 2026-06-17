@@ -302,6 +302,160 @@
     }
     .btn-success { background: var(--green); color: white; box-shadow: 0 4px 16px rgba(52,199,89,0.3); }
     .btn-success:hover { box-shadow: 0 6px 24px rgba(52,199,89,0.4); }
+    .section-title {
+      margin: 16px 0 10px;
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .parent-tools {
+      margin: 18px 0 8px;
+    }
+    .parent-tool-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .parent-tool-card {
+      min-height: 96px;
+      border: 1px solid #F0E4D8;
+      border-radius: var(--radius-sm);
+      background: var(--card);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      padding: 12px;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      transition: all .2s;
+    }
+    .parent-tool-card:hover {
+      border-color: var(--orange-light);
+      box-shadow: var(--shadow-hover);
+      transform: translateY(-1px);
+    }
+    .parent-tool-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--orange-subtle);
+      color: var(--orange-dark);
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .parent-tool-card span:not(.parent-tool-icon) {
+      font-size: 15px;
+      font-weight: 800;
+    }
+    .parent-tool-card small {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .parent-tool-panel {
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      background: var(--card);
+      box-shadow: var(--shadow);
+      border: 1px solid #F0E4D8;
+    }
+    .parent-panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .parent-panel-head button {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 50%;
+      background: var(--orange-subtle);
+      color: var(--orange-dark);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .parent-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .parent-field input,
+    .parent-field textarea,
+    .parent-field select,
+    .parent-inline-form input {
+      width: 100%;
+      border: 1px solid #E7D9CB;
+      border-radius: 9px;
+      padding: 10px 11px;
+      background: #FFFCF8;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    .parent-field textarea {
+      resize: vertical;
+      min-height: 74px;
+      line-height: 1.5;
+    }
+    .parent-field input:focus,
+    .parent-field textarea:focus,
+    .parent-field select:focus,
+    .parent-inline-form input:focus {
+      border-color: var(--orange);
+      box-shadow: 0 0 0 3px rgba(255,107,0,0.08);
+      background: #fff;
+    }
+    .parent-help,
+    .parent-result-empty {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.6;
+      margin: 8px 0 12px;
+    }
+    .parent-inline-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .parent-word-editor {
+      margin-top: 10px;
+    }
+    .parent-cache-status {
+      border-radius: 10px;
+      background: #F6FAFF;
+      border: 1px solid #D8E9FF;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .parent-cache-status span,
+    .parent-cache-status small {
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .parent-cache-status strong {
+      color: var(--blue);
+      font-size: 15px;
+    }
+    .parent-actions-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     /* ===== Quiz Page ===== */
     .quiz-progress {
       display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
@@ -408,6 +562,59 @@
     }
     .game-reward-title { font-weight: 800; font-size: 15px; color: var(--orange-dark); }
     .game-reward-sub { margin-top: 4px; font-size: 12px; line-height: 1.5; color: #9A6A24; }
+    .animal-garden-card {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      display: flex;
+      gap: 12px;
+      text-align: left;
+      background: #F1FAF2;
+      border: 1px solid #C8E6C9;
+      color: #245B2A;
+    }
+    .animal-garden-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(52,199,89,0.16);
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .animal-garden-body {
+      min-width: 0;
+      flex: 1;
+    }
+    .animal-garden-title {
+      font-weight: 800;
+      font-size: 15px;
+      color: #1B5E20;
+    }
+    .animal-garden-line {
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #3A6F40;
+    }
+    .animal-reward-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .animal-reward-pill {
+      max-width: 100%;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: #FFFFFF;
+      border: 1px solid #B7DFB9;
+      color: #2E7D32;
+      font-size: 12px;
+      font-weight: 700;
+    }
     .result-detail-item {
       background: var(--card); border-radius: var(--radius-sm); padding: 14px 16px;
       box-shadow: var(--shadow); margin-bottom: 8px;

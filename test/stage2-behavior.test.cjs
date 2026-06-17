@@ -139,3 +139,22 @@ test('quiz results can show game time rewards', () => {
     assert.match(app, /game-reward-card/);
     assert.match(styles, /\.game-reward-card/);
 });
+
+test('home page exposes parent tools without hiding the child quiz flow', () => {
+    assert.match(html, /parentToolGrid/);
+    assert.match(html, /录入单词/);
+    assert.match(html, /查询\/编辑/);
+    assert.match(html, /学习设置/);
+    assert.match(html, /统计看板/);
+    assert.match(app, /function openParentTool/);
+    assert.match(app, /function submitParentWords/);
+    assert.match(app, /\/api\/admin\/addWords/);
+    assert.match(app, /\/api\/admin\/userSettings/);
+});
+
+test('quiz results can show animal garden reward summary from submit response', () => {
+    assert.match(app, /function buildAnimalGardenRewardHtml/);
+    assert.match(app, /data\.rewardSummary/);
+    assert.match(app, /animal-garden-card/);
+    assert.match(styles, /\.animal-garden-card/);
+});

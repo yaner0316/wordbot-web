@@ -119,6 +119,33 @@
       <!-- Filled by JS -->
     </div>
 
+    <section class="parent-tools" aria-label="家长控制台">
+      <div class="section-title">家长控制台</div>
+      <div class="parent-tool-grid" id="parentToolGrid">
+        <button class="parent-tool-card" type="button" onclick="openParentTool('addWords')">
+          <span class="parent-tool-icon">＋</span>
+          <span>录入单词</span>
+          <small>批量添加新词</small>
+        </button>
+        <button class="parent-tool-card" type="button" onclick="openParentTool('searchWord')">
+          <span class="parent-tool-icon">⌕</span>
+          <span>查询/编辑</span>
+          <small>检查单词记录</small>
+        </button>
+        <button class="parent-tool-card" type="button" onclick="openParentTool('learningSettings')">
+          <span class="parent-tool-icon">⚙</span>
+          <span>学习设置</span>
+          <small>难度与缓存</small>
+        </button>
+        <button class="parent-tool-card" type="button" onclick="navigateTo('history')">
+          <span class="parent-tool-icon">▦</span>
+          <span>统计看板</span>
+          <small>查看历史表现</small>
+        </button>
+      </div>
+      <div class="parent-tool-panel" id="parentToolPanel" style="display:none;"></div>
+    </section>
+
     <div class="actions">
       <button class="btn btn-primary" onclick="startQuiz()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>

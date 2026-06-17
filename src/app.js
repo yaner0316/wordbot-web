@@ -564,6 +564,239 @@ function manualSelectUser() {
   selectUser(name);
 }
 
+function getParentToolPanel() {
+  return $('parentToolPanel');
+}
+
+function openParentTool(tool) {
+  if (!state.user) {
+    showToast('请先登录用户', 'error');
+    return;
+  }
+  const panel = getParentToolPanel();
+  if (!panel) return;
+  panel.style.display = 'block';
+
+  if (tool === 'addWords') {
+    panel.innerHTML = `
+      <div class="parent-panel-head">
+        <strong>录入单词</strong>
+        <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
+      </div>
+      <label class="parent-field">
+        <span>批量单词</span>
+        <textarea id="parentWordsInput" rows="6" placeholder="一行一个英文单词，例如&#10;resilient&#10;genuine&#10;feasible"></textarea>
+      </label>
+      <div class="parent-help">当前会把单词加入 ${escapeHtml(state.user)} 的词库；英文释义、中文释义、例句和干扰项由后端生成。</div>
+      <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
+    `;
+    return;
+  }
+
+  if (tool === 'searchWord') {
+    panel.innerHTML = `
+      <div class="parent-panel-head">
+        <strong>查询/编辑</strong>
+        <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
+      </div>
+      <div class="parent-inline-form">
+        <input id="parentSearchWordInput" type="text" placeholder="输入英文单词" onkeydown="if(event.key==='Enter')searchParentWord()" />
+        <button class="btn btn-secondary btn-small" type="button" onclick="searchParentWord()">查询</button>
+      </div>
+      <div id="parentWordResult" class="parent-result-empty">可查询当前用户词库中的单词记录。</div>
+    `;
+    return;
+  }
+
+  if (tool === 'learningSettings') {
+    panel.innerHTML = `
+      <div class="parent-panel-head">
+        <strong>学习设置</strong>
+        <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
+      </div>
+      <div id="parentSettingsContent" class="parent-result-empty">正在加载学习设置...</div>
+    `;
+    loadParentLearningSettings();
+  }
+}
+
+function closeParentTool() {
+  const panel = getParentToolPanel();
+  if (!panel) return;
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+}
+
+function parseParentWordsInput(value) {
+  return Array.from(new Set(String(value || '')
+    .split(/[\n,，;；\s]+/)
+    .map(word => word.trim().toLowerCase())
+    .filter(Boolean)));
+}
+
+async function submitParentWords() {
+  const input = $('parentWordsInput');
+  const words = parseParentWordsInput(input?.value);
+  if (!words.length) {
+    showToast('请先输入至少一个单词', 'warn');
+    return;
+  }
+  showLoading('正在录入单词...');
+  try {
+    const result = DEMO_MODE
+      ? { success: true, count: words.length }
+      : await api('/api/admin/addWords', {
+          method: 'POST',
+          timeoutMs: 90000,
+          body: JSON.stringify({ targetUser: state.user, words })
+        });
+    showToast(`已提交 ${result.count || words.length} 个单词`, 'success');
+    if (input) input.value = '';
+    loadStats(state.user);
+  } catch (error) {
+    showToast('录入失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function searchParentWord() {
+  const word = $('parentSearchWordInput')?.value.trim();
+  const resultEl = $('parentWordResult');
+  if (!word) {
+    showToast('请输入要查询的单词', 'warn');
+    return;
+  }
+  resultEl.textContent = '正在查询...';
+  try {
+    const data = DEMO_MODE
+      ? { exists: true, word, meaning: 'demo meaning', cnMeaning: '演示释义', pos: 'n.', context: `A demo sentence uses ${word}.` }
+      : await api(`/api/word?userId=${encodeURIComponent(state.user)}&word=${encodeURIComponent(word)}`);
+    if (!data || data.exists === false) {
+      resultEl.innerHTML = `<div class="parent-result-empty">没有找到 ${escapeHtml(word)}，可以先在“录入单词”里添加。</div>`;
+      return;
+    }
+    const recordId = data.recordId || data.id || '';
+    resultEl.innerHTML = `
+      <div class="parent-word-editor">
+        <input id="parentEditRecordId" type="hidden" value="${escapeHtml(recordId)}" />
+        <label class="parent-field"><span>英文</span><input id="parentEditWord" value="${escapeHtml(data.word || word)}" /></label>
+        <label class="parent-field"><span>英文释义</span><textarea id="parentEditMeaning" rows="3">${escapeHtml(data.meaning || data.Meaning || '')}</textarea></label>
+        <label class="parent-field"><span>中文释义</span><input id="parentEditCnMeaning" value="${escapeHtml(data.cnMeaning || data.CN_Meaning || '')}" /></label>
+        <label class="parent-field"><span>词性</span><input id="parentEditPos" value="${escapeHtml(data.pos || data.POS || '')}" /></label>
+        <label class="parent-field"><span>例句</span><textarea id="parentEditContext" rows="3">${escapeHtml(data.context || data.Context || '')}</textarea></label>
+        <button class="btn btn-primary btn-small" type="button" onclick="saveParentWord()">保存修改</button>
+      </div>
+    `;
+  } catch (error) {
+    resultEl.innerHTML = `<div class="parent-result-empty">查询失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+  }
+}
+
+async function saveParentWord() {
+  const word = $('parentEditWord')?.value.trim();
+  if (!word) {
+    showToast('单词不能为空', 'warn');
+    return;
+  }
+  showLoading('正在保存...');
+  try {
+    if (!DEMO_MODE) {
+      await api('/api/word', {
+        method: 'PUT',
+        body: JSON.stringify({
+          userId: state.user,
+          recordId: $('parentEditRecordId')?.value || undefined,
+          word,
+          meaning: $('parentEditMeaning')?.value || '',
+          cnMeaning: $('parentEditCnMeaning')?.value || '',
+          pos: $('parentEditPos')?.value || '',
+          context: $('parentEditContext')?.value || ''
+        })
+      });
+    }
+    showToast('已保存单词记录', 'success');
+  } catch (error) {
+    showToast('保存失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function loadParentLearningSettings() {
+  const content = $('parentSettingsContent');
+  try {
+    const settingsData = DEMO_MODE
+      ? { settings: { learningLevel: state.level, questionCacheStatus: 'ready' } }
+      : await api(`/api/admin/userSettings?userId=${encodeURIComponent(state.user)}`);
+    const cacheData = DEMO_MODE
+      ? { status: { status: 'ready', totalQuestions: 30 } }
+      : await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(state.user)}`);
+    const settings = settingsData.settings || {};
+    const cacheStatus = cacheData.status || {};
+    const currentLevel = settings.learningLevel || state.level || DEFAULT_LEVEL;
+    content.innerHTML = `
+      <label class="parent-field">
+        <span>题干语言难度</span>
+        <select id="parentLearningLevel">
+          ${['小学','中学','高中','CET4_6_TOEFL'].map(level => `<option value="${level}" ${level === currentLevel ? 'selected' : ''}>${level}</option>`).join('')}
+        </select>
+      </label>
+      <div class="parent-cache-status">
+        <span>题目缓存</span>
+        <strong>${escapeHtml(cacheStatus.status || settings.questionCacheStatus || 'unknown')}</strong>
+        <small>${cacheStatus.totalQuestions ? `已缓存 ${escapeHtml(cacheStatus.totalQuestions)} 题` : '后端会按学习设置生成题目缓存'}</small>
+      </div>
+      <div class="parent-actions-row">
+        <button class="btn btn-primary btn-small" type="button" onclick="saveParentLearningSettings()">保存设置</button>
+        <button class="btn btn-secondary btn-small" type="button" onclick="rebuildParentQuestionCache()">重建缓存</button>
+      </div>
+    `;
+  } catch (error) {
+    content.innerHTML = `<div class="parent-result-empty">加载失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+  }
+}
+
+async function saveParentLearningSettings() {
+  const learningLevel = $('parentLearningLevel')?.value || state.level;
+  showLoading('正在保存设置...');
+  try {
+    if (!DEMO_MODE) {
+      await api('/api/admin/userSettings', {
+        method: 'PUT',
+        body: JSON.stringify({ userId: state.user, learningLevel })
+      });
+    }
+    state.level = learningLevel;
+    localStorage.setItem(difficultyPreferenceKey(state.user), learningLevel);
+    updateLevelButtons();
+    showToast('学习设置已保存', 'success');
+  } catch (error) {
+    showToast('保存失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function rebuildParentQuestionCache() {
+  showLoading('正在重建题目缓存...');
+  try {
+    if (!DEMO_MODE) {
+      await api('/api/admin/questionCache/rebuild', {
+        method: 'POST',
+        timeoutMs: 90000,
+        body: JSON.stringify({ userId: state.user })
+      });
+    }
+    showToast('缓存重建已提交', 'success');
+    loadParentLearningSettings();
+  } catch (error) {
+    showToast('重建失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
 async function loadStats(user) {
   if (!user) return;
   showLoading('加载统计...');
@@ -882,6 +1115,32 @@ function getEncourage(correct, total) {
 
 let _showAnalysis = false;
 
+function buildAnimalGardenRewardHtml(rewardSummary) {
+  if (!rewardSummary || state.session.kind !== 'quiz') return '';
+  const items = Array.isArray(rewardSummary.rewards) ? rewardSummary.rewards : [];
+  const milestones = Array.isArray(rewardSummary.milestones) ? rewardSummary.milestones : [];
+  const progress = rewardSummary.progress || {};
+  const nextMilestone = progress.nextMilestone || rewardSummary.nextMilestone || 10;
+  const masteredMeanings = progress.masteredMeanings ?? rewardSummary.masteredMeanings ?? 0;
+  const rewardItems = items.slice(0, 4).map(item => `
+    <span class="animal-reward-pill">${escapeHtml(item.label || item.name || item.type || '花园奖励')}</span>
+  `).join('');
+  const milestoneHtml = milestones.length
+    ? `<div class="animal-garden-line">达成 ${milestones.map(item => escapeHtml(item.label || item.name || `${item.size || ''} milestone`)).join('、')}</div>`
+    : '';
+  return `
+    <div class="animal-garden-card">
+      <div class="animal-garden-icon">🌱</div>
+      <div class="animal-garden-body">
+        <div class="animal-garden-title">动物花园奖励</div>
+        <div class="animal-garden-line">已掌握释义 ${escapeHtml(masteredMeanings)} 个；下一个 milestone：${escapeHtml(nextMilestone)} 个释义。</div>
+        ${milestoneHtml}
+        ${rewardItems ? `<div class="animal-reward-list">${rewardItems}</div>` : '<div class="animal-garden-line">继续答对可获得小动物、装备和花园材料。</div>'}
+      </div>
+    </div>
+  `;
+}
+
 function renderResults(data) {
   const { correct, total, accuracy, masteredWords } = data;
   const pass = correct / total >= 0.6;
@@ -890,6 +1149,7 @@ function renderResults(data) {
   _showAnalysis = state.session.kind === 'review';
   state.session.analysisViewed = _showAnalysis;
   const reward = data.gameReward;
+  const animalGardenHtml = buildAnimalGardenRewardHtml(data.rewardSummary);
   const rewardHtml = reward?.eligible && state.session.kind === 'quiz'
     ? `<div class="game-reward-card">
         <div class="game-reward-icon">🎮</div>
@@ -979,6 +1239,7 @@ function renderResults(data) {
       ${data.mode === 'test' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">测试模式：不计入正式统计</div>' : ''}
       ${masteredWords && masteredWords.length ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">✅ 新掌握 ${masteredWords.length} 个单词</div>` : ''}
       ${rewardHtml}
+      ${animalGardenHtml}
     </div>
 
     <div id="analysisArea" style="display:${_showAnalysis ? 'block' : 'none'};margin-bottom:20px;">
