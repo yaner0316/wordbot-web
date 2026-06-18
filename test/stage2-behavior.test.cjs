@@ -152,6 +152,13 @@ test('home page exposes parent tools without hiding the child quiz flow', () => 
     assert.match(app, /\/api\/admin\/userSettings/);
 });
 
+test('home load skips the unused all-users request for faster startup', () => {
+    const loadHomeMatch = app.match(/async function loadHome\(\) \{[\s\S]*?\n\}/);
+    assert.ok(loadHomeMatch, 'loadHome function should exist');
+    assert.doesNotMatch(loadHomeMatch[0], /\/api\/admin\/users/);
+    assert.match(loadHomeMatch[0], /loadStats\(state\.user\)/);
+});
+
 test('quiz results can show animal garden reward summary from submit response', () => {
     assert.match(app, /function buildAnimalGardenRewardHtml/);
     assert.match(app, /data\.rewardSummary/);

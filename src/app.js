@@ -486,7 +486,6 @@ async function loadHome() {
       hideLoading();
       return;
     }
-    const data = await api('/api/admin/users');
     state.users = [state.user];
     renderUsers(state.users);
     await loadStats(state.user);
