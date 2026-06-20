@@ -258,7 +258,7 @@ test('home stats and game prompts render clean Chinese text', () => {
 });
 
 test('animal garden uses a Three.js 3D stage instead of 2D sticker sprites', () => {
-    assert.match(html, /<script type="module" src="src\/animal-garden-3d\.js"><\/script>/);
+    assert.match(html, /<script type="module" src="src\/animal-garden-3d\.js(?:\?v=[^"]+)?"><\/script>/);
     assert.match(app, /garden-3d-stage/);
     assert.match(app, /mountAnimalGarden3D/);
     assert.match(garden3d, /from 'https:\/\/unpkg\.com\/three@/);
@@ -272,6 +272,24 @@ test('animal garden uses a Three.js 3D stage instead of 2D sticker sprites', () 
     assert.match(styles, /\.garden-3d-stage/);
     assert.doesNotMatch(app, /garden-pet-body/);
     assert.doesNotMatch(app, /animal-visitor-chip/);
+});
+
+test('animal garden main character is a polished 3D baby dragon', () => {
+    assert.match(garden3d, /function createGardenDragon/);
+    assert.match(garden3d, /garden-dragon-3d/);
+    assert.match(garden3d, /createDragonHorn/);
+    assert.match(garden3d, /createDragonWing/);
+    assert.match(garden3d, /createDragonTail/);
+    assert.match(garden3d, /createDragonSpikes/);
+    assert.match(garden3d, /function createCheek/);
+    assert.match(garden3d, /dragon-big-head/);
+    assert.match(garden3d, /dragon-belly-panel/);
+    assert.match(garden3d, /dragon-open-mouth/);
+    assert.match(garden3d, /dragon-spine-crest/);
+    assert.match(garden3d, /dragon-fore-claw-left/);
+    assert.match(garden3d, /dragonOrange/);
+    assert.match(garden3d, /createGardenDragon\(garden\)/);
+    assert.doesNotMatch(garden3d, /function createEar\(side\)/);
 });
 
 test('animal garden scene maps resources to 3D objects and restrained equipment', () => {
