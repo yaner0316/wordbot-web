@@ -1,4 +1,4 @@
-﻿// ========== State ==========
+// ========== State ==========
 const {
   adaptDemoContextByLevel,
   buildOptionMeaningsExplanation,
@@ -13,6 +13,8 @@ const {
 const DEFAULT_LEVEL = '中学';
 const SESSION_USER_KEY = 'wordbot:session-user';
 const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
+const GAME_TIME_BANK_KEY_PREFIX = 'wordbot:game-time-bank:';
+const ANIMAL_GARDEN_STATE_KEY_PREFIX = 'wordbot:animal-garden:';
 const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
 const state = {
   user: null,
@@ -44,6 +46,8 @@ const API_BASE = (window.WORDBOT_CONFIG?.API_BASE || '').replace(/\/$/, '');
 const URL_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = URL_PARAMS.get('demo') === '1';
 const DEV_MODE = URL_PARAMS.get('dev') === '1' || DEMO_MODE;
+const GAME_PREVIEW_MODE = URL_PARAMS.get('game') === '1' && DEMO_MODE;
+window.addEventListener('animal-garden-3d-ready', mountCurrentAnimalGarden3D);
 
 // ========== Demo Mode ==========
 const DEMO_WORDS = [
@@ -140,7 +144,7 @@ function calculateDemoGameReward(correct, total, mode) {
     return { eligible: false, minutes: 0, tier: 'none', reason: 'test_mode' };
   }
   if (correct >= total && total > 0) {
-    return { eligible: true, minutes: 10, tier: 'perfect', reason: 'perfect_score' };
+    return { eligible: true, minutes: 12, tier: 'perfect', reason: 'perfect_score' };
   }
   if (correct >= 9) {
     return { eligible: true, minutes: 5, tier: 'excellent', reason: 'excellent_score' };
@@ -199,16 +203,295 @@ function clearSessionUser() {
   localStorage.removeItem(SESSION_USER_KEY);
 }
 
+function gameTimeBankKey(user) {
+  return `${GAME_TIME_BANK_KEY_PREFIX}${user}`;
+}
+
+function getBankedGameMinutes(user = state.user) {
+  if (!user) return 0;
+  const minutes = Number(localStorage.getItem(gameTimeBankKey(user)) || 0);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 0;
+}
+
+function setBankedGameMinutes(minutes, user = state.user) {
+  if (!user) return 0;
+  const safeMinutes = Math.max(0, Math.floor(Number(minutes) || 0));
+  localStorage.setItem(gameTimeBankKey(user), String(safeMinutes));
+  return safeMinutes;
+}
+
+function addGameRewardToBank(reward, user = state.user) {
+  if (!reward?.eligible || !reward.minutes || !user) return getBankedGameMinutes(user);
+  return setBankedGameMinutes(getBankedGameMinutes(user) + Number(reward.minutes), user);
+}
+
+function animalGardenStateKey(user = state.user) {
+  return `${ANIMAL_GARDEN_STATE_KEY_PREFIX}${user}`;
+}
+
+function getAnimalGardenState(user = state.user) {
+  const fallback = { hearts: 0, feed: 0, outfit: '草帽', visits: 0, lastAction: 'idle', lastGain: {} };
+  if (!user) return fallback;
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem(animalGardenStateKey(user)) || '{}') };
+  } catch {
+    return fallback;
+  }
+}
+
+function setAnimalGardenState(nextState, user = state.user) {
+  if (!user) return nextState;
+  localStorage.setItem(animalGardenStateKey(user), JSON.stringify(nextState));
+  return nextState;
+}
+
+function normalizeGardenOutfit(outfit) {
+  return ({ '红围巾': '莓果领结', '星星背包': '星星挎包' }[outfit] || outfit || '草帽');
+}
+
+function getGardenLevel(garden) {
+  const score = (garden.hearts || 0) + (garden.feed || 0) + (garden.visits || 0);
+  return Math.max(1, Math.min(9, Math.floor(score / 12) + 1));
+}
+
+function getGardenMood(garden) {
+  if ((garden.hearts || 0) >= 24) return '开心';
+  if ((garden.feed || 0) <= 2) return '期待投喂';
+  return '安静陪伴';
+}
+
+function getGardenProgress(value, step) {
+  return Math.min(100, Math.round(((value || 0) % step) / step * 100));
+}
+
+function renderGardenMeters(garden) {
+  const hearts = garden.hearts || 0;
+  const feed = garden.feed || 0;
+  const visits = garden.visits || 0;
+  const deltas = garden.lastGain || {};
+  const rows = [
+    { key: 'hearts', label: '亲密', icon: '♥', value: hearts, max: 10, color: '#E85D82' },
+    { key: 'feed', label: '饲料', icon: '◆', value: feed, max: 8, color: '#E6A23C' },
+    { key: 'visits', label: '来访', icon: '●', value: visits, max: 6, color: '#4C8ED9' },
+  ];
+  return `
+    <div class="garden-meters" aria-label="花园资源">
+      ${rows.map(row => `
+        <div class="garden-meter-card ${row.key}">
+          <div class="garden-meter-head"><span>${row.icon} ${row.label}</span><strong>${escapeHtml(row.value)}</strong>${deltas[row.key] ? `<em>+${escapeHtml(deltas[row.key])}</em>` : ''}</div>
+          <div class="garden-meter-track"><span class="garden-meter-fill" style="width:${getGardenProgress(row.value, row.max)}%;background:${row.color};"></span></div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderGardenInventory(garden) {
+  const feed = garden.feed || 0;
+  const foods = [
+    { icon: '🥕', name: '胡萝卜', count: Math.max(1, Math.ceil(feed / 4)) },
+    { icon: '🍓', name: '莓果', count: Math.max(0, Math.floor(feed / 5)) },
+    { icon: '🌽', name: '玉米', count: Math.max(0, Math.floor(feed / 7)) },
+  ];
+  return `
+    <div class="garden-inventory" aria-label="饲料库存">
+      <div class="garden-section-label">饲料库存</div>
+      <div class="garden-inventory-row">
+        ${foods.map(item => `<span class="garden-inventory-item ${item.count ? '' : 'locked'}" title="${escapeHtml(item.name)}"><b>${item.icon}</b><span>${escapeHtml(item.name)}</span><small>x${escapeHtml(item.count)}</small></span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderGardenStageStats(garden) {
+  const stats = [
+    { key: 'hearts', label: '亲密', value: garden.hearts || 0 },
+    { key: 'feed', label: '饲料', value: garden.feed || 0 },
+    { key: 'visits', label: '来访', value: garden.visits || 0 },
+  ];
+  return `
+    <div class="garden-stage-stat-row" aria-label="花园状态">
+      ${stats.map(item => `<span class="garden-stage-stat ${item.key}"><small>${item.label}</small><strong>${escapeHtml(item.value)}</strong></span>`).join('')}
+    </div>
+  `;
+}
+
+function renderGardenWardrobe(garden) {
+  const current = normalizeGardenOutfit(garden.outfit);
+  const outfits = [
+    { name: '草帽', icon: '⌒' },
+    { name: '莓果领结', icon: '◆' },
+    { name: '星星挎包', icon: '★' },
+    { name: '探险铃', icon: '◔' },
+  ];
+  return `
+    <div class="garden-wardrobe" aria-label="动物装备">
+      <div class="garden-section-label">装备</div>
+      <div class="garden-wardrobe-row">
+        ${outfits.map(item => `<span class="garden-wardrobe-item ${item.name === current ? 'active' : ''}"><b>${item.icon}</b>${escapeHtml(item.name)}</span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderAnimalGardenGame() {
+  const minutes = getBankedGameMinutes();
+  const garden = getAnimalGardenState();
+  const level = getGardenLevel(garden);
+  const mood = getGardenMood(garden);
+  const outfitName = normalizeGardenOutfit(garden.outfit);
+  const actionText = {
+    care: '亲密星落进花园，花丛长高了',
+    collect: '收到了新的饲料，食盆更满了',
+    outfit: `换上了${outfitName}`,
+    idle: '完成复习得到的小游戏时间可以慢慢用',
+  }[garden.lastAction || 'idle'];
+  return `
+    <div class="animal-garden-game garden-v3" id="animalGardenGame">
+      <div
+        class="animal-garden-stage garden-3d-stage"
+        id="animalGarden3DStage"
+        data-action="${escapeHtml(garden.lastAction || 'idle')}"
+        data-outfit="${escapeHtml(outfitName)}"
+        aria-label="3D 动物花园"
+      >
+        <div class="garden-3d-fallback">3D 花园加载中...</div>
+      </div>
+      <div class="garden-stage-overlay" aria-label="花园状态概览">
+        <div class="garden-level-badge">Lv.${escapeHtml(level)} · ${escapeHtml(mood)}</div>
+        ${renderGardenStageStats(garden)}
+        <div class="garden-action-pop ${garden.lastAction || 'idle'}">${escapeHtml(actionText)}</div>
+      </div>
+      <div class="animal-garden-panel">
+        <div class="animal-garden-topline">
+          <div><div class="animal-garden-game-title">动物花园</div><small>照顾、收集和换装都会消耗 1 分钟</small></div>
+          <div class="animal-garden-game-bank">可玩时间 <strong>${escapeHtml(minutes)}</strong> 分钟</div>
+        </div>
+        ${renderGardenMeters(garden)}
+        ${renderGardenInventory(garden)}
+        ${renderGardenWardrobe(garden)}
+        <div class="animal-garden-actions">
+          <button class="btn btn-primary btn-small" onclick="playAnimalGardenAction('care')">照顾</button>
+          <button class="btn btn-secondary btn-small" onclick="playAnimalGardenAction('collect')">收集</button>
+          <button class="btn btn-secondary btn-small" onclick="playAnimalGardenAction('outfit')">装备</button>
+        </div>
+        <button class="btn btn-outline btn-small" onclick="closeAnimalGardenGame()">回到学习总结</button>
+      </div>
+    </div>
+  `;
+}
+
+function mountCurrentAnimalGarden3D() {
+  const stage = $('animalGarden3DStage');
+  if (!stage) return;
+  const garden = getAnimalGardenState();
+  const payload = {
+    ...garden,
+    level: getGardenLevel(garden),
+    mood: getGardenMood(garden),
+    outfit: normalizeGardenOutfit(garden.outfit),
+  };
+  if (typeof window.mountAnimalGarden3D === 'function') {
+    window.mountAnimalGarden3D(stage, payload);
+    return;
+  }
+  stage.innerHTML = '<div class="garden-3d-fallback">3D 花园加载中...</div>';
+  window.clearTimeout(stage.__animalGarden3DRetry);
+  stage.__animalGarden3DRetry = window.setTimeout(mountCurrentAnimalGarden3D, 180);
+}
+
+function playAnimalGardenAction(action) {
+  const minutes = getBankedGameMinutes();
+  if (minutes <= 0) {
+    showToast('小游戏时间已经用完，下次学习再来玩', 'info');
+    return;
+  }
+  const garden = getAnimalGardenState();
+  const outfits = ['草帽', '莓果领结', '星星挎包', '探险铃'];
+  const gain = {
+    hearts: action === 'care' ? 2 : 1,
+    feed: action === 'collect' ? 2 : 1,
+    visits: action === 'outfit' ? 2 : 1,
+  };
+  const currentOutfit = normalizeGardenOutfit(garden.outfit);
+  const nextOutfitIndex = (outfits.indexOf(currentOutfit) + 1 + outfits.length) % outfits.length;
+  const next = {
+    ...garden,
+    visits: (garden.visits || 0) + gain.visits,
+    hearts: (garden.hearts || 0) + gain.hearts,
+    feed: (garden.feed || 0) + gain.feed,
+    outfit: action === 'outfit' ? outfits[nextOutfitIndex] : currentOutfit,
+    lastAction: action,
+    lastGain: gain,
+    lastActionAt: Date.now(),
+  };
+  setAnimalGardenState(next);
+  setBankedGameMinutes(minutes - 1);
+  const host = $('animalGardenMount');
+  if (host) {
+    host.innerHTML = renderAnimalGardenGame();
+    mountCurrentAnimalGarden3D();
+  }
+}
+
+function closeAnimalGardenGame() {
+  const host = $('animalGardenMount');
+  if (host) host.innerHTML = '';
+}
+
+function startGamePreview() {
+  if (!state.user) {
+    showToast('请先登录再体验小游戏', 'info');
+    return;
+  }
+  if (getBankedGameMinutes() <= 0) setBankedGameMinutes(12);
+  const mount = $('animalGardenMount') || document.createElement('div');
+  mount.id = 'animalGardenMount';
+  if (!mount.parentNode) $('pageHome').appendChild(mount);
+  mount.innerHTML = renderAnimalGardenGame();
+  mountCurrentAnimalGarden3D();
+}
+
+function renderGameTimePrompt() {
+  if (!(state.session.reviewRounds.length > 0)) return '';
+  const minutes = getBankedGameMinutes();
+  if (minutes <= 0) return '';
+  return `
+    <div class="game-time-prompt">
+      <div class="game-time-window">
+        <div class="game-time-title">小游戏时间</div>
+        <div class="game-time-bank">存留时间 <strong>${escapeHtml(minutes)}</strong> 分钟</div>
+        <div class="game-time-copy">复习已经完成至少一轮，可以现在玩，也可以把时间存到下次一起玩。</div>
+        <div class="game-time-actions">
+          <button class="btn btn-primary btn-small" onclick="startBankedGameNow()">现在玩</button>
+          <button class="btn btn-secondary btn-small" onclick="keepBankedGameForLater()">下次玩</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function startBankedGameNow() {
+  const host = $('animalGardenMount');
+  if (host) {
+    host.innerHTML = renderAnimalGardenGame();
+    mountCurrentAnimalGarden3D();
+  }
+}
+
+function keepBankedGameForLater() {
+  showToast('小游戏时间已存留：' + getBankedGameMinutes() + ' 分钟', 'success');
+}
 function updateAuthMode(mode) {
   state.authMode = mode;
   const isRegister = mode === 'register';
   $('loginTab')?.classList.toggle('active', !isRegister);
   $('registerTab')?.classList.toggle('active', isRegister);
-  $('authSubmitBtn').textContent = isRegister ? '注册并登录' : '登录';
+  authSubmitBtn.textContent = isRegister ? '注册并登录' : '登录';
   $('authConfirmWrap').style.display = isRegister ? 'flex' : 'none';
-  $('authHint').textContent = isRegister
-    ? '注册信息先保存在当前浏览器，适合开发预览；正式版后端账号系统会替换这里。'
-    : '预览版账号保存在当前浏览器；正式密码系统下一步接后端账号表。';
+  authHint.textContent = isRegister
+    ? '注册后可在任意浏览器登录；已有词库用户首次注册会绑定密码。'
+    : '请输入已注册的用户名和密码；不同设备会共享同一账号。';
 }
 
 function setAuthMode(mode) {
@@ -228,8 +511,10 @@ function showAppPage() {
 function applyEnvironmentControls() {
   const modeWrap = $('modeSelectorWrap');
   const historyWrap = $('historyModeSelectorWrap');
+  const gamePreviewBtn = $('gamePreviewBtn');
   if (modeWrap) modeWrap.style.display = DEV_MODE ? 'block' : 'none';
   if (historyWrap) historyWrap.style.display = DEV_MODE ? 'flex' : 'none';
+  if (gamePreviewBtn) gamePreviewBtn.style.display = DEV_MODE ? 'flex' : 'none';
   if (!DEV_MODE && state.mode === 'test') state.mode = 'real';
   if (!DEV_MODE && state.historyMode === 'test') state.historyMode = 'real';
   const realModeBtn = document.querySelector('.mode-btn[data-mode="real"]');
@@ -270,7 +555,7 @@ async function api(path, opts = {}) {
       data = {};
     }
     if (!response.ok) {
-      const error = new Error(data.error || `请求失败（HTTP ${response.status}）`);
+      const error = new Error(data.error || ('请求失败（HTTP ' + response.status + '）'));
       error.code = data.code || 'HTTP_ERROR';
       throw error;
     }
@@ -305,10 +590,10 @@ function normalizeUsername(value) {
   return String(value || '').trim().replace(/\s+/g, '');
 }
 
-function submitAuth() {
-  const username = normalizeUsername($('authUsername').value);
-  const password = $('authPassword').value;
-  const confirm = $('authPasswordConfirm').value;
+async function submitAuth() {
+  const username = normalizeUsername(authUsername.value);
+  const password = authPassword.value;
+  const confirm = authPasswordConfirm.value;
   if (!username) {
     showToast('请输入用户名', 'error');
     return;
@@ -317,28 +602,25 @@ function submitAuth() {
     showToast('密码至少需要 4 位', 'error');
     return;
   }
-
-  const users = getLocalAuthUsers();
-  if (state.authMode === 'register') {
-    if (password !== confirm) {
-      showToast('两次输入的密码不一致', 'error');
-      return;
-    }
-    if (!users.includes(username)) {
-      users.push(username);
-      saveLocalAuthUsers(users);
-    }
-    loginAs(username);
-    showToast('注册成功，已登录', 'success');
+  if (state.authMode === 'register' && password !== confirm) {
+    showToast('两次输入的密码不一致', 'error');
     return;
   }
 
-  if (!users.includes(username)) {
-    showToast('用户不存在，可以先注册', 'error');
-    return;
+  const endpoint = state.authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+  showLoading(state.authMode === 'register' ? '正在注册...' : '正在登录...');
+  try {
+    const data = await api(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    });
+    loginAs(data.user || username);
+    showToast(state.authMode === 'register' ? '注册成功，已登录' : '登录成功', 'success');
+  } catch (error) {
+    showToast((state.authMode === 'register' ? '注册失败: ' : '登录失败: ') + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
   }
-  loginAs(username);
-  showToast('登录成功', 'success');
 }
 
 function loginAs(user) {
@@ -385,7 +667,7 @@ function renderUsers(users) {
   const text = document.createElement('div');
   text.style.flex = '1';
   text.append(
-    document.createTextNode(`当前用户：${currentUser}`),
+    document.createTextNode('当前用户：' + currentUser),
     Object.assign(document.createElement('small'), {
       textContent: DEV_MODE ? '开发预览模式' : '正式学习模式',
     })
@@ -491,7 +773,7 @@ async function loadHome() {
     await loadStats(state.user);
   } catch(e) {
     showToast('加载用户失败: ' + e.message, 'error');
-    $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">💡 后端连接异常，当前仅可查看登录后的本地预览</div>';
+    $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">后端连接异常，当前仅可查看登录后的本地预览</div>';
   }
   hideLoading();
 }
@@ -500,7 +782,7 @@ async function loadHome() {
 function showCleanupConfirm() {
   const user = state.user;
   if (!user) { showToast('请先选择用户', 'warn'); return; }
-  if (!confirm(`确定删除用户 "${user}" 的全部“测试模式”答题记录吗？\n\n正式学习记录不会被删除。`)) return;
+  if (!confirm('确定删除用户 "' + user + '" 的全部测试模式答题记录吗？\n\n正式学习记录不会被删除。')) return;
   cleanupUserData(user);
 }
 
@@ -516,7 +798,7 @@ async function cleanupUserData(user) {
       body: JSON.stringify({ user })
     });
     if (res.success) {
-      showToast(`已删除 ${res.deleted} 条测试记录`, 'success');
+      showToast('已删除 ' + res.deleted + ' 条测试记录', 'success');
       // 刷新统计
       loadStats(user);
     } else {
@@ -649,7 +931,7 @@ async function submitParentWords() {
           timeoutMs: 90000,
           body: JSON.stringify({ targetUser: state.user, words })
         });
-    showToast(`已提交 ${result.count || words.length} 个单词`, 'success');
+    showToast('已提交 ' + (result.count || words.length) + ' 个单词', 'success');
     if (input) input.value = '';
     loadStats(state.user);
   } catch (error) {
@@ -744,7 +1026,7 @@ async function loadParentLearningSettings() {
       <div class="parent-cache-status">
         <span>题目缓存</span>
         <strong>${escapeHtml(cacheStatus.status || settings.questionCacheStatus || 'unknown')}</strong>
-        <small>${cacheStatus.totalQuestions ? `已缓存 ${escapeHtml(cacheStatus.totalQuestions)} 题` : '后端会按学习设置生成题目缓存'}</small>
+        <small>${cacheStatus.totalQuestions ? '已缓存 ' + escapeHtml(cacheStatus.totalQuestions) + ' 题' : '后端会按学习设置生成题目缓存'}</small>
       </div>
       <div class="parent-actions-row">
         <button class="btn btn-primary btn-small" type="button" onclick="saveParentLearningSettings()">保存设置</button>
@@ -804,15 +1086,15 @@ async function loadStats(user) {
       ? generateDemoStats(user)
       : await api('/api/stats/' + encodeURIComponent(user));
     const { totalWords=0, masteredWords=0, pendingWords=0, totalTests=0, totalQuestions=0, correctCount=0, accuracyRate='0%', lastTestTime } = data;
-    const pct = totalWords > 0 ? Math.round(masteredWords/totalWords*100) : 0;
+    const pct = totalWords > 0 ? Math.round(masteredWords / totalWords * 100) : 0;
     const dash = 282.7 * pct / 100;
 
     $('statsContent').innerHTML = `
       <div class="progress-ring-wrap">
         <div class="progress-ring">
-          <svg width="100" height="100" viewBox="0 0 100 100">
+          <svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true">
             <circle class="bg" cx="50" cy="50" r="45"/>
-            <circle class="fg" cx="50" cy="50" r="45" style="stroke-dasharray:282.7;stroke-dashoffset:${282.7-dash};"/>
+            <circle class="fg" cx="50" cy="50" r="45" style="stroke-dasharray:282.7;stroke-dashoffset:${282.7 - dash};"/>
           </svg>
           <div class="center">
             <div class="pct">${pct}%</div>
@@ -820,35 +1102,30 @@ async function loadStats(user) {
           </div>
         </div>
         <div class="ring-stats">
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>已掌握</span><strong>${masteredWords}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>待复习</span><strong>${pendingWords}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>总词汇</span><strong>${totalWords}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>待复习</span><strong>${escapeHtml(pendingWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
         </div>
       </div>
       <div class="stats-grid">
         <div class="stat-card orange">
           <div class="label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>考核次数</div>
-          <div class="value">${totalTests}</div>
+          <div class="value">${escapeHtml(totalTests)}</div>
         </div>
         <div class="stat-card green">
           <div class="label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>正确率</div>
-          <div class="value">${accuracyRate}</div>
-          <div class="sub">${correctCount}/${totalQuestions}</div>
+          <div class="value">${escapeHtml(accuracyRate)}</div>
+          <div class="sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</div>
         </div>
       </div>
-      ${lastTestTime ? `<div style="margin-top:12px;text-align:center;font-size:13px;color:var(--text-secondary);">🕐 上次考核：${formatDate(lastTestTime)}</div>` : ''}
-      ${DEV_MODE ? `<div style="margin-top:14px;text-align:center;">
-        <button class="btn btn-outline btn-small" onclick="showCleanupConfirm()" style="color:var(--red);border-color:var(--red);font-size:12px;">
-          🗑 清理测试模式记录（${escapeHtml(user)}）
-        </button>
-      </div>` : ''}
+      ${lastTestTime ? `<div class="recent-test-note">上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
+      ${DEV_MODE ? `<div class="cleanup-row"><button class="btn btn-outline btn-small cleanup-btn" onclick="showCleanupConfirm()">清理测试模式记录（${escapeHtml(user)}）</button></div>` : ''}
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');
   }
   hideLoading();
 }
-
 // ========== Quiz ==========
 async function startQuiz() {
   if (!state.user) { showToast('请先选择一个用户', 'error'); return; }
@@ -907,7 +1184,7 @@ function renderQuestion(idx) {
 
   const types = {1:'语境填空', 2:'英英释义', 3:'中英释义'};
   const typeClasses = {1:'type1', 2:'type2', 3:'type3'};
-  const typeIcons = {1:'📖', 2:'📝', 3:'🌏'};
+  const typeIcons = {1:'□', 2:'EN', 3:'中'};
 
   let questionDisplay = escapeHtml(q.context || '');
   // For type 1, show the blank
@@ -926,12 +1203,12 @@ function renderQuestion(idx) {
   const confidence = state.confidences[idx];
   const confidenceHtml = state.answers[idx] === null ? '' : `
     <div class="confidence-panel">
-      <div class="confidence-label">这道题你是确定认识，还是猜的？</div>
+      <div class="confidence-label">这道题你是确定认识，还是猜的 / 不确定？</div>
       <div class="confidence-actions">
         <button class="confidence-btn ${confidence === 'sure' ? 'selected' : ''}" onclick="selectConfidence(${idx}, 'sure')">确定认识</button>
-        <button class="confidence-btn ${confidence === 'guess' ? 'selected' : ''}" onclick="selectConfidence(${idx}, 'guess')">猜的/不确定</button>
+        <button class="confidence-btn ${confidence === 'guess' ? 'selected' : ''}" onclick="selectConfidence(${idx}, 'guess')">猜的 / 不确定</button>
       </div>
-      <div class="confidence-hint">猜对仍计入本次得分，但不作为“已掌握”的证据。</div>
+      <div class="confidence-hint">猜对仍计入本次得分，但不会作为“已掌握”的证据。</div>
     </div>`;
 
   $('questionArea').innerHTML = `
@@ -979,7 +1256,7 @@ function canLeaveCurrentQuestion() {
     return false;
   }
   if (state.confidences[index] === null) {
-    showToast('请选择“确定认识”或“猜的/不确定”', 'info');
+    showToast('请选择“确定认识”或“猜的 / 不确定”', 'info');
     return false;
   }
   return true;
@@ -999,14 +1276,14 @@ async function submitQuiz() {
   if (!canLeaveCurrentQuestion()) return;
   const unanswered = state.answers.indexOf(null);
   if (unanswered !== -1) {
-    showToast(`还有第 ${unanswered+1} 题未作答`, 'info');
+    showToast(`还有第 ${unanswered + 1} 题未作答`, 'info');
     state.currentQuestion = unanswered;
     renderQuestion(unanswered);
     return;
   }
   const unconfirmed = state.confidences.indexOf(null);
   if (unconfirmed !== -1) {
-    showToast(`请确认第 ${unconfirmed+1} 题是“确定认识”还是“猜的/不确定”`, 'info');
+    showToast('请确认第 ' + (unconfirmed + 1) + ' 题是“确定认识”还是“猜的 / 不确定”', 'info');
     state.currentQuestion = unconfirmed;
     renderQuestion(unconfirmed);
     return;
@@ -1072,6 +1349,8 @@ async function submitQuiz() {
       });
     }
     state.quiz.result = data;
+
+    if (state.session.kind === 'quiz') addGameRewardToBank(data.gameReward);
     const remaining = (data.results || [])
       .filter(result => !result.correct)
       .map(result => result.recordId || result.word)
@@ -1099,10 +1378,10 @@ async function submitQuiz() {
 
 // ========== Results ==========
 const ENCOURAGE = {
-  perfect: ['满分！你就是单词大师！🏆', '全部答对，太厉害了！👑', '完美通关，学霸本霸！⭐'],
-  great: ['表现很棒，继续加油！💪', '掌握得不错，再接再厉！🔥', '优秀！离满分不远了！✨'],
-  good: ['还不错，继续努力！📚', '及格了，下次会更好！💪', '稳住，再复习一下就能全对！'],
-  poor: ['还需要多复习哦！📖', '别灰心，多练几次就好了！💪', '加油！每一次都是进步！🌟'],
+  perfect: ['满分！你就是单词大师！', '全部答对，太厉害了！', '完美通关，学习状态很好！'],
+  great: ['表现很棒，继续加油！', '掌握得不错，再接再厉！', '优秀！离满分不远了！'],
+  good: ['还不错，继续努力！', '已经及格了，下次会更好！', '稳住，再复习一下就能全对！'],
+  poor: ['还需要多复习哦！', '别灰心，多练几次就好了！', '加油！每一次都是进步！'],
 };
 function getEncourage(correct, total) {
   const r = correct / total;
@@ -1125,7 +1404,7 @@ function buildAnimalGardenRewardHtml(rewardSummary) {
     <span class="animal-reward-pill">${escapeHtml(item.label || item.name || item.type || '花园奖励')}</span>
   `).join('');
   const milestoneHtml = milestones.length
-    ? `<div class="animal-garden-line">达成 ${milestones.map(item => escapeHtml(item.label || item.name || `${item.size || ''} milestone`)).join('、')}</div>`
+    ? `<div class="animal-garden-line">达成 ${milestones.map(item => escapeHtml(item.label || item.name || ((item.size || '') + ' milestone'))).join('、')}</div>`
     : '';
   return `
     <div class="animal-garden-card">
@@ -1170,12 +1449,12 @@ function renderResults(data) {
       let explanationHtml = '';
 
       if (q?.type === 1 && q?.context) {
-        // Type 1: 显示上下文（空白处用 ___ 占位）
+        // Type 1: 显示上下文，空白处用 ___ 占位
         contextDisplay = escapeHtml(q.context).replace(/_____/g, '<span class="inline-blank">&nbsp;</span>');
       } else if (q?.type === 2 && q?.context) {
-        contextDisplay = `📖 ${escapeHtml(q.context)}`;
+        contextDisplay = '📘 ' + escapeHtml(q.context);
       } else if (q?.type === 3 && q?.context) {
-        contextDisplay = `🌏 ${escapeHtml(q.context)}`;
+        contextDisplay = '🌐 ' + escapeHtml(q.context);
       }
       explanationHtml = buildOptionMeaningsExplanation(q, escapeHtml)
         + buildQuestionExplanation(q, r, escapeHtml);
@@ -1191,9 +1470,9 @@ function renderResults(data) {
           if (isCorrect) cls += ' opt-correct';
           if (isUserChoice && !r.correct) cls += ' opt-wrong';
           let tag = '';
-          if (isCorrect && isUserChoice) tag = '<span class="opt-tag tag-correct">✔ 正确答案</span>';
-          else if (isCorrect) tag = '<span class="opt-tag tag-correct">✔ 正确答案</span>';
-          else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">✘ 你的选择</span>';
+          if (isCorrect && isUserChoice) tag = '<span class="opt-tag tag-correct">✓ 正确答案</span>';
+          else if (isCorrect) tag = '<span class="opt-tag tag-correct">✓ 正确答案</span>';
+          else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">你的选择</span>';
           return `<div class="${cls}">${escapeHtml(opt)} ${tag}</div>`;
         }).join('');
       } else {
@@ -1204,15 +1483,15 @@ function renderResults(data) {
         <div class="result-analysis-card ${r.correct ? 'correct' : 'wrong'}">
           <div class="row">
             <span class="word">${escapeHtml(r.word)}</span>
-            <span class="status-badge ${r.correct ? 'correct' : 'wrong'}">${r.correct ? '✓ 正确' : '✗ 错误'}</span>
+            <span class="status-badge ${r.correct ? 'correct' : 'wrong'}">${r.correct ? '✓ 正确' : '× 错误'}</span>
           </div>
           <div class="row" style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
             <span>${typeNames[q?.type] || ''} · 第 ${i+1} 题</span>
-            <span>${r.confidence === 'guess' ? '猜的/不确定：本题不计掌握证据' : '确定认识'}</span>
+            <span>${r.confidence === 'guess' ? '猜的 / 不确定：本题不计掌握证据' : '确定认识'}</span>
           </div>
 
           <div class="ctx-box">
-            <div class="ctx-label">📝 题干：</div>
+            <div class="ctx-label">题干：</div>
             <div class="ctx-text">${contextDisplay}</div>
           </div>
 
@@ -1236,17 +1515,18 @@ function renderResults(data) {
       <div style="font-size:16px;color:var(--text-secondary);margin-top:4px;">正确率 ${escapeHtml(accuracy)}</div>
       <div style="font-size:18px;font-weight:600;margin-top:12px;color:${pass ? 'var(--orange)' : 'var(--text-secondary)'};">${encourage}</div>
       ${data.mode === 'test' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">测试模式：不计入正式统计</div>' : ''}
-      ${masteredWords && masteredWords.length ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">✅ 新掌握 ${masteredWords.length} 个单词</div>` : ''}
+      ${masteredWords && masteredWords.length ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">✓ 新掌握 ${masteredWords.length} 个单词</div>` : ''}
       ${rewardHtml}
       ${animalGardenHtml}
     </div>
 
     <div id="analysisArea" style="display:${_showAnalysis ? 'block' : 'none'};margin-bottom:20px;">
-      <div class="section-title">📋 逐题回顾</div>
+      <div class="section-title">逐题回顾</div>
       ${detailsHtml}
     </div>
 
     <div id="resultActionPanel" class="review-action-panel"></div>
+    <div id="animalGardenMount"></div>
 
     <div style="text-align:right;margin-top:16px;">
       <button class="btn btn-outline btn-small" id="analysisBtn" onclick="toggleAnalysis()">
@@ -1416,6 +1696,7 @@ function showFinalReviewSummary() {
         <div><strong>${summary.deferredRecordIds.length}</strong><span>下次优先复习</span></div>
       </div>
     </div>
+    ${renderGameTimePrompt()}
     <div class="actions">
       <button class="btn btn-primary" onclick="navigateTo('home')">返回首页</button>
       <button class="btn btn-secondary" onclick="navigateTo('history')">查看历史</button>
@@ -1466,7 +1747,7 @@ function renderHistoryList(list) {
     const card = document.createElement('div');
     card.className = 'history-item';
     card.addEventListener('click', () => {
-      alert(`考核: ${item.testId}\n日期: ${formatDate(item.time)}\n得分: ${item.correct}/${item.total} (${pct}%)`);
+      alert('考核: ' + item.testId + '\n日期: ' + formatDate(item.time) + '\n得分: ' + item.correct + '/' + item.total + ' (' + pct + '%)');
     });
 
     const top = document.createElement('div');
@@ -1515,8 +1796,28 @@ async function loadHistory() {
   hideLoading();
 }
 
+function startDemoGamePreviewSession() {
+  state.user = 'yusi';
+  state.users = ['yusi'];
+  state.level = loadUserDifficulty(state.user);
+  state.mode = 'real';
+  state.historyMode = 'real';
+  setSessionUser(state.user);
+  showAppPage();
+  applyEnvironmentControls();
+  renderUsers(state.users);
+  updateLevelButtons();
+  loadStats(state.user);
+  setBankedGameMinutes(Math.max(getBankedGameMinutes(), 12));
+  setTimeout(startGamePreview, 250);
+}
+
 function initApp() {
   updateAuthMode('login');
+  if (GAME_PREVIEW_MODE) {
+    startDemoGamePreviewSession();
+    return;
+  }
   applyEnvironmentControls();
   const savedUser = getSessionUser();
   if (savedUser) {
@@ -1524,6 +1825,7 @@ function initApp() {
     state.users = [savedUser];
     state.level = loadUserDifficulty(savedUser);
     showAppPage();
+    applyEnvironmentControls();
     renderUsers(state.users);
     updateLevelButtons();
     loadHome();

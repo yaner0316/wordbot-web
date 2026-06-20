@@ -1,4 +1,4 @@
-﻿*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --orange: #FF6B00;
       --orange-light: #FF8C38;
@@ -797,4 +797,347 @@
 .review-summary-grid strong {
   color: var(--orange);
   font-size: 24px;
+}
+
+.game-time-prompt {
+  margin: 16px 0 4px;
+}
+
+.game-time-window {
+  padding: 16px;
+  border-radius: 14px;
+  background: #F6FAFF;
+  border: 1px solid #D8E9FF;
+  box-shadow: var(--shadow);
+}
+
+.game-time-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--blue);
+}
+
+.game-time-bank {
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.game-time-bank strong {
+  color: var(--orange);
+  font-size: 24px;
+}
+
+.game-time-copy {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.game-time-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+
+.animal-garden-game {
+  position: relative;
+  margin: 18px 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #FFFFFF;
+  border: 1px solid #DCEEDB;
+  box-shadow: var(--shadow-hover);
+}
+
+.animal-garden-stage {
+  position: relative;
+  min-height: 340px;
+  background:
+    radial-gradient(circle at 16% 18%, rgba(255,255,255,.92) 0 7%, transparent 8%),
+    radial-gradient(circle at 82% 22%, rgba(255,255,255,.68) 0 6%, transparent 7%),
+    linear-gradient(180deg, #DFF3FF 0%, #F7FFF1 52%, #BDE8A4 100%);
+  overflow: hidden;
+}
+
+.garden-3d-stage {
+  height: clamp(320px, 72vw, 390px);
+  isolation: isolate;
+}
+
+.garden-3d-stage::after {
+  content: '';
+  position: absolute;
+  left: 7%;
+  right: 7%;
+  bottom: 20px;
+  height: 34px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(57, 105, 45, .16), rgba(57, 105, 45, 0) 68%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.garden-3d-canvas {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.garden-3d-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #4B6E43;
+  font-size: 13px;
+  font-weight: 800;
+  background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0));
+}
+
+.garden-stage-overlay {
+  position: absolute;
+  inset: 0 0 auto 0;
+  min-height: 120px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.garden-level-badge {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.86);
+  border: 1px solid rgba(80, 126, 68, .18);
+  color: #315C2C;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 8px 20px rgba(75, 111, 58, .12);
+  backdrop-filter: blur(8px);
+}
+
+.garden-stage-stat-row {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 3;
+}
+
+.garden-stage-stat {
+  min-width: 44px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .86);
+  border: 1px solid rgba(82, 121, 66, .16);
+  box-shadow: 0 6px 14px rgba(79, 109, 57, .10);
+  color: #315C2C;
+  text-align: center;
+  backdrop-filter: blur(8px);
+}
+
+.garden-stage-stat small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.1;
+  color: #6B7C60;
+}
+
+.garden-stage-stat strong {
+  display: block;
+  margin-top: 1px;
+  font-size: 14px;
+  line-height: 1.1;
+}
+
+.garden-action-pop {
+  position: absolute;
+  left: 50%;
+  top: 60px;
+  transform: translateX(-50%);
+  max-width: min(84%, 360px);
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .9);
+  border: 1px solid rgba(118, 147, 80, .24);
+  color: #48672A;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+  text-align: center;
+  box-shadow: 0 8px 18px rgba(72, 103, 42, .14);
+  animation: gardenPop .45s ease-out;
+  backdrop-filter: blur(8px);
+}
+
+@keyframes gardenPop {
+  from { opacity: 0; transform: translate(-50%, 8px) scale(.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.animal-garden-panel { padding: 16px; }
+
+.animal-garden-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.animal-garden-game-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #245B2A;
+}
+
+.animal-garden-topline small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.animal-garden-game-bank {
+  min-width: 92px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.animal-garden-game-bank strong {
+  color: var(--orange);
+  font-size: 22px;
+}
+
+.garden-meters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 12px;
+}
+
+.garden-meter-card {
+  padding: 9px;
+  border-radius: 12px;
+  background: #FAFFF6;
+  border: 1px solid #DCEEDB;
+}
+
+.garden-meter-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #315C2C;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.garden-meter-head strong { margin-left: auto; color: #26362A; }
+.garden-meter-head em { color: #E85D82; font-style: normal; }
+
+.garden-meter-track {
+  margin-top: 8px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(70, 110, 62, .12);
+  overflow: hidden;
+}
+
+.garden-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width .35s ease;
+}
+
+.garden-section-label {
+  margin-bottom: 7px;
+  color: #5D6F55;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.garden-inventory,
+.garden-wardrobe {
+  margin: 10px 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: #FFFDF4;
+  border: 1px solid #F0E3B9;
+}
+
+.garden-inventory-row,
+.garden-wardrobe-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.garden-inventory-item {
+  min-width: 72px;
+  height: 36px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: #FFFFFF;
+  border: 1px solid rgba(128, 104, 40, .18);
+  box-shadow: 0 4px 8px rgba(102, 89, 43, .10);
+  font-size: 12px;
+}
+
+.garden-inventory-item.locked { opacity: .42; }
+.garden-inventory-item b { font-size: 17px; }
+.garden-inventory-item span { color: #6B5A34; font-weight: 800; }
+.garden-inventory-item small { color: #6E5A25; font-weight: 800; }
+
+.garden-wardrobe-item {
+  min-height: 32px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: #FFFFFF;
+  border: 1px solid #E5DAC0;
+  color: #6C5C3B;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.garden-wardrobe-item b { color: #9B7F36; font-size: 13px; }
+
+.garden-wardrobe-item.active {
+  background: #EAF7E7;
+  border-color: #9AD28D;
+  color: #2E7D32;
+}
+
+.animal-garden-actions {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+
+@media (max-width: 420px) {
+  .garden-3d-stage { height: clamp(300px, 78vw, 350px); }
+  .garden-stage-overlay { min-height: 136px; }
+  .garden-level-badge { left: 12px; top: 12px; }
+  .garden-stage-stat-row { left: 12px; right: 12px; top: 48px; justify-content: center; }
+  .garden-stage-stat { min-width: 40px; padding: 5px 7px; }
+  .garden-action-pop { top: 94px; max-width: 88%; }
+  .animal-garden-topline { align-items: stretch; flex-direction: column; gap: 8px; }
+  .animal-garden-game-bank { text-align: left; }
+  .garden-meters { grid-template-columns: 1fr; }
+  .animal-garden-actions { flex-wrap: wrap; }
+  .animal-garden-actions .btn { flex: 1 1 88px; }
 }

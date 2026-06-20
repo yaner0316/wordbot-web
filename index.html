@@ -57,7 +57,7 @@
         </div>
 
         <div class="auth-hint" id="authHint">
-          预览版账号保存在当前浏览器；正式密码系统下一步接后端账号表。
+          账号密码保存在服务端；注册一次后可在任意浏览器登录。
         </div>
       </div>
     </div>
@@ -149,8 +149,9 @@
     <div class="actions">
       <button class="btn btn-primary" onclick="startQuiz()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        开始考核
+        开始单词挑战吧！
       </button>
+      <button class="btn btn-secondary" id="gamePreviewBtn" onclick="startGamePreview()" style="display:none;">小游戏体验</button>
     </div>
 
     <div id="recentStatus" style="margin-top:12px;text-align:center;font-size:13px;color:var(--text-secondary);display:none;">
@@ -227,6 +228,7 @@
 <script src="src/quiz-logic.js"></script>
 <script src="src/review-flow.js"></script>
 <script src="config.js"></script>
+<script type="module" src="src/animal-garden-3d.js"></script>
 <script src="src/app.js"></script>
 </body>
 </html>
