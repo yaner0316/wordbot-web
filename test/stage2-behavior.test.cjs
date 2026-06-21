@@ -235,6 +235,14 @@ test('mini game preview is on the home actions, not quiz navigation', () => {
     assert.doesNotMatch(html, /class="quiz-nav"[\s\S]*id="gamePreviewBtn"/);
 });
 
+
+test('unregistered legacy users are guided into first password binding', () => {
+    assert.match(app, /function handleUnregisteredPasswordLogin/);
+    assert.match(app, /updateAuthMode\('register'\)/);
+    assert.match(app, /authPasswordConfirm\.value\s*=\s*authPassword\.value/);
+    assert.ok(app.includes('\u9996\u6b21\u4f7f\u7528\u8bf7\u518d\u70b9\u4e00\u6b21\u6ce8\u518c\u5e76\u767b\u5f55'));
+});
+
 test('auth uses server-side password endpoints instead of browser-only users', () => {
     assert.match(app, /\/api\/auth\/login/);
     assert.match(app, /\/api\/auth\/register/);

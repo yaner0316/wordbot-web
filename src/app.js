@@ -660,6 +660,16 @@ function normalizeUsername(value) {
   return String(value || '').trim().replace(/\s+/g, '');
 }
 
+function handleUnregisteredPasswordLogin(error) {
+  const message = normalizeApiError(error).message;
+  if (state.authMode !== 'login' || !message.includes('尚未注册密码')) return false;
+  updateAuthMode('register');
+  authPasswordConfirm.value = authPassword.value;
+  authHint.textContent = '这个账号还没有绑定服务端密码。首次使用请再点一次注册并登录，之后任何浏览器都可以直接登录。';
+  showToast('首次使用请再点一次注册并登录，完成密码绑定', 'info');
+  return true;
+}
+
 async function submitAuth() {
   const username = normalizeUsername(authUsername.value);
   const password = authPassword.value;
@@ -687,7 +697,9 @@ async function submitAuth() {
     loginAs(data.user || username);
     showToast(state.authMode === 'register' ? '注册成功，已登录' : '登录成功', 'success');
   } catch (error) {
-    showToast((state.authMode === 'register' ? '注册失败: ' : '登录失败: ') + normalizeApiError(error).message, 'error');
+    if (!handleUnregisteredPasswordLogin(error)) {
+      showToast((state.authMode === 'register' ? '注册失败: ' : '登录失败: ') + normalizeApiError(error).message, 'error');
+    }
   } finally {
     hideLoading();
   }
