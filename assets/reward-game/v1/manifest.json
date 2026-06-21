@@ -1,0 +1,46 @@
+{
+  "version": "v1",
+  "styleName": "storybook-soft-2.5d",
+  "fallback": {
+    "character": "assets/reward-game/v1/placeholders/character.svg",
+    "habitat": "assets/reward-game/v1/placeholders/habitat.svg",
+    "equipment": "assets/reward-game/v1/placeholders/equipment.svg",
+    "reward": "assets/reward-game/v1/placeholders/item.svg"
+  },
+  "habitats": {
+    "meadowDay": "assets/reward-game/v1/habitats/meadow-day.svg",
+    "meadowEvening": "assets/reward-game/v1/habitats/meadow-evening.svg",
+    "cloudGarden": "assets/reward-game/v1/habitats/cloud-garden.svg"
+  },
+  "characters": {
+    "wordDragon": {
+      "stage00": {
+        "idle": "assets/reward-game/v1/characters/word-dragon/stage-00/idle.svg"
+      },
+      "stage01": {
+        "idle": "assets/reward-game/v1/characters/word-dragon/stage-01/idle.svg",
+        "happy": "assets/reward-game/v1/characters/word-dragon/stage-01/happy.svg",
+        "care": "assets/reward-game/v1/characters/word-dragon/stage-01/care.svg",
+        "collect": "assets/reward-game/v1/characters/word-dragon/stage-01/collect.svg",
+        "equip": "assets/reward-game/v1/characters/word-dragon/stage-01/equip.svg",
+        "levelUp": "assets/reward-game/v1/characters/word-dragon/stage-01/level-up.svg"
+      }
+    }
+  },
+  "companions": {
+    "pigKnight": {
+      "idle": "assets/reward-game/v1/companions/pig-knight/idle.svg"
+    }
+  },
+  "equipment": {
+    "strawHat": "assets/reward-game/v1/equipment/straw-hat.svg",
+    "berryBow": "assets/reward-game/v1/equipment/berry-bow.svg",
+    "starSatchel": "assets/reward-game/v1/equipment/star-satchel.svg",
+    "explorerBell": "assets/reward-game/v1/equipment/explorer-bell.svg"
+  },
+  "rewards": {
+    "wordCrystal": "assets/reward-game/v1/rewards/word-crystal.svg",
+    "feedCarrot": "assets/reward-game/v1/rewards/feed-carrot.svg",
+    "intimacyStar": "assets/reward-game/v1/rewards/intimacy-star.svg"
+  }
+}

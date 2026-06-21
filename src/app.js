@@ -15,6 +15,7 @@ const SESSION_USER_KEY = 'wordbot:session-user';
 const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
 const GAME_TIME_BANK_KEY_PREFIX = 'wordbot:game-time-bank:';
 const ANIMAL_GARDEN_STATE_KEY_PREFIX = 'wordbot:animal-garden:';
+const REWARD_GAME_ASSET_MANIFEST = 'assets/reward-game/v1/manifest.json';
 const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
 const state = {
   user: null,
@@ -47,7 +48,6 @@ const URL_PARAMS = new URLSearchParams(window.location.search);
 const DEMO_MODE = URL_PARAMS.get('demo') === '1';
 const DEV_MODE = URL_PARAMS.get('dev') === '1' || DEMO_MODE;
 const GAME_PREVIEW_MODE = URL_PARAMS.get('game') === '1' && DEMO_MODE;
-window.addEventListener('animal-garden-3d-ready', mountCurrentAnimalGarden3D);
 
 // ========== Demo Mode ==========
 const DEMO_WORDS = [
@@ -249,6 +249,70 @@ function normalizeGardenOutfit(outfit) {
   return ({ '红围巾': '莓果领结', '星星背包': '星星挎包' }[outfit] || outfit || '草帽');
 }
 
+const REWARD_GAME_FALLBACK_ASSETS = {
+  fallback: {
+    character: 'assets/reward-game/v1/placeholders/character.svg',
+    habitat: 'assets/reward-game/v1/placeholders/habitat.svg',
+    equipment: 'assets/reward-game/v1/placeholders/equipment.svg',
+    reward: 'assets/reward-game/v1/placeholders/item.svg',
+  },
+  habitats: { meadowDay: 'assets/reward-game/v1/habitats/meadow-day.svg' },
+  characters: {
+    wordDragon: {
+      stage00: { idle: 'assets/reward-game/v1/characters/word-dragon/stage-00/idle.svg' },
+      stage01: {
+        idle: 'assets/reward-game/v1/characters/word-dragon/stage-01/idle.svg',
+        happy: 'assets/reward-game/v1/characters/word-dragon/stage-01/happy.svg',
+        care: 'assets/reward-game/v1/characters/word-dragon/stage-01/care.svg',
+        collect: 'assets/reward-game/v1/characters/word-dragon/stage-01/collect.svg',
+        equip: 'assets/reward-game/v1/characters/word-dragon/stage-01/equip.svg',
+      },
+    },
+  },
+  companions: { pigKnight: { idle: 'assets/reward-game/v1/companions/pig-knight/idle.svg' } },
+  equipment: {
+    strawHat: 'assets/reward-game/v1/equipment/straw-hat.svg',
+    berryBow: 'assets/reward-game/v1/equipment/berry-bow.svg',
+    starSatchel: 'assets/reward-game/v1/equipment/star-satchel.svg',
+    explorerBell: 'assets/reward-game/v1/equipment/explorer-bell.svg',
+  },
+  rewards: {
+    wordCrystal: 'assets/reward-game/v1/rewards/word-crystal.svg',
+    feedCarrot: 'assets/reward-game/v1/rewards/feed-carrot.svg',
+    intimacyStar: 'assets/reward-game/v1/rewards/intimacy-star.svg',
+  },
+};
+let rewardGameAssetManifestCache = null;
+
+function getGardenOutfitAssetKey(outfit) {
+  return ({
+    '草帽': 'strawHat',
+    '莓果领结': 'berryBow',
+    '星星挎包': 'starSatchel',
+    '探险铃': 'explorerBell',
+  }[normalizeGardenOutfit(outfit)] || 'strawHat');
+}
+
+function getGardenCharacterState(action) {
+  return ({ care: 'care', collect: 'collect', outfit: 'equip' }[action] || 'idle');
+}
+
+function getGardenDropAssetKey(action) {
+  return ({ care: 'intimacyStar', collect: 'feedCarrot', outfit: 'wordCrystal' }[action] || 'wordCrystal');
+}
+
+async function loadRewardGameAssetManifest() {
+  if (rewardGameAssetManifestCache) return rewardGameAssetManifestCache;
+  try {
+    const response = await fetch(REWARD_GAME_ASSET_MANIFEST, { cache: 'no-cache' });
+    if (!response.ok) throw new Error('manifest load failed');
+    rewardGameAssetManifestCache = { ...REWARD_GAME_FALLBACK_ASSETS, ...(await response.json()) };
+  } catch {
+    rewardGameAssetManifestCache = REWARD_GAME_FALLBACK_ASSETS;
+  }
+  return rewardGameAssetManifestCache;
+}
+
 function getGardenLevel(garden) {
   const score = (garden.hearts || 0) + (garden.feed || 0) + (garden.visits || 0);
   return Math.max(1, Math.min(9, Math.floor(score / 12) + 1));
@@ -349,13 +413,13 @@ function renderAnimalGardenGame() {
   return `
     <div class="animal-garden-game garden-v3" id="animalGardenGame">
       <div
-        class="animal-garden-stage garden-3d-stage"
-        id="animalGarden3DStage"
+        class="animal-garden-stage garden-art-stage"
+        id="animalGardenArtStage"
         data-action="${escapeHtml(garden.lastAction || 'idle')}"
         data-outfit="${escapeHtml(outfitName)}"
-        aria-label="3D 动物花园"
+        aria-label="词语花园美术预览"
       >
-        <div class="garden-3d-fallback">3D 花园加载中...</div>
+        <div class="garden-art-fallback">词语花园美术资源加载中...</div>
       </div>
       <div class="garden-stage-overlay" aria-label="花园状态概览">
         <div class="garden-level-badge">Lv.${escapeHtml(level)} · ${escapeHtml(mood)}</div>
@@ -381,23 +445,29 @@ function renderAnimalGardenGame() {
   `;
 }
 
-function mountCurrentAnimalGarden3D() {
-  const stage = $('animalGarden3DStage');
+async function mountCurrentRewardGardenArt() {
+  const stage = $('animalGardenArtStage');
   if (!stage) return;
   const garden = getAnimalGardenState();
-  const payload = {
-    ...garden,
-    level: getGardenLevel(garden),
-    mood: getGardenMood(garden),
-    outfit: normalizeGardenOutfit(garden.outfit),
-  };
-  if (typeof window.mountAnimalGarden3D === 'function') {
-    window.mountAnimalGarden3D(stage, payload);
-    return;
-  }
-  stage.innerHTML = '<div class="garden-3d-fallback">3D 花园加载中...</div>';
-  window.clearTimeout(stage.__animalGarden3DRetry);
-  stage.__animalGarden3DRetry = window.setTimeout(mountCurrentAnimalGarden3D, 180);
+  const outfitName = normalizeGardenOutfit(garden.outfit);
+  const action = garden.lastAction || 'idle';
+  const manifest = await loadRewardGameAssetManifest();
+  const characterState = getGardenCharacterState(action);
+  const character = manifest.characters?.wordDragon?.stage01?.[characterState]
+    || manifest.characters?.wordDragon?.stage01?.idle
+    || manifest.fallback?.character;
+  const habitat = manifest.habitats?.meadowDay || manifest.fallback?.habitat;
+  const equipment = manifest.equipment?.[getGardenOutfitAssetKey(outfitName)] || manifest.fallback?.equipment;
+  const companion = (garden.visits || 0) >= 50 ? manifest.companions?.pigKnight?.idle : '';
+  const drop = action === 'idle' ? '' : (manifest.rewards?.[getGardenDropAssetKey(action)] || manifest.fallback?.reward);
+  const layers = [
+    '<img class="garden-art-habitat" src="' + escapeHtml(habitat) + '" alt="" aria-hidden="true">',
+    '<img class="garden-art-character ' + escapeHtml(characterState) + '" src="' + escapeHtml(character) + '" alt="词灵幼龙占位图">',
+    '<img class="garden-art-equipment ' + escapeHtml(getGardenOutfitAssetKey(outfitName)) + '" src="' + escapeHtml(equipment) + '" alt="' + escapeHtml(outfitName) + '">',
+  ];
+  if (companion) layers.push('<img class="garden-art-companion" src="' + escapeHtml(companion) + '" alt="里程碑伙伴占位图">');
+  if (drop) layers.push('<img class="garden-art-drop ' + escapeHtml(action) + '" src="' + escapeHtml(drop) + '" alt="奖励掉落占位图">');
+  stage.innerHTML = layers.join('');
 }
 
 function playAnimalGardenAction(action) {
@@ -430,7 +500,7 @@ function playAnimalGardenAction(action) {
   const host = $('animalGardenMount');
   if (host) {
     host.innerHTML = renderAnimalGardenGame();
-    mountCurrentAnimalGarden3D();
+    mountCurrentRewardGardenArt();
   }
 }
 
@@ -449,7 +519,7 @@ function startGamePreview() {
   mount.id = 'animalGardenMount';
   if (!mount.parentNode) $('pageHome').appendChild(mount);
   mount.innerHTML = renderAnimalGardenGame();
-  mountCurrentAnimalGarden3D();
+  mountCurrentRewardGardenArt();
 }
 
 function renderGameTimePrompt() {
@@ -475,7 +545,7 @@ function startBankedGameNow() {
   const host = $('animalGardenMount');
   if (host) {
     host.innerHTML = renderAnimalGardenGame();
-    mountCurrentAnimalGarden3D();
+    mountCurrentRewardGardenArt();
   }
 }
 

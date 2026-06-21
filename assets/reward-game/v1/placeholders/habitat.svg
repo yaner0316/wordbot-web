@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="habitat-placeholder">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D8F0FF"/><stop offset="1" stop-color="#F7FFF1"/></linearGradient>
+    <linearGradient id="hill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9EA8D"/><stop offset="1" stop-color="#A9D976"/></linearGradient>
+  </defs>
+  <g id="habitat-placeholder">
+    <rect width="1280" height="720" fill="url(#sky)"/>
+    <circle cx="220" cy="150" r="70" fill="#FFFFFF" opacity="0.76"/>
+    <circle cx="1010" cy="170" r="54" fill="#FFFFFF" opacity="0.56"/>
+    <path d="M0 498c226-96 442-112 650-52 194 56 390 45 630-38v312H0z" fill="url(#hill)"/>
+    <ellipse cx="640" cy="536" rx="250" ry="74" fill="#FFF0C7" opacity="0.62"/>
+    <g fill="#F7C84D" opacity="0.9">
+      <circle cx="190" cy="550" r="10"/><circle cx="220" cy="528" r="7"/><circle cx="1040" cy="506" r="9"/><circle cx="1090" cy="536" r="7"/>
+    </g>
+    <g stroke="#79B85D" stroke-width="8" stroke-linecap="round"><path d="M165 585v-58"/><path d="M1040 578v-62"/><path d="M1100 600v-50"/></g>
+    <g fill="#E85D82"><circle cx="165" cy="520" r="18"/><circle cx="1040" cy="508" r="18"/><circle cx="1100" cy="544" r="16"/></g>
+  </g>
+</svg>

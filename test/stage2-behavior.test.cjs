@@ -1,4 +1,4 @@
-﻿const test = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,8 +17,18 @@ const reviewFlow = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'review-flow.js'),
     'utf8'
 );
-const garden3d = fs.existsSync(path.join(__dirname, '..', 'src', 'animal-garden-3d.js'))
-    ? fs.readFileSync(path.join(__dirname, '..', 'src', 'animal-garden-3d.js'), 'utf8')
+const preview = fs.readFileSync(path.join(__dirname, '..', 'preview.cjs'), 'utf8');
+const rewardManifestPath = path.join(__dirname, '..', 'assets', 'reward-game', 'v1', 'manifest.json');
+const rewardManifest = fs.existsSync(rewardManifestPath)
+    ? fs.readFileSync(rewardManifestPath, 'utf8')
+    : '';
+const rewardPlaceholderCharacterPath = path.join(__dirname, '..', 'assets', 'reward-game', 'v1', 'placeholders', 'character.svg');
+const rewardPlaceholderHabitatPath = path.join(__dirname, '..', 'assets', 'reward-game', 'v1', 'placeholders', 'habitat.svg');
+const rewardPlaceholderCharacter = fs.existsSync(rewardPlaceholderCharacterPath)
+    ? fs.readFileSync(rewardPlaceholderCharacterPath, 'utf8')
+    : '';
+const rewardPlaceholderHabitat = fs.existsSync(rewardPlaceholderHabitatPath)
+    ? fs.readFileSync(rewardPlaceholderHabitatPath, 'utf8')
     : '';
 
 test('frontend assets are loaded from focused external files', () => {
@@ -41,10 +51,10 @@ test('deployed frontend can point API calls at the Render backend', () => {
 
 test('wrong-answer review is offered only after answer analysis', () => {
     assert.match(reviewFlow, /analysisViewed/);
-    assert.match(app, /开始错题复习/);
-    assert.match(app, /查看答案解析/);
-    assert.match(app, /继续复习/);
-    assert.match(app, /下次复习/);
+    assert.ok(app.includes('\u5f00\u59cb\u9519\u9898\u590d\u4e60'));
+    assert.ok(app.includes('\u67e5\u770b\u7b54\u6848\u89e3\u6790'));
+    assert.ok(app.includes('\u7ee7\u7eed\u590d\u4e60'));
+    assert.ok(app.includes('\u4e0b\u6b21\u590d\u4e60'));
     assert.match(app, /state\.session\.firstResult\s*=\s*data/);
     assert.match(app, /wordbot:active-review:/);
     assert.match(app, /restoreActiveReview/);
@@ -132,8 +142,8 @@ test('answer analysis lists Chinese meanings for all options before the reasonin
 
 test('the last question shows only one submit action', () => {
     assert.match(app, /const isLastQuestion = idx === total - 1/);
-    assert.match(app, /nextBtn'\)\.style\.display = isLastQuestion \? 'none' : 'flex'/);
-    assert.match(app, /submitBtn'\)\.style\.display = isLastQuestion \? 'flex' : 'none'/);
+    assert.match(app, /nextBtn'\)\.style\.display\s*=\s*isLastQuestion \? 'none' : 'flex'/);
+    assert.match(app, /submitBtn'\)\.style\.display\s*=\s*isLastQuestion \? 'flex' : 'none'/);
 });
 
 test('quiz results can show game time rewards', () => {
@@ -145,10 +155,10 @@ test('quiz results can show game time rewards', () => {
 
 test('home page exposes parent tools without hiding the child quiz flow', () => {
     assert.match(html, /parentToolGrid/);
-    assert.match(html, /录入单词/);
-    assert.match(html, /查询\/编辑/);
-    assert.match(html, /学习设置/);
-    assert.match(html, /统计看板/);
+    assert.ok(html.includes('\u5f55\u5165\u5355\u8bcd'));
+    assert.ok(html.includes('\u67e5\u8be2\/\u7f16\u8f91'));
+    assert.ok(html.includes('\u5b66\u4e60\u8bbe\u7f6e'));
+    assert.ok(html.includes('\u7edf\u8ba1\u770b\u677f'));
     assert.match(app, /function openParentTool/);
     assert.match(app, /function submitParentWords/);
     assert.match(app, /\/api\/admin\/addWords/);
@@ -169,7 +179,6 @@ test('quiz results can show animal garden reward summary from submit response', 
     assert.match(styles, /\.animal-garden-card/);
 });
 
-
 test('game reward minutes are banked and offered after at least one review round', () => {
     assert.match(app, /GAME_TIME_BANK_KEY_PREFIX/);
     assert.match(app, /function addGameRewardToBank/);
@@ -186,7 +195,6 @@ test('perfect quiz game reward is twelve minutes and excellent is five', () => {
     assert.match(app, /minutes:\s*5[\s\S]*tier:\s*'excellent'/);
 });
 
-
 test('banked game time opens a playable animal garden mini game', () => {
     assert.match(app, /function renderAnimalGardenGame/);
     assert.match(app, /function playAnimalGardenAction/);
@@ -195,27 +203,32 @@ test('banked game time opens a playable animal garden mini game', () => {
     assert.match(styles, /\.animal-garden-game/);
 });
 
-test('animal garden rewards render as 3D growth controls instead of text-only counters', () => {
+test('animal garden rewards render through manifest-driven art assets', () => {
+    assert.match(app, /REWARD_GAME_ASSET_MANIFEST/);
     assert.match(app, /function renderGardenMeters/);
     assert.match(app, /function renderGardenInventory/);
     assert.match(app, /function renderGardenWardrobe/);
-    assert.match(app, /function mountCurrentAnimalGarden3D/);
+    assert.match(app, /function mountCurrentRewardGardenArt/);
     assert.match(app, /garden-meters/);
     assert.match(app, /garden-inventory/);
-    assert.match(app, /garden-3d-stage/);
-    assert.match(app, /garden-stage-overlay/);
+    assert.match(app, /garden-art-stage/);
+    assert.match(app, /garden-art-character/);
+    assert.match(app, /garden-art-equipment/);
+    assert.ok(app.includes('assets/reward-game/v1/manifest.json'));
     assert.match(styles, /\.garden-meter-card/);
     assert.match(styles, /\.garden-inventory-item/);
-    assert.match(styles, /\.garden-3d-stage/);
+    assert.match(styles, /\.garden-art-stage/);
+    assert.match(styles, /\.garden-art-character/);
+    assert.match(styles, /\.garden-art-equipment/);
     assert.doesNotMatch(app, /animal-visitor-row/);
     assert.doesNotMatch(app, /animal-visitor-chip/);
 });
+
 test('dev and demo modes expose a mini game preview entry', () => {
     assert.match(app, /function startGamePreview/);
     assert.match(app, /DEV_MODE[\s\S]*startGamePreview/);
     assert.match(html + app, /\u5c0f\u6e38\u620f\u4f53\u9a8c/);
 });
-
 
 test('mini game preview is on the home actions, not quiz navigation', () => {
     assert.match(html, /id="pageHome"[\s\S]*id="gamePreviewBtn"/);
@@ -225,15 +238,16 @@ test('mini game preview is on the home actions, not quiz navigation', () => {
 test('auth uses server-side password endpoints instead of browser-only users', () => {
     assert.match(app, /\/api\/auth\/login/);
     assert.match(app, /\/api\/auth\/register/);
-    assert.ok(!app.includes('鐢ㄦ埛涓嶅瓨鍦紝鍙互鍏堟敞鍐'));
+    assert.ok(!app.includes('\u7528\u6237\u4e0d\u5b58\u5728\uff0c\u53ef\u4ee5\u5148\u6ce8\u518c'));
 });
-test('animal garden care action triggers 3D falling reward drops', () => {
+
+test('animal garden care action triggers manifest reward drops', () => {
     assert.match(app, /lastAction:\s*action/);
-    assert.match(app, /mountCurrentAnimalGarden3D/);
-    assert.match(garden3d, /function createRewardDrops/);
-    assert.match(garden3d, /drop.userData.velocity/);
-    assert.match(garden3d, /action === 'care'/);
-    assert.match(garden3d, /action === 'collect'/);
+    assert.match(app, /mountCurrentRewardGardenArt/);
+    assert.match(app, /garden-art-drop/);
+    assert.match(app, /intimacyStar/);
+    assert.match(app, /feedCarrot/);
+    assert.match(app, /wordCrystal/);
 });
 
 test('main frontend strings do not leak mojibake or broken template fragments', () => {
@@ -242,82 +256,56 @@ test('main frontend strings do not leak mojibake or broken template fragments', 
 });
 
 test('home stats and game prompts render clean Chinese text', () => {
-    assert.match(app, /const DEFAULT_LEVEL = '中学'/);
-    assert.match(app, /已掌握/);
-    assert.match(app, /待复习/);
-    assert.match(app, /总词汇/);
-    assert.match(app, /考核次数/);
-    assert.match(app, /正确率/);
-    assert.match(app, /上次考核/);
-    assert.match(app, /清理测试模式记录/);
-    assert.match(app, /小游戏时间/);
-    assert.match(app, /存留时间/);
-    assert.match(app, /现在玩/);
-    assert.match(app, /下次玩/);
+    assert.ok(app.includes("const DEFAULT_LEVEL = '\u4e2d\u5b66'"));
+    assert.ok(app.includes('\u5df2\u638c\u63e1'));
+    assert.ok(app.includes('\u5f85\u590d\u4e60'));
+    assert.ok(app.includes('\u603b\u8bcd\u6c47'));
+    assert.ok(app.includes('\u8003\u6838\u6b21\u6570'));
+    assert.ok(app.includes('\u6b63\u786e\u7387'));
+    assert.ok(app.includes('\u4e0a\u6b21\u8003\u6838'));
+    assert.ok(app.includes('\u6e05\u7406\u6d4b\u8bd5\u6a21\u5f0f\u8bb0\u5f55'));
+    assert.ok(app.includes('\u5c0f\u6e38\u620f\u65f6\u95f4'));
+    assert.ok(app.includes('\u5b58\u7559\u65f6\u95f4'));
+    assert.ok(app.includes('\u73b0\u5728\u73a9'));
+    assert.ok(app.includes('\u4e0b\u6b21\u73a9'));
     assert.doesNotMatch(app, /宸叉帉鎻|寰呭|鎬昏瘝|鑰冩牳|姝ｇ|馃晲|馃棏|\?\{formatDate|\?\{escapeHtml\(user\)/);
 });
 
-test('animal garden uses a Three.js 3D stage instead of 2D sticker sprites', () => {
-    assert.match(html, /<script type="module" src="src\/animal-garden-3d\.js(?:\?v=[^"]+)?"><\/script>/);
-    assert.match(app, /garden-3d-stage/);
-    assert.match(app, /mountAnimalGarden3D/);
-    assert.match(garden3d, /from 'https:\/\/unpkg\.com\/three@/);
-    assert.match(garden3d, /function mountAnimalGarden3D/);
-    assert.match(garden3d, /function createGardenPet/);
-    assert.match(garden3d, /function createGardenOutfit/);
-    assert.match(garden3d, /function createVisitorGroup/);
-    assert.match(garden3d, /function createGardenFoodBowl/);
-    assert.match(garden3d, /function createGardenPlants/);
-    assert.match(garden3d, /WebGLRenderer/);
-    assert.match(styles, /\.garden-3d-stage/);
-    assert.doesNotMatch(app, /garden-pet-body/);
-    assert.doesNotMatch(app, /animal-visitor-chip/);
+test('animal garden art manifest defines replaceable production asset slots', () => {
+    assert.match(rewardManifest, /"version"\s*:\s*"v1"/);
+    assert.match(rewardManifest, /"styleName"\s*:\s*"storybook-soft-2.5d"/);
+    assert.match(rewardManifest, /"wordDragon"/);
+    assert.match(rewardManifest, /"stage01"/);
+    assert.ok(rewardManifest.includes('"idle": "assets/reward-game/v1/characters/word-dragon/stage-01/idle.svg"'));
+    assert.match(rewardManifest, /"starSatchel"/);
+    assert.match(rewardManifest, /"meadowDay"/);
+    assert.match(rewardManifest, /"intimacyStar"/);
 });
 
-test('animal garden main character is a polished 3D baby dragon', () => {
-    assert.match(garden3d, /function createGardenDragon/);
-    assert.match(garden3d, /garden-dragon-3d/);
-    assert.match(garden3d, /createDragonHorn/);
-    assert.match(garden3d, /createDragonWing/);
-    assert.match(garden3d, /createDragonTail/);
-    assert.match(garden3d, /createDragonSpikes/);
-    assert.match(garden3d, /function createCheek/);
-    assert.match(garden3d, /dragon-big-head/);
-    assert.match(garden3d, /dragon-belly-panel/);
-    assert.match(garden3d, /dragon-open-mouth/);
-    assert.match(garden3d, /dragon-spine-crest/);
-    assert.match(garden3d, /dragon-fore-claw-left/);
-    assert.match(garden3d, /dragonOrange/);
-    assert.match(garden3d, /createGardenDragon\(garden\)/);
-    assert.doesNotMatch(garden3d, /function createEar\(side\)/);
+test('local preview serves reward manifest and svg assets with explicit content types', () => {
+    assert.match(preview, /'\.json': 'application\/json; charset=utf-8'/);
+    assert.match(preview, /'\.svg': 'image\/svg\+xml; charset=utf-8'/);
 });
 
-test('animal garden scene maps resources to 3D objects and restrained equipment', () => {
-    assert.match(garden3d, /function createGardenPlants\(garden = \{\}\)/);
-    assert.match(garden3d, /function createGardenFoodBowl\(garden = \{\}\)/);
-    assert.match(garden3d, /function createVisitorGroup\(garden = \{\}\)/);
-    assert.match(garden3d, /function createGardenOutfit\(outfit = '草帽'\)/);
-    assert.match(garden3d, /case '莓果领结'/);
-    assert.match(garden3d, /case '星星挎包'/);
-    assert.match(garden3d, /case '探险铃'/);
-    assert.match(garden3d, /x:\s*-2\.35/);
-    assert.match(garden3d, /x:\s*2\.35/);
-    assert.doesNotMatch(garden3d, /emoji|innerHTML|animal-visitor-chip/);
+test('animal garden placeholder art assets are clean svg stand-ins', () => {
+    assert.match(rewardPlaceholderCharacter, /<svg/);
+    assert.match(rewardPlaceholderCharacter, /word-dragon-placeholder/);
+    assert.match(rewardPlaceholderCharacter, /#FF9C58/);
+    assert.match(rewardPlaceholderHabitat, /<svg/);
+    assert.match(rewardPlaceholderHabitat, /habitat-placeholder/);
+    assert.match(rewardPlaceholderHabitat, /#D8F0FF/);
 });
 
-test('animal garden v0.3 keeps polished meters with a dedicated 3D stage', () => {
+test('animal garden v0.3 keeps polished meters with manifest art stage', () => {
     assert.match(app, /function getGardenLevel/);
     assert.match(app, /function renderGardenMeters/);
     assert.match(app, /function renderGardenInventory/);
     assert.match(app, /function renderGardenWardrobe/);
-    assert.match(app, /id="animalGarden3DStage"/);
+    assert.match(app, /id="animalGardenArtStage"/);
     assert.match(app, /data-outfit=/);
     assert.match(styles, /\.garden-meter-fill/);
     assert.match(styles, /\.garden-wardrobe/);
     assert.match(styles, /\.garden-stage-overlay/);
-    assert.match(styles, /\.garden-3d-fallback/);
+    assert.match(styles, /\.garden-art-fallback/);
     assert.doesNotMatch(styles, /\.equipment-scarf[\s\S]*bottom:\s*18px/);
 });
-
-
-
