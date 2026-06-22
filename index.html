@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>单词机器人 - WordBot</title>
+  <title>小龙戏单词</title>
   <link rel="preconnect" href="https://fonts.googleapis.cn" />
   <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin />
   <link href="https://fonts.googleapis.cn/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -29,7 +29,7 @@
       <div class="auth-hero">
         <div class="auth-logo">📖</div>
         <div>
-          <h1>单词机器人</h1>
+          <h1>小龙戏单词</h1>
           <p>先登录，再开始今天的单词练习。</p>
         </div>
       </div>
@@ -68,7 +68,7 @@
     <div class="header">
       <div class="header-title">
         <div class="logo">📖</div>
-        单词机器人
+        小龙戏单词
       </div>
       <div class="header-actions">
         <button class="header-btn" onclick="logout()" title="退出登录">
@@ -88,22 +88,10 @@
       <button onclick="manualSelectUser()" style="margin-top:8px;background:var(--orange);color:white;border:none;border-radius:20px;padding:8px 24px;font-size:14px;cursor:pointer;">确定</button>
     </div>
 
-    <div class="level-selector" style="margin:16px auto;text-align:center;max-width:340px;">
-      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">题干语言难度（按用户记忆）</div>
-      <div class="difficulty-options">
-        <button class="level-btn" data-level="小学" onclick="selectLevel(this,'小学')">
-          小学
-        </button>
-        <button class="level-btn level-active" data-level="中学" onclick="selectLevel(this,'中学')">
-          中学
-        </button>
-        <button class="level-btn" data-level="高中" onclick="selectLevel(this,'高中')">
-          高中
-        </button>
-        <button class="level-btn" data-level="CET4_6_TOEFL" onclick="selectLevel(this,'CET4_6_TOEFL')">
-          CET/TOEFL
-        </button>
-      </div>
+    <div class="current-level-display" style="margin:16px auto;text-align:center;max-width:340px;">
+      <span class="current-level-label">当前难度</span>
+      <strong id="currentLevelText">中学</strong>
+      <small>由家长在学习设置中调整</small>
     </div>
 
     <div id="modeSelectorWrap" style="margin:10px auto 18px;text-align:center;max-width:340px;">

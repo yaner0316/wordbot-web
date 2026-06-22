@@ -29,7 +29,6 @@ const state = {
   confidences: [],
   users: [],
   learningSettings: null,
-  levelSaving: false,
   submitting: false,
   session: {
     kind: 'quiz',
@@ -871,6 +870,8 @@ function restoreActiveReview(user) {
 }
 
 function updateLevelButtons() {
+  const currentLevelText = $('currentLevelText');
+  if (currentLevelText) currentLevelText.textContent = state.level || DEFAULT_LEVEL;
   document.querySelectorAll('.level-btn[data-level]').forEach(button => {
     button.classList.toggle('level-active', button.dataset.level === state.level);
   });
@@ -932,46 +933,6 @@ async function cleanupUserData(user) {
     showToast('清理失败: ' + e.message, 'error');
   }
   hideLoading();
-}
-
-async function selectLevel(el, level) {
-  if (state.levelSaving) return;
-  if (!state.user || DEMO_MODE) {
-    state.level = level;
-    saveUserDifficulty(state.user, level);
-    updateLevelButtons();
-    return;
-  }
-  if (level === state.level) return;
-  if (!confirm(`确认把学习难度改为「${level}」吗？保存后会按新难度准备题库。`)) {
-    updateLevelButtons();
-    return;
-  }
-  state.levelSaving = true;
-  showLoading('正在保存学习难度...');
-  try {
-    const data = await api('/api/admin/userSettings', {
-      method: 'PUT',
-      body: JSON.stringify({ userId: state.user, learningLevel: level })
-    });
-    const settings = data.settings || null;
-    state.learningSettings = settings;
-    state.level = settings?.learningLevel || level;
-    saveUserDifficulty(state.user, state.level);
-    updateLevelButtons();
-    if (settings?.questionCacheStatus === 'building') {
-      showToast('学习难度已保存，新难度题库准备中…', 'success');
-    } else {
-      showToast('学习难度已保存', 'success');
-    }
-    if ($('parentSettingsContent')) loadParentLearningSettings();
-  } catch (error) {
-    showToast('学习难度保存失败: ' + normalizeApiError(error).message, 'error');
-    updateLevelButtons();
-  } finally {
-    state.levelSaving = false;
-    hideLoading();
-  }
 }
 
 function selectMode(el, mode) {

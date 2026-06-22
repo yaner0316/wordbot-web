@@ -79,11 +79,15 @@ test('demo fill-in questions neutralize a or an before the blank', () => {
     assert.match(app, /context = normalizeArticleContext\(context\)/);
 });
 
-test('the CET and TOEFL level button has enough width for its label', () => {
-    assert.match(styles, /\.difficulty-options/);
-    assert.match(html, /data-level="CET4_6_TOEFL"/);
-    assert.match(styles, /min-width:\s*94px/);
-    assert.match(styles, /white-space:\s*nowrap/);
+test('home shows current learning level without student level buttons', () => {
+    assert.match(html, /id="currentLevelText"/);
+    assert.match(html, /当前难度/);
+    const start = html.indexOf('<div class="current-level-display"');
+    const end = html.indexOf('<div id="modeSelectorWrap"', start);
+    assert.ok(start >= 0 && end > start, 'home current level display should exist before mode selector');
+    const homeLevelBlock = html.slice(start, end);
+    assert.doesNotMatch(homeLevelBlock, /data-level=/);
+    assert.doesNotMatch(homeLevelBlock, /onclick="selectLevel/);
 });
 
 test('quiz requests include the explicit real or test assessment mode', () => {
@@ -187,13 +191,17 @@ test('frontend syncs learning level from server settings', () => {
     assert.match(app, /await syncLearningSettingsFromServer\(state\.user/);
 });
 
-test('home difficulty buttons persist level changes to the backend', () => {
-    const selectLevelMatch = app.match(/async function selectLevel\(el, level\) \{[\s\S]*?\n\}/);
-    assert.ok(selectLevelMatch, 'selectLevel function should exist');
-    assert.match(selectLevelMatch[0], /\/api\/admin\/userSettings/);
-    assert.match(selectLevelMatch[0], /method:\s*'PUT'/);
-    assert.match(selectLevelMatch[0], /questionCacheStatus\s*===\s*'building'/);
-    assert.match(selectLevelMatch[0], /levelSaving/);
+test('learning level changes are saved only from parent settings', () => {
+    assert.doesNotMatch(html, /onclick="selectLevel/);
+    assert.doesNotMatch(html, /data-level=/);
+    assert.doesNotMatch(app, /async function selectLevel/);
+    const start = app.indexOf('async function saveParentLearningSettings()');
+    const end = app.indexOf('async function rebuildParentQuestionCache()', start);
+    assert.ok(start >= 0 && end > start, 'saveParentLearningSettings function should exist');
+    const saveSettingsSource = app.slice(start, end);
+    assert.ok(saveSettingsSource.includes('/api/admin/userSettings'));
+    assert.ok(saveSettingsSource.includes("method: 'PUT'"));
+    assert.ok(saveSettingsSource.includes("questionCacheStatus === 'building'"));
 });
 
 test('elementary quizzes do not show unprepared or unadapted live fallback questions', () => {
@@ -350,4 +358,10 @@ test('animal garden v0.3 keeps polished meters with manifest art stage', () => {
     assert.match(styles, /\.garden-stage-overlay/);
     assert.match(styles, /\.garden-art-fallback/);
     assert.doesNotMatch(styles, /\.equipment-scarf[\s\S]*bottom:\s*18px/);
+});
+
+
+test('product name is Xiaolong Plays Words', () => {
+    assert.match(html, /小龙戏单词/);
+    assert.doesNotMatch(html, /单词机器人/);
 });

@@ -1227,3 +1227,25 @@
   .animal-garden-actions .btn { flex: 1 1 88px; }
 }
 
+
+.current-level-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border: 1px solid rgba(238, 117, 41, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 248, 240, 0.75);
+    color: var(--text);
+}
+.current-level-display strong {
+    color: var(--orange);
+    font-size: 18px;
+}
+.current-level-display small,
+.current-level-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
