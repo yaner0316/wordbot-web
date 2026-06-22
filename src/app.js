@@ -28,6 +28,8 @@ const state = {
   answers: [],
   confidences: [],
   users: [],
+  learningSettings: null,
+  levelSaving: false,
   submitting: false,
   session: {
     kind: 'quiz',
@@ -709,6 +711,7 @@ function loginAs(user) {
   state.user = user;
   state.users = [user];
   state.level = loadUserDifficulty(user);
+  state.learningSettings = null;
   state.mode = 'real';
   state.historyMode = 'real';
   setSessionUser(user);
@@ -716,7 +719,7 @@ function loginAs(user) {
   applyEnvironmentControls();
   renderUsers(state.users);
   updateLevelButtons();
-  loadHome();
+  syncLearningSettingsFromServer(user).finally(() => loadHome());
 }
 
 function logout() {
@@ -770,9 +773,10 @@ function selectUser(user) {
   }
   state.user = user;
   state.level = loadUserDifficulty(user);
+  state.learningSettings = null;
   updateLevelButtons();
   renderUsers(state.users);
-  loadStats(user);
+  syncLearningSettingsFromServer(user).finally(() => loadStats(user));
   restoreActiveReview(user);
 }
 
@@ -782,6 +786,44 @@ function difficultyPreferenceKey(user) {
 
 function loadUserDifficulty(user) {
   return localStorage.getItem(difficultyPreferenceKey(user)) || DEFAULT_LEVEL;
+}
+
+function saveUserDifficulty(user, level) {
+  if (user && level) localStorage.setItem(difficultyPreferenceKey(user), level);
+}
+
+async function syncLearningSettingsFromServer(user, { silent = true } = {}) {
+  if (!user || DEMO_MODE) return state.learningSettings;
+  try {
+    const data = await api(`/api/admin/userSettings?userId=${encodeURIComponent(user)}`);
+    const settings = data.settings || null;
+    if (settings?.learningLevel) {
+      state.learningSettings = settings;
+      state.level = settings.learningLevel;
+      saveUserDifficulty(user, settings.learningLevel);
+      updateLevelButtons();
+    }
+    return settings;
+  } catch (error) {
+    if (!silent) showToast('学习设置同步失败: ' + normalizeApiError(error).message, 'error');
+    return state.learningSettings;
+  }
+}
+
+function isElementaryLevel(level) {
+  return level === '小学';
+}
+
+function isElementaryCacheReady(status, level = state.level) {
+  if (!isElementaryLevel(level)) return true;
+  const levelStatus = status?.byLevel?.[level];
+  return Number(levelStatus?.ready || 0) >= 10;
+}
+
+async function ensureElementaryCacheReadyForQuiz(user, level) {
+  if (!isElementaryLevel(level) || DEMO_MODE) return true;
+  const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
+  return isElementaryCacheReady(data.status, level);
 }
 
 function activeReviewKey(user) {
@@ -892,10 +934,44 @@ async function cleanupUserData(user) {
   hideLoading();
 }
 
-function selectLevel(el, level) {
-  state.level = level;
-  if (state.user) localStorage.setItem(difficultyPreferenceKey(state.user), level);
-  updateLevelButtons();
+async function selectLevel(el, level) {
+  if (state.levelSaving) return;
+  if (!state.user || DEMO_MODE) {
+    state.level = level;
+    saveUserDifficulty(state.user, level);
+    updateLevelButtons();
+    return;
+  }
+  if (level === state.level) return;
+  if (!confirm(`确认把学习难度改为「${level}」吗？保存后会按新难度准备题库。`)) {
+    updateLevelButtons();
+    return;
+  }
+  state.levelSaving = true;
+  showLoading('正在保存学习难度...');
+  try {
+    const data = await api('/api/admin/userSettings', {
+      method: 'PUT',
+      body: JSON.stringify({ userId: state.user, learningLevel: level })
+    });
+    const settings = data.settings || null;
+    state.learningSettings = settings;
+    state.level = settings?.learningLevel || level;
+    saveUserDifficulty(state.user, state.level);
+    updateLevelButtons();
+    if (settings?.questionCacheStatus === 'building') {
+      showToast('学习难度已保存，新难度题库准备中…', 'success');
+    } else {
+      showToast('学习难度已保存', 'success');
+    }
+    if ($('parentSettingsContent')) loadParentLearningSettings();
+  } catch (error) {
+    showToast('学习难度保存失败: ' + normalizeApiError(error).message, 'error');
+    updateLevelButtons();
+  } finally {
+    state.levelSaving = false;
+    hideLoading();
+  }
 }
 
 function selectMode(el, mode) {
@@ -1137,8 +1213,9 @@ async function saveParentLearningSettings() {
     } else {
       showToast('学习设置已保存', 'success');
     }
-    state.level = learningLevel;
-    localStorage.setItem(difficultyPreferenceKey(state.user), learningLevel);
+    state.learningSettings = data?.settings || state.learningSettings;
+    state.level = state.learningSettings?.learningLevel || learningLevel;
+    saveUserDifficulty(state.user, state.level);
     updateLevelButtons();
     loadParentLearningSettings();
   } catch (error) {
@@ -1245,11 +1322,20 @@ async function startQuiz() {
       renderQuestion(0);
       return;
     }
+    await syncLearningSettingsFromServer(state.user);
+    if (!(await ensureElementaryCacheReadyForQuiz(state.user, state.level))) {
+      showToast('小学题库准备中，请稍后再试', 'info');
+      return;
+    }
     const data = await api('/api/quiz', {
       method: 'POST',
       timeoutMs: 70000,
       body: JSON.stringify({ user: state.user, level: state.level, mode: state.mode })
     });
+    if (data.level === '小学' && data.difficultyApplied === false) {
+      showToast('小学题干还没有准备好，请稍后再试', 'info');
+      return;
+    }
     if (data.warning) showToast(data.warning, 'info');
     state.quiz = data;
     state.currentQuestion = 0;

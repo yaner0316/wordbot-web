@@ -178,6 +178,34 @@ test('learning settings save refreshes cache status after background rebuild sta
     assert.match(saveSettingsMatch[0], /questionCacheStatus\s*===\s*'building'/);
     assert.match(saveSettingsMatch[0], /loadParentLearningSettings\(\)/);
 });
+
+test('frontend syncs learning level from server settings', () => {
+    assert.match(app, /async function syncLearningSettingsFromServer\(user/);
+    assert.match(app, /\/api\/admin\/userSettings\?userId=/);
+    assert.match(app, /state\.learningSettings\s*=\s*settings/);
+    assert.match(app, /state\.level\s*=\s*settings\.learningLevel/);
+    assert.match(app, /await syncLearningSettingsFromServer\(state\.user/);
+});
+
+test('home difficulty buttons persist level changes to the backend', () => {
+    const selectLevelMatch = app.match(/async function selectLevel\(el, level\) \{[\s\S]*?\n\}/);
+    assert.ok(selectLevelMatch, 'selectLevel function should exist');
+    assert.match(selectLevelMatch[0], /\/api\/admin\/userSettings/);
+    assert.match(selectLevelMatch[0], /method:\s*'PUT'/);
+    assert.match(selectLevelMatch[0], /questionCacheStatus\s*===\s*'building'/);
+    assert.match(selectLevelMatch[0], /levelSaving/);
+});
+
+test('elementary quizzes do not show unprepared or unadapted live fallback questions', () => {
+    const startQuizMatch = app.match(/async function startQuiz\(\) \{[\s\S]*?\n\}/);
+    assert.ok(startQuizMatch, 'startQuiz function should exist');
+    assert.match(app, /function isElementaryCacheReady\(status/);
+    assert.match(app, /questionCache\/status/);
+    assert.match(startQuizMatch[0], /ensureElementaryCacheReadyForQuiz\(state\.user,\s*state\.level\)/);
+    assert.match(startQuizMatch[0], /data\.level\s*===\s*'小学'\s*&&\s*data\.difficultyApplied\s*===\s*false/);
+    assert.match(startQuizMatch[0], /return/);
+});
+
 test('quiz results can show animal garden reward summary from submit response', () => {
     assert.match(app, /function buildAnimalGardenRewardHtml/);
     assert.match(app, /data\.rewardSummary/);
