@@ -172,6 +172,12 @@ test('home load skips the unused all-users request for faster startup', () => {
     assert.match(loadHomeMatch[0], /loadStats\(state\.user\)/);
 });
 
+test('learning settings save refreshes cache status after background rebuild starts', () => {
+    const saveSettingsMatch = app.match(/async function saveParentLearningSettings\(\) \{[\s\S]*?\n\}/);
+    assert.ok(saveSettingsMatch, 'saveParentLearningSettings function should exist');
+    assert.match(saveSettingsMatch[0], /questionCacheStatus\s*===\s*'building'/);
+    assert.match(saveSettingsMatch[0], /loadParentLearningSettings\(\)/);
+});
 test('quiz results can show animal garden reward summary from submit response', () => {
     assert.match(app, /function buildAnimalGardenRewardHtml/);
     assert.match(app, /data\.rewardSummary/);

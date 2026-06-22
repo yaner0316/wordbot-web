@@ -1125,15 +1125,22 @@ async function saveParentLearningSettings() {
   showLoading('正在保存设置...');
   try {
     if (!DEMO_MODE) {
-      await api('/api/admin/userSettings', {
+      const data = await api('/api/admin/userSettings', {
         method: 'PUT',
         body: JSON.stringify({ userId: state.user, learningLevel })
       });
+      if (data?.settings?.questionCacheStatus === 'building') {
+        showToast('学习难度已保存，新难度题库准备中…', 'success');
+      } else {
+        showToast('学习设置已保存', 'success');
+      }
+    } else {
+      showToast('学习设置已保存', 'success');
     }
     state.level = learningLevel;
     localStorage.setItem(difficultyPreferenceKey(state.user), learningLevel);
     updateLevelButtons();
-    showToast('学习设置已保存', 'success');
+    loadParentLearningSettings();
   } catch (error) {
     showToast('保存失败: ' + normalizeApiError(error).message, 'error');
   } finally {
