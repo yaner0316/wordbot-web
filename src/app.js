@@ -20,6 +20,8 @@ const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
 const state = {
   user: null,
   authMode: 'login',
+  authLoginMethod: 'password',
+  parentAccess: false,
   level: DEFAULT_LEVEL,
   mode: 'real',
   historyMode: 'real',
@@ -44,8 +46,8 @@ const state = {
   },
 };
 
-const API_BASE = (window.WORDBOT_CONFIG?.API_BASE || '').replace(/\/$/, '');
 const URL_PARAMS = new URLSearchParams(window.location.search);
+const API_BASE = (URL_PARAMS.get('api') || window.WORDBOT_CONFIG?.API_BASE || '').replace(/\/$/, '');
 const DEMO_MODE = URL_PARAMS.get('demo') === '1';
 const DEV_MODE = URL_PARAMS.get('dev') === '1' || DEMO_MODE;
 const GAME_PREVIEW_MODE = URL_PARAMS.get('game') === '1' && DEMO_MODE;
@@ -556,17 +558,35 @@ function keepBankedGameForLater() {
 function updateAuthMode(mode) {
   state.authMode = mode;
   const isRegister = mode === 'register';
+  if (isRegister) state.authLoginMethod = 'password';
+  const isOtpLogin = !isRegister && state.authLoginMethod === 'otp';
+
   $('loginTab')?.classList.toggle('active', !isRegister);
   $('registerTab')?.classList.toggle('active', isRegister);
-  authSubmitBtn.textContent = isRegister ? '注册并登录' : '登录';
+  $('authMethodWrap').style.display = isRegister ? 'none' : 'flex';
+  $('authPasswordMethod')?.classList.toggle('active', !isOtpLogin);
+  $('authOtpMethod')?.classList.toggle('active', isOtpLogin);
+  $('authUsernameWrap').style.display = isOtpLogin ? 'none' : 'flex';
+  $('authPhoneWrap').style.display = (isRegister || isOtpLogin) ? 'flex' : 'none';
+  $('authPasswordWrap').style.display = isOtpLogin ? 'none' : 'flex';
   $('authConfirmWrap').style.display = isRegister ? 'flex' : 'none';
+  $('authOtpWrap').style.display = isOtpLogin ? 'flex' : 'none';
+  $('authIdentifierLabel').textContent = isRegister ? '用户名' : '用户名/手机号';
+  authSubmitBtn.textContent = isRegister ? '注册并登录' : (isOtpLogin ? '验证码登录' : '登录');
   authHint.textContent = isRegister
-    ? '注册后可在任意浏览器登录；已有词库用户首次注册会绑定密码。'
-    : '请输入已注册的用户名和密码；不同设备会共享同一账号。';
+    ? '注册后可在任意浏览器登录；手机号会绑定到这个账户。'
+    : (isOtpLogin
+      ? '输入绑定手机号和验证码登录。'
+      : '可以用用户名或手机号登录。');
 }
 
 function setAuthMode(mode) {
   updateAuthMode(mode);
+}
+
+function setAuthLoginMethod(method) {
+  state.authLoginMethod = method === 'otp' ? 'otp' : 'password';
+  updateAuthMode(state.authMode);
 }
 
 function showLoginPage() {
@@ -661,6 +681,10 @@ function normalizeUsername(value) {
   return String(value || '').trim().replace(/\s+/g, '');
 }
 
+function normalizePhone(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
 function handleUnregisteredPasswordLogin(error) {
   const message = normalizeApiError(error).message;
   if (state.authMode !== 'login' || !message.includes('尚未注册密码')) return false;
@@ -671,35 +695,69 @@ function handleUnregisteredPasswordLogin(error) {
   return true;
 }
 
+async function requestLoginOtp() {
+  const phone = normalizePhone(authPhone.value);
+  if (!/^d{11}$/.test(phone)) {
+    showToast('请输入正确的手机号', 'error');
+    return;
+  }
+  showLoading('正在发送验证码...');
+  try {
+    const data = await api('/api/auth/requestOtp', {
+      method: 'POST',
+      body: JSON.stringify({ phone, purpose: 'login' })
+    });
+    if (data.devOtp) {
+      authOtpCode.value = data.devOtp;
+      authHint.textContent = '本地预览验证码：' + data.devOtp;
+    }
+    showToast('验证码已发送', 'success');
+  } catch (error) {
+    showToast('发送验证码失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
 async function submitAuth() {
   const username = normalizeUsername(authUsername.value);
+  const phone = normalizePhone(authPhone.value);
   const password = authPassword.value;
   const confirm = authPasswordConfirm.value;
-  if (!username) {
-    showToast('请输入用户名', 'error');
-    return;
-  }
-  if (!password || password.length < 4) {
-    showToast('密码至少需要 4 位', 'error');
-    return;
-  }
-  if (state.authMode === 'register' && password !== confirm) {
-    showToast('两次输入的密码不一致', 'error');
-    return;
+  const otp = authOtpCode?.value?.trim() || '';
+
+  if (state.authMode === 'register') {
+    if (!username) { showToast('请输入用户名', 'error'); return; }
+    if (!/^d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
+    if (!password || password.length < 4) { showToast('密码至少需要 4 位', 'error'); return; }
+    if (password !== confirm) { showToast('两次输入的密码不一致', 'error'); return; }
+  } else if (state.authLoginMethod === 'otp') {
+    if (!/^d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
+    if (!/^d{6}$/.test(otp)) { showToast('请输入 6 位验证码', 'error'); return; }
+  } else {
+    if (!username) { showToast('请输入用户名或手机号', 'error'); return; }
+    if (!password || password.length < 4) { showToast('密码至少需要 4 位', 'error'); return; }
   }
 
-  const endpoint = state.authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-  showLoading(state.authMode === 'register' ? '正在注册...' : '正在登录...');
+  const isRegister = state.authMode === 'register';
+  const isOtpLogin = !isRegister && state.authLoginMethod === 'otp';
+  const endpoint = isRegister ? '/api/auth/register' : (isOtpLogin ? '/api/auth/otpLogin' : '/api/auth/login');
+  const body = isRegister
+    ? { username, phone, password }
+    : (isOtpLogin ? { phone, otp } : { identifier: username, password });
+
+  showLoading(isRegister ? '正在注册...' : '正在登录...');
   try {
     const data = await api(endpoint, {
       method: 'POST',
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify(body)
     });
     loginAs(data.user || username);
-    showToast(state.authMode === 'register' ? '注册成功，已登录' : '登录成功', 'success');
+    showToast(isRegister ? '注册成功，已登录' : '登录成功', 'success');
   } catch (error) {
     if (!handleUnregisteredPasswordLogin(error)) {
-      showToast((state.authMode === 'register' ? '注册失败: ' : '登录失败: ') + normalizeApiError(error).message, 'error');
+      const message = normalizeApiError(error).message;
+      showToast((isRegister ? '注册失败: ' : '登录失败: ') + message, 'error');
     }
   } finally {
     hideLoading();
@@ -711,6 +769,7 @@ function loginAs(user) {
   state.users = [user];
   state.level = loadUserDifficulty(user);
   state.learningSettings = null;
+  state.parentAccess = false;
   state.mode = 'real';
   state.historyMode = 'real';
   setSessionUser(user);
@@ -727,6 +786,8 @@ function logout() {
   state.quiz = null;
   state.answers = [];
   state.confidences = [];
+  state.parentAccess = false;
+  resetParentConsole();
   showLoginPage();
   showToast('已退出登录', 'info');
 }
@@ -773,6 +834,8 @@ function selectUser(user) {
   state.user = user;
   state.level = loadUserDifficulty(user);
   state.learningSettings = null;
+  state.parentAccess = false;
+  resetParentConsole();
   updateLevelButtons();
   renderUsers(state.users);
   syncLearningSettingsFromServer(user).finally(() => loadStats(user));
@@ -968,11 +1031,109 @@ function getParentToolPanel() {
   return $('parentToolPanel');
 }
 
+function resetParentConsole() {
+  const gate = $('parentGatePanel');
+  const grid = $('parentToolGrid');
+  const panel = $('parentToolPanel');
+  if (gate) gate.style.display = 'none';
+  if (grid) grid.style.display = 'none';
+  if (panel) {
+    panel.style.display = 'none';
+    panel.innerHTML = '';
+  }
+}
+
+function showParentTools() {
+  const gate = $('parentGatePanel');
+  const grid = $('parentToolGrid');
+  if (gate) gate.style.display = 'none';
+  if (grid) grid.style.display = 'grid';
+}
+
+function openParentConsole() {
+  if (!state.user) {
+    showToast('请先登录用户', 'error');
+    return;
+  }
+  if (state.parentAccess) {
+    showParentTools();
+    return;
+  }
+  const gate = $('parentGatePanel');
+  const grid = $('parentToolGrid');
+  if (grid) grid.style.display = 'none';
+  if (gate) gate.style.display = 'block';
+}
+
+function closeParentConsole() {
+  resetParentConsole();
+}
+
+function ensureParentAccess() {
+  if (state.parentAccess) return true;
+  openParentConsole();
+  showToast('请先完成家长手机号验证', 'info');
+  return false;
+}
+
+async function requestParentOtp() {
+  const phone = normalizePhone($('parentPhoneInput')?.value);
+  if (!/^d{11}$/.test(phone)) {
+    showToast('请输入正确的手机号', 'error');
+    return;
+  }
+  showLoading('正在发送验证码...');
+  try {
+    const data = DEMO_MODE
+      ? { sent: true, devOtp: '123456' }
+      : await api('/api/auth/requestOtp', {
+          method: 'POST',
+          body: JSON.stringify({ phone, purpose: 'parent', user: state.user })
+        });
+    if (data.devOtp && $('parentOtpInput')) {
+      $('parentOtpInput').value = data.devOtp;
+      $('parentGateHint').textContent = '本地预览验证码：' + data.devOtp;
+    }
+    showToast('验证码已发送', 'success');
+  } catch (error) {
+    showToast('发送验证码失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function verifyParentOtp() {
+  const phone = normalizePhone($('parentPhoneInput')?.value);
+  const otp = $('parentOtpInput')?.value.trim() || '';
+  if (!/^d{11}$/.test(phone) || !/^d{6}$/.test(otp)) {
+    showToast('请输入手机号和 6 位验证码', 'error');
+    return;
+  }
+  showLoading('正在验证...');
+  try {
+    const data = DEMO_MODE
+      ? { ok: otp === '123456', user: state.user }
+      : await api('/api/auth/parentOtp', {
+          method: 'POST',
+          body: JSON.stringify({ user: state.user, phone, otp })
+        });
+    if (!data.ok) throw new Error('验证码错误或已过期');
+    state.parentAccess = true;
+    showParentTools();
+    showToast('已进入家长控制台', 'success');
+  } catch (error) {
+    showToast('验证失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
 function openParentTool(tool) {
   if (!state.user) {
     showToast('请先登录用户', 'error');
     return;
   }
+  if (!ensureParentAccess()) return;
   const panel = getParentToolPanel();
   if (!panel) return;
   panel.style.display = 'block';
@@ -1311,6 +1472,13 @@ async function startQuiz() {
   }
 }
 
+function isMeaningReviewQuestion(question) {
+  return Number(question?.type) === 4 || question?.answerMode === 'cn_meaning';
+}
+
+function meaningAnswerValue(index) {
+  return String(state.answers[index] ?? '');
+}
 function renderQuestion(idx) {
   const q = state.quiz.questions[idx];
   const total = state.quiz.questions.length;
@@ -1318,6 +1486,31 @@ function renderQuestion(idx) {
   $('quizProgressText').textContent = idx + 1;
   $('quizTotalText').textContent = total;
 
+  if (isMeaningReviewQuestion(q)) {
+    const answer = meaningAnswerValue(idx);
+    $('questionArea').innerHTML = `
+      <div class="question-card meaning-review-card">
+        <div class="question-type-badge type4">CN 释义回忆</div>
+        <div class="question-text meaning-review-word">${escapeHtml(q.word || '')}</div>
+        <label class="meaning-answer-label" for="meaningAnswerInput">请输入这个单词的中文释义</label>
+        <textarea
+          class="meaning-answer-input"
+          id="meaningAnswerInput"
+          rows="4"
+          placeholder="例如：晋升；提升"
+          oninput="setMeaningAnswer(${idx}, this.value)"
+        >${escapeHtml(answer)}</textarea>
+      </div>
+    `;
+    const isLastQuestion = idx === total - 1;
+    const canContinue = answer.trim().length > 0;
+    $('prevBtn').style.visibility = idx === 0 ? 'hidden' : 'visible';
+    $('nextBtn').style.display = isLastQuestion ? 'none' : 'flex';
+    $('submitBtn').style.display = isLastQuestion ? 'flex' : 'none';
+    $('nextBtn').disabled = !canContinue;
+    $('submitBtn').disabled = !canContinue;
+    return;
+  }
   const types = {1:'语境填空', 2:'英英释义', 3:'中英释义'};
   const typeClasses = {1:'type1', 2:'type2', 3:'type3'};
   const typeIcons = {1:'□', 2:'EN', 3:'中'};
@@ -1366,6 +1559,13 @@ function renderQuestion(idx) {
   $('submitBtn').disabled = !canContinue;
 }
 
+function setMeaningAnswer(qIdx, value) {
+  state.answers[qIdx] = value;
+  saveActiveReview();
+  const canContinue = String(value || '').trim().length > 0;
+  $('nextBtn').disabled = !canContinue;
+  $('submitBtn').disabled = !canContinue;
+}
 function selectOption(qIdx, optIdx) {
   state.answers[qIdx] = optIdx;
   saveActiveReview();
@@ -1387,12 +1587,20 @@ function prevQuestion() {
 
 function canLeaveCurrentQuestion() {
   const index = state.currentQuestion;
+  const question = state.quiz?.questions?.[index];
+  if (isMeaningReviewQuestion(question)) {
+    if (!meaningAnswerValue(index).trim()) {
+      showToast('请先输入中文释义', 'info');
+      return false;
+    }
+    return true;
+  }
   if (state.answers[index] === null) {
-    showToast('请先选择一个答案', 'info');
+    showToast('请选择一个答案', 'info');
     return false;
   }
   if (state.confidences[index] === null) {
-    showToast('请选择“确定认识”或“猜的 / 不确定”', 'info');
+    showToast('请选择确定认识或猜的/不确定', 'info');
     return false;
   }
   return true;
@@ -1410,14 +1618,14 @@ async function submitQuiz() {
   if (!state.quiz) return;
   if (state.submitting) return;
   if (!canLeaveCurrentQuestion()) return;
-  const unanswered = state.answers.indexOf(null);
+  const unanswered = state.quiz.questions.findIndex((question, index) => isMeaningReviewQuestion(question) ? !meaningAnswerValue(index).trim() : state.answers[index] === null);
   if (unanswered !== -1) {
     showToast(`还有第 ${unanswered + 1} 题未作答`, 'info');
     state.currentQuestion = unanswered;
     renderQuestion(unanswered);
     return;
   }
-  const unconfirmed = state.confidences.indexOf(null);
+  const unconfirmed = state.quiz.questions.findIndex((question, index) => !isMeaningReviewQuestion(question) && state.confidences[index] === null);
   if (unconfirmed !== -1) {
     showToast('请确认第 ' + (unconfirmed + 1) + ' 题是“确定认识”还是“猜的 / 不确定”', 'info');
     state.currentQuestion = unconfirmed;
@@ -1435,7 +1643,28 @@ async function submitQuiz() {
       const letters = ['A','B','C','D'];
       let correct = 0;
       const results = questions.map((q, i) => {
-        const yourIdx = state.answers[i];
+        const answer = state.answers[i];
+        if (isMeaningReviewQuestion(q)) {
+          const yourText = String(answer ?? '').trim();
+          const expected = q.correctMeaning || '';
+          const normalizedYour = yourText.replace(/[\s，,。；;、]/g, '');
+          const normalizedExpected = expected.replace(/[\s，,。；;、]/g, '');
+          const isCorrect = Boolean(normalizedYour) && (
+            normalizedYour.includes(normalizedExpected) ||
+            normalizedExpected.includes(normalizedYour)
+          );
+          if (isCorrect) correct++;
+          return {
+            q: i+1,
+            word: q.word,
+            recordId: q.recordId || q.word,
+            your: yourText,
+            answer: expected,
+            correct: isCorrect,
+            confidence: ''
+          };
+        }
+        const yourIdx = answer;
         const yourLetter = yourIdx !== null && yourIdx !== undefined ? letters[yourIdx] : null;
         const isCorrect = yourLetter === q.answer;
         if (isCorrect) correct++;
@@ -1465,10 +1694,9 @@ async function submitQuiz() {
         method: 'POST',
         body: JSON.stringify({
           user: state.user,
-          answers: state.answers.map((option, i) => ({
-            option,
-            confidence: state.confidences[i]
-          }))
+          answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
+            ? { text: String(answer ?? '').trim() }
+            : { option: answer, confidence: state.confidences[i] })
         })
       });
     } else {
@@ -1477,10 +1705,9 @@ async function submitQuiz() {
         body: JSON.stringify({
           user: state.user,
           testId: state.quiz.testId,
-          answers: state.answers.map((option, i) => ({
-            option,
-            confidence: state.confidences[i]
-          }))
+          answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
+            ? { text: String(answer ?? '').trim() }
+            : { option: answer, confidence: state.confidences[i] })
         })
       });
     }
@@ -1720,29 +1947,15 @@ function generateDemoReviewQuiz() {
     wrongWords.has(question.word) || wrongWords.has(question.recordId)
   );
   const questions = sourceQuestions.map(source => {
-    const info = DEMO_WORDS.find(word => word.word === source.word);
-    const type = source.type === 1 ? 2 : 1;
-    const oldOptions = new Set(source.options.map(option =>
-      option.replace(/^[A-D]\.\s*/, '')
-    ));
-    const distractors = shuffle(DEMO_WORDS.filter(word =>
-      word.word !== source.word && !oldOptions.has(word.word)
-    )).slice(0, 3);
-    const options = shuffle([info, ...distractors]);
-    const letters = ['A', 'B', 'C', 'D'];
-    const answer = letters[options.findIndex(option => option.word === source.word)];
-    let context = type === 1
-      ? `A careful learner can _____ this word in a fresh sentence.`
-      : info.meaning;
+    const info = DEMO_WORDS.find(word => word.word === source.word) || {};
     return {
-      type,
+      type: 4,
+      answerMode: 'cn_meaning',
       word: source.word,
       recordId: source.recordId || source.word,
-      context,
-      options: options.map((option, index) => `${letters[index]}. ${option.word}`),
-      optionMeanings: options.map(option => option.cn),
-      answer,
-      correctMeaning: info.cn,
+      context: '',
+      options: [],
+      correctMeaning: info.cn || '',
     };
   });
   return {

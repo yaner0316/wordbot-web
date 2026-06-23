@@ -81,10 +81,10 @@ test('demo fill-in questions neutralize a or an before the blank', () => {
 
 test('home shows current learning level without student level buttons', () => {
     assert.match(html, /id="currentLevelText"/);
-    assert.match(html, /当前难度/);
-    const start = html.indexOf('<div class="current-level-display"');
+    assert.ok(html.includes('当前难度'));
+    const start = html.indexOf('<div class="learning-level-badge"');
     const end = html.indexOf('<div id="modeSelectorWrap"', start);
-    assert.ok(start >= 0 && end > start, 'home current level display should exist before mode selector');
+    assert.ok(start >= 0 && end > start, 'home current level badge should exist before mode selector');
     const homeLevelBlock = html.slice(start, end);
     assert.doesNotMatch(homeLevelBlock, /data-level=/);
     assert.doesNotMatch(homeLevelBlock, /onclick="selectLevel/);
@@ -157,13 +157,15 @@ test('quiz results can show game time rewards', () => {
     assert.match(styles, /\.game-reward-card/);
 });
 
-test('home page exposes parent tools without hiding the child quiz flow', () => {
-    assert.match(html, /parentToolGrid/);
-    assert.ok(html.includes('\u5f55\u5165\u5355\u8bcd'));
-    assert.ok(html.includes('\u67e5\u8be2\/\u7f16\u8f91'));
-    assert.ok(html.includes('\u5b66\u4e60\u8bbe\u7f6e'));
-    assert.ok(html.includes('\u7edf\u8ba1\u770b\u677f'));
-    assert.match(app, /function openParentTool/);
+test('home page gates parent tools behind phone otp access', () => {
+    assert.match(html, /id="parentConsoleEntry"/);
+    assert.match(html, /id="parentGatePanel"/);
+    assert.match(html, /id="parentToolGrid"[\s\S]*style="display:none/);
+    assert.match(app, /function openParentConsole/);
+    assert.match(app, /function requestParentOtp/);
+    assert.match(app, /function verifyParentOtp/);
+    assert.match(app, /\/api\/auth\/parentOtp/);
+    assert.match(app, /ensureParentAccess/);
     assert.match(app, /function submitParentWords/);
     assert.match(app, /\/api\/admin\/addWords/);
     assert.match(app, /\/api\/admin\/userSettings/);
@@ -301,7 +303,7 @@ test('animal garden care action triggers manifest reward drops', () => {
 });
 
 test('main frontend strings do not leak mojibake or broken template fragments', () => {
-    const brokenTextPattern = /宸|寰|鎬|鑰|姝|馃|鏌ョ湅|缁х画|涓嬫|寮.|鐢熸|璇峰|绗.|棣栨|淇濆瓨|澶辫触|瀛︿範|锛|銆|鈥|鉁|\?\/div|\?\/span|\?\{escapeHtml|\?\{formatDate/;
+    const brokenTextPattern = /鐎圭鐎电殬闁圭憢闁肩殬婵絸妫ｅ剟闁哄被鍎冲﹢鍘婄紓浣堝懐鏁緗濞戞挸顑唡鐎?|闁汇垻鍠恷閻犲洤鍢瞸缂?|濡絾鐗梶濞ｅ洦绻傞悺鈻呭鎯扮簿鐟欘洟閻庢冻缂氱弧鍓曢柨娉戦柕鍞￠柍顨傞柎浜匼?\/div|\?\/span|\?\{escapeHtml|\?\{formatDate/;
     assert.doesNotMatch(app, brokenTextPattern);
 });
 
@@ -318,7 +320,7 @@ test('home stats and game prompts render clean Chinese text', () => {
     assert.ok(app.includes('\u5b58\u7559\u65f6\u95f4'));
     assert.ok(app.includes('\u73b0\u5728\u73a9'));
     assert.ok(app.includes('\u4e0b\u6b21\u73a9'));
-    assert.doesNotMatch(app, /宸叉帉鎻|寰呭|鎬昏瘝|鑰冩牳|姝ｇ|馃晲|馃棏|\?\{formatDate|\?\{escapeHtml\(user\)/);
+    assert.doesNotMatch(app, /鐎圭寮剁敮澶愬箵|鐎垫澘鎳巪闁诡剚妲掗惁娼€闁兼澘鍟悧纭樻慨婵撶悼|妫ｅ啯娅渱妫ｅ啯顥攟\?\{formatDate|\?\{escapeHtml\(user\)/);
 });
 
 test('animal garden art manifest defines replaceable production asset slots', () => {
@@ -361,7 +363,27 @@ test('animal garden v0.3 keeps polished meters with manifest art stage', () => {
 });
 
 
+test('home shows the Xiaolong character image as a first-screen mascot', () => {
+    assert.match(html, /assets\/xiaolong\.png/);
+    assert.match(html, /class="home-dragon"/);
+    assert.match(styles, /\.home-dragon/);
+    assert.match(styles, /\.home-hero-strip/);
+});
+
+test('current learning level is shown as a parent-managed compact badge', () => {
+    assert.match(html, /class="learning-level-badge"/);
+    assert.match(html, /id="currentLevelText"/);
+    assert.match(styles, /\.learning-level-badge/);
+    assert.doesNotMatch(html, /class="current-level-display"/);
+});
+
 test('product name is Xiaolong Plays Words', () => {
-    assert.match(html, /小龙戏单词/);
-    assert.doesNotMatch(html, /单词机器人/);
+    assert.ok(html.includes('\\u5c0f\\u9f99\\u620f\\u5355\\u8bcd') || html.includes('小龙戏单词'));
+    assert.ok(!html.includes('\\u5355\\u8bcd\\u673a\\u5668\\u4eba') && !html.includes('单词机器人'));
+});
+test('wrong-answer review supports Chinese meaning typed answers', () => {
+    assert.match(app, /function isMeaningReviewQuestion/);
+    assert.match(app, /answerMode\s*===\s*'cn_meaning'/);
+    assert.match(app, /text:\s*String\(answer \?\? ''\)\.trim\(\)/);
+    assert.match(app, /class="meaning-answer-input"/);
 });

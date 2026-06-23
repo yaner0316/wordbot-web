@@ -40,12 +40,21 @@
           <button class="auth-tab" id="registerTab" onclick="setAuthMode('register')">注册</button>
         </div>
 
+        <div class="auth-method-row" id="authMethodWrap">
+          <button class="auth-method active" id="authPasswordMethod" type="button" onclick="setAuthLoginMethod('password')">密码登录</button>
+          <button class="auth-method" id="authOtpMethod" type="button" onclick="setAuthLoginMethod('otp')">手机验证码</button>
+        </div>
+
         <div class="auth-form">
-          <label>
-            <span>用户名</span>
-            <input type="text" id="authUsername" autocomplete="username" placeholder="例如 yusi" />
+          <label id="authUsernameWrap">
+            <span id="authIdentifierLabel">用户名/手机号</span>
+            <input type="text" id="authUsername" autocomplete="username" placeholder="用户名或手机号" />
           </label>
-          <label>
+          <label id="authPhoneWrap" style="display:none;">
+            <span>手机号</span>
+            <input type="tel" id="authPhone" autocomplete="tel" placeholder="请输入手机号" />
+          </label>
+          <label id="authPasswordWrap">
             <span>密码</span>
             <input type="password" id="authPassword" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key==='Enter')submitAuth()" />
           </label>
@@ -53,6 +62,13 @@
             <span>确认密码</span>
             <input type="password" id="authPasswordConfirm" autocomplete="new-password" placeholder="再输入一次密码" onkeydown="if(event.key==='Enter')submitAuth()" />
           </label>
+          <div class="auth-otp-row" id="authOtpWrap" style="display:none;">
+            <label>
+              <span>验证码</span>
+              <input type="text" id="authOtpCode" inputmode="numeric" maxlength="6" placeholder="6 位验证码" onkeydown="if(event.key==='Enter')submitAuth()" />
+            </label>
+            <button class="btn btn-secondary btn-small" type="button" onclick="requestLoginOtp()" id="authOtpButton">获取验证码</button>
+          </div>
           <button class="btn btn-primary" onclick="submitAuth()" id="authSubmitBtn">登录</button>
         </div>
 
@@ -88,11 +104,17 @@
       <button onclick="manualSelectUser()" style="margin-top:8px;background:var(--orange);color:white;border:none;border-radius:20px;padding:8px 24px;font-size:14px;cursor:pointer;">确定</button>
     </div>
 
-    <div class="current-level-display" style="margin:16px auto;text-align:center;max-width:340px;">
-      <span class="current-level-label">当前难度</span>
-      <strong id="currentLevelText">中学</strong>
-      <small>由家长在学习设置中调整</small>
-    </div>
+    <section class="home-hero-strip" aria-label="小龙陪练">
+      <div class="home-hero-copy">
+        <div class="learning-level-badge">
+          <span class="level-lock" aria-hidden="true">🔒</span>
+          <span class="current-level-label">当前难度</span>
+          <strong id="currentLevelText">中学</strong>
+          <small>家长管理</small>
+        </div>
+      </div>
+      <img class="home-dragon" src="assets/xiaolong.png" alt="小龙" />
+    </section>
 
     <div id="modeSelectorWrap" style="margin:10px auto 18px;text-align:center;max-width:340px;">
       <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">数据模式</div>
@@ -107,9 +129,27 @@
       <!-- Filled by JS -->
     </div>
 
-    <section class="parent-tools" aria-label="家长控制台">
-      <div class="section-title">家长控制台</div>
-      <div class="parent-tool-grid" id="parentToolGrid">
+    <section class="parent-console" id="parentConsoleEntry" aria-label="家长控制台入口">
+      <button class="parent-console-button" type="button" onclick="openParentConsole()">
+        <span class="parent-console-icon">⚙</span>
+        <span>家长控制台</span>
+      </button>
+      <div class="parent-gate-panel" id="parentGatePanel" style="display:none;">
+        <div class="parent-panel-head">
+          <strong>家长验证</strong>
+          <button type="button" onclick="closeParentConsole()" aria-label="关闭">×</button>
+        </div>
+        <div class="parent-inline-form">
+          <input id="parentPhoneInput" type="tel" placeholder="家长手机号" />
+          <button class="btn btn-secondary btn-small" type="button" onclick="requestParentOtp()">获取验证码</button>
+        </div>
+        <div class="parent-inline-form">
+          <input id="parentOtpInput" type="text" inputmode="numeric" maxlength="6" placeholder="6 位验证码" onkeydown="if(event.key==='Enter')verifyParentOtp()" />
+          <button class="btn btn-primary btn-small" type="button" onclick="verifyParentOtp()">进入</button>
+        </div>
+        <div class="parent-help" id="parentGateHint">需要使用本账户绑定手机号接收验证码。</div>
+      </div>
+      <div class="parent-tool-grid" id="parentToolGrid" style="display:none;">
         <button class="parent-tool-card" type="button" onclick="openParentTool('addWords')">
           <span class="parent-tool-icon">＋</span>
           <span>录入单词</span>
