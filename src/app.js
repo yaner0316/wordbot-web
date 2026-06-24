@@ -31,6 +31,7 @@ const state = {
   confidences: [],
   users: [],
   learningSettings: null,
+  quizDiagnostics: null,
   submitting: false,
   session: {
     kind: 'quiz',
@@ -223,6 +224,39 @@ function setBankedGameMinutes(minutes, user = state.user) {
   return safeMinutes;
 }
 
+function buildQuizDiagnosticsSummary(quizData) {
+  const diagnostics = quizData?.diagnostics || null;
+  if (!diagnostics) return null;
+  return {
+    source: quizData.source || '',
+    level: diagnostics.level || quizData.level || state.level || '',
+    readyCount: diagnostics.readyCount,
+    requiredCount: diagnostics.requiredCount,
+    fallbackUsed: Boolean(diagnostics.fallbackUsed),
+    cacheReadLatencyMs: diagnostics.cacheReadLatencyMs,
+    liveGenerationLatencyMs: diagnostics.liveGenerationLatencyMs,
+  };
+}
+
+function renderQuizDiagnosticsPanel() {
+  const diagnostics = state.quizDiagnostics;
+  if (!diagnostics) return '';
+  const sourceLabel = diagnostics.source === 'question_cache' ? '预生成题库' : '实时生成';
+  const readyText = diagnostics.readyCount === null || diagnostics.readyCount === undefined
+    ? '未读取'
+    : `${diagnostics.readyCount}/${diagnostics.requiredCount || 10}`;
+  const cacheLatency = diagnostics.cacheReadLatencyMs === null || diagnostics.cacheReadLatencyMs === undefined
+    ? '-'
+    : `${diagnostics.cacheReadLatencyMs}ms`;
+  const liveLatency = diagnostics.liveGenerationLatencyMs === null || diagnostics.liveGenerationLatencyMs === undefined
+    ? '-'
+    : `${diagnostics.liveGenerationLatencyMs}ms`;
+  return `<div class="parent-cache-status quiz-diagnostics-panel">
+    <span>本次出题来源</span>
+    <strong>${escapeHtml(sourceLabel)}</strong>
+    <small>level: ${escapeHtml(diagnostics.level || '-')}；ready: ${escapeHtml(readyText)}；cache: ${escapeHtml(cacheLatency)}；live: ${escapeHtml(liveLatency)}；fallback: ${diagnostics.fallbackUsed ? 'yes' : 'no'}</small>
+  </div>`;
+}
 function addGameRewardToBank(reward, user = state.user) {
   if (!reward?.eligible || !reward.minutes || !user) return getBankedGameMinutes(user);
   return setBankedGameMinutes(getBankedGameMinutes(user) + Number(reward.minutes), user);
@@ -1308,6 +1342,7 @@ async function loadParentLearningSettings() {
         <strong>${escapeHtml(cacheStatus.status || settings.questionCacheStatus || 'unknown')}</strong>
         <small>${cacheStatus.totalQuestions ? '已缓存 ' + escapeHtml(cacheStatus.totalQuestions) + ' 题' : '后端会按学习设置生成题目缓存'}</small>
       </div>
+      ${renderQuizDiagnosticsPanel()}
       <div class="parent-actions-row">
         <button class="btn btn-primary btn-small" type="button" onclick="saveParentLearningSettings()">保存设置</button>
         <button class="btn btn-secondary btn-small" type="button" onclick="rebuildParentQuestionCache()">重建缓存</button>
@@ -1458,6 +1493,7 @@ async function startQuiz() {
       showToast('小学题干还没有准备好，请稍后再试', 'info');
       return;
     }
+    state.quizDiagnostics = buildQuizDiagnosticsSummary(data);
     if (data.warning) showToast(data.warning, 'info');
     state.quiz = data;
     state.currentQuestion = 0;

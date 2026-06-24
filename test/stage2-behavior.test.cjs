@@ -387,3 +387,13 @@ test('wrong-answer review supports Chinese meaning typed answers', () => {
     assert.match(app, /text:\s*String\(answer \?\? ''\)\.trim\(\)/);
     assert.match(app, /class="meaning-answer-input"/);
 });
+
+
+test('quiz diagnostics are kept out of the child quiz flow and shown in parent settings', () => {
+    assert.match(app, /quizDiagnostics:\s*null/);
+    assert.match(app, /state\.quizDiagnostics\s*=\s*buildQuizDiagnosticsSummary\(data\)/);
+    assert.match(app, /function renderQuizDiagnosticsPanel/);
+    assert.match(app, /parentSettingsContent/);
+    assert.match(app, /本次出题来源/);
+    assert.doesNotMatch(app, /id="questionArea"[\s\S]{0,3000}quizDiagnostics/);
+});
