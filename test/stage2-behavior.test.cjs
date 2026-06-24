@@ -397,3 +397,10 @@ test('quiz diagnostics are kept out of the child quiz flow and shown in parent s
     assert.match(app, /本次出题来源/);
     assert.doesNotMatch(app, /id="questionArea"[\s\S]{0,3000}quizDiagnostics/);
 });
+
+test('phone and OTP validation use digit regexes', () => {
+    assert.match(app, /\/\^\\d\{11\}\$\//);
+    assert.match(app, /\/\^\\d\{6\}\$\//);
+    assert.doesNotMatch(app, /\/\^d\{11\}\$\//);
+    assert.doesNotMatch(app, /\/\^d\{6\}\$\//);
+});

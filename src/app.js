@@ -235,6 +235,8 @@ function buildQuizDiagnosticsSummary(quizData) {
     fallbackUsed: Boolean(diagnostics.fallbackUsed),
     cacheReadLatencyMs: diagnostics.cacheReadLatencyMs,
     liveGenerationLatencyMs: diagnostics.liveGenerationLatencyMs,
+    testRecordWriteLatencyMs: diagnostics.testRecordWriteLatencyMs,
+    cacheUsageWriteLatencyMs: diagnostics.cacheUsageWriteLatencyMs,
   };
 }
 
@@ -251,10 +253,16 @@ function renderQuizDiagnosticsPanel() {
   const liveLatency = diagnostics.liveGenerationLatencyMs === null || diagnostics.liveGenerationLatencyMs === undefined
     ? '-'
     : `${diagnostics.liveGenerationLatencyMs}ms`;
+  const testWriteLatency = diagnostics.testRecordWriteLatencyMs === null || diagnostics.testRecordWriteLatencyMs === undefined
+    ? '-'
+    : `${diagnostics.testRecordWriteLatencyMs}ms`;
+  const cacheWriteLatency = diagnostics.cacheUsageWriteLatencyMs === null || diagnostics.cacheUsageWriteLatencyMs === undefined
+    ? '-'
+    : `${diagnostics.cacheUsageWriteLatencyMs}ms`;
   return `<div class="parent-cache-status quiz-diagnostics-panel">
     <span>本次出题来源</span>
     <strong>${escapeHtml(sourceLabel)}</strong>
-    <small>level: ${escapeHtml(diagnostics.level || '-')}；ready: ${escapeHtml(readyText)}；cache: ${escapeHtml(cacheLatency)}；live: ${escapeHtml(liveLatency)}；fallback: ${diagnostics.fallbackUsed ? 'yes' : 'no'}</small>
+    <small>level: ${escapeHtml(diagnostics.level || '-')}；ready: ${escapeHtml(readyText)}；cache: ${escapeHtml(cacheLatency)}；testWrite: ${escapeHtml(testWriteLatency)}；cacheWrite: ${escapeHtml(cacheWriteLatency)}；live: ${escapeHtml(liveLatency)}；fallback: ${diagnostics.fallbackUsed ? 'yes' : 'no'}</small>
   </div>`;
 }
 function addGameRewardToBank(reward, user = state.user) {
@@ -731,7 +739,7 @@ function handleUnregisteredPasswordLogin(error) {
 
 async function requestLoginOtp() {
   const phone = normalizePhone(authPhone.value);
-  if (!/^d{11}$/.test(phone)) {
+  if (!/^\d{11}$/.test(phone)) {
     showToast('请输入正确的手机号', 'error');
     return;
   }
@@ -762,12 +770,12 @@ async function submitAuth() {
 
   if (state.authMode === 'register') {
     if (!username) { showToast('请输入用户名', 'error'); return; }
-    if (!/^d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
+    if (!/^\d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
     if (!password || password.length < 4) { showToast('密码至少需要 4 位', 'error'); return; }
     if (password !== confirm) { showToast('两次输入的密码不一致', 'error'); return; }
   } else if (state.authLoginMethod === 'otp') {
-    if (!/^d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
-    if (!/^d{6}$/.test(otp)) { showToast('请输入 6 位验证码', 'error'); return; }
+    if (!/^\d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
+    if (!/^\d{6}$/.test(otp)) { showToast('请输入 6 位验证码', 'error'); return; }
   } else {
     if (!username) { showToast('请输入用户名或手机号', 'error'); return; }
     if (!password || password.length < 4) { showToast('密码至少需要 4 位', 'error'); return; }
@@ -1112,7 +1120,7 @@ function ensureParentAccess() {
 
 async function requestParentOtp() {
   const phone = normalizePhone($('parentPhoneInput')?.value);
-  if (!/^d{11}$/.test(phone)) {
+  if (!/^\d{11}$/.test(phone)) {
     showToast('请输入正确的手机号', 'error');
     return;
   }
@@ -1139,7 +1147,7 @@ async function requestParentOtp() {
 async function verifyParentOtp() {
   const phone = normalizePhone($('parentPhoneInput')?.value);
   const otp = $('parentOtpInput')?.value.trim() || '';
-  if (!/^d{11}$/.test(phone) || !/^d{6}$/.test(otp)) {
+  if (!/^\d{11}$/.test(phone) || !/^\d{6}$/.test(otp)) {
     showToast('请输入手机号和 6 位验证码', 'error');
     return;
   }
