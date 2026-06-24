@@ -1114,52 +1114,28 @@ function closeParentConsole() {
 function ensureParentAccess() {
   if (state.parentAccess) return true;
   openParentConsole();
-  showToast('请先完成家长手机号验证', 'info');
+  showToast('请先完成家长手机号和密码验证', 'info');
   return false;
 }
 
-async function requestParentOtp() {
+async function verifyParentPassword() {
   const phone = normalizePhone($('parentPhoneInput')?.value);
-  if (!/^\d{11}$/.test(phone)) {
-    showToast('请输入正确的手机号', 'error');
-    return;
-  }
-  showLoading('正在发送验证码...');
-  try {
-    const data = DEMO_MODE
-      ? { sent: true, devOtp: '123456' }
-      : await api('/api/auth/requestOtp', {
-          method: 'POST',
-          body: JSON.stringify({ phone, purpose: 'parent', user: state.user })
-        });
-    if (data.devOtp && $('parentOtpInput')) {
-      $('parentOtpInput').value = data.devOtp;
-      $('parentGateHint').textContent = '本地预览验证码：' + data.devOtp;
-    }
-    showToast('验证码已发送', 'success');
-  } catch (error) {
-    showToast('发送验证码失败: ' + normalizeApiError(error).message, 'error');
-  } finally {
-    hideLoading();
-  }
-}
-
-async function verifyParentOtp() {
-  const phone = normalizePhone($('parentPhoneInput')?.value);
-  const otp = $('parentOtpInput')?.value.trim() || '';
-  if (!/^\d{11}$/.test(phone) || !/^\d{6}$/.test(otp)) {
-    showToast('请输入手机号和 6 位验证码', 'error');
+  const password = $('parentPasswordInput')?.value || '';
+  if (!/^\d{11}$/.test(phone) || !password) {
+    showToast('请输入手机号和登录密码', 'error');
     return;
   }
   showLoading('正在验证...');
   try {
     const data = DEMO_MODE
-      ? { ok: otp === '123456', user: state.user }
-      : await api('/api/auth/parentOtp', {
+      ? { user: state.user }
+      : await api('/api/auth/login', {
           method: 'POST',
-          body: JSON.stringify({ user: state.user, phone, otp })
+          body: JSON.stringify({ identifier: phone, password })
         });
-    if (!data.ok) throw new Error('验证码错误或已过期');
+    if (normalizeUsername(data.user) !== normalizeUsername(state.user)) {
+      throw new Error('手机号不属于当前账户');
+    }
     state.parentAccess = true;
     showParentTools();
     showToast('已进入家长控制台', 'success');
@@ -1169,7 +1145,6 @@ async function verifyParentOtp() {
     hideLoading();
   }
 }
-
 function openParentTool(tool) {
   if (!state.user) {
     showToast('请先登录用户', 'error');

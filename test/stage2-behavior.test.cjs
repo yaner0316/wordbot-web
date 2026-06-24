@@ -157,14 +157,14 @@ test('quiz results can show game time rewards', () => {
     assert.match(styles, /\.game-reward-card/);
 });
 
-test('home page gates parent tools behind phone otp access', () => {
+test('home page gates parent tools behind phone password access', () => {
     assert.match(html, /id="parentConsoleEntry"/);
     assert.match(html, /id="parentGatePanel"/);
     assert.match(html, /id="parentToolGrid"[\s\S]*style="display:none/);
     assert.match(app, /function openParentConsole/);
-    assert.match(app, /function requestParentOtp/);
-    assert.match(app, /function verifyParentOtp/);
-    assert.match(app, /\/api\/auth\/parentOtp/);
+    assert.match(html, /id="parentPasswordInput"/);
+    assert.match(app, /function verifyParentPassword/);
+    assert.match(app, /\/api\/auth\/login/);
     assert.match(app, /ensureParentAccess/);
     assert.match(app, /function submitParentWords/);
     assert.match(app, /\/api\/admin\/addWords/);
@@ -403,4 +403,13 @@ test('phone and OTP validation use digit regexes', () => {
     assert.match(app, /\/\^\\d\{6\}\$\//);
     assert.doesNotMatch(app, /\/\^d\{11\}\$\//);
     assert.doesNotMatch(app, /\/\^d\{6\}\$\//);
+});
+
+test('parent console uses phone and password before SMS is integrated', () => {
+    assert.match(html, /id="parentPasswordInput"/);
+    assert.match(app, /function verifyParentPassword/);
+    assert.match(app, /\/api\/auth\/login/);
+    assert.doesNotMatch(html, /id="parentOtpInput"/);
+    assert.doesNotMatch(app, /requestParentOtp/);
+    assert.doesNotMatch(app, /\/api\/auth\/parentOtp/);
 });
