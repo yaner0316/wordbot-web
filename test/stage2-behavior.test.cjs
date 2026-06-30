@@ -185,6 +185,16 @@ test('learning settings save refreshes cache status after background rebuild sta
     assert.match(saveSettingsMatch[0], /loadParentLearningSettings\(\)/);
 });
 
+test('learning settings save keeps the API response in scope for state sync', () => {
+    const start = app.indexOf('async function saveParentLearningSettings()');
+    const end = app.indexOf('async function rebuildParentQuestionCache()', start);
+    assert.ok(start >= 0 && end > start, 'saveParentLearningSettings function should exist');
+    const saveSettingsSource = app.slice(start, end);
+    assert.match(saveSettingsSource, /let\s+data\s*=/);
+    assert.doesNotMatch(saveSettingsSource, /if\s*\(!DEMO_MODE\)\s*\{[\s\S]*const\s+data\s*=/);
+    assert.match(saveSettingsSource, /state\.learningSettings\s*=\s*data\?\.settings/);
+});
+
 test('frontend syncs learning level from server settings', () => {
     assert.match(app, /async function syncLearningSettingsFromServer\(user/);
     assert.match(app, /\/api\/admin\/userSettings\?userId=/);
@@ -206,13 +216,15 @@ test('learning level changes are saved only from parent settings', () => {
     assert.ok(saveSettingsSource.includes("questionCacheStatus === 'building'"));
 });
 
-test('elementary quizzes do not show unprepared or unadapted live fallback questions', () => {
+test('quizzes wait for the selected level cache before live generation fallback', () => {
     const startQuizMatch = app.match(/async function startQuiz\(\) \{[\s\S]*?\n\}/);
     assert.ok(startQuizMatch, 'startQuiz function should exist');
-    assert.match(app, /function isElementaryCacheReady\(status/);
+    assert.match(app, /function isLevelCacheReady\(status,\s*level/);
+    assert.match(app, /async function ensureLevelCacheReadyForQuiz\(user,\s*level/);
     assert.match(app, /questionCache\/status/);
-    assert.match(startQuizMatch[0], /ensureElementaryCacheReadyForQuiz\(state\.user,\s*state\.level\)/);
-    assert.match(startQuizMatch[0], /data\.level\s*===\s*'小学'\s*&&\s*data\.difficultyApplied\s*===\s*false/);
+    assert.match(startQuizMatch[0], /ensureLevelCacheReadyForQuiz\(state\.user,\s*state\.level\)/);
+    assert.doesNotMatch(startQuizMatch[0], /ensureElementaryCacheReadyForQuiz/);
+    assert.match(startQuizMatch[0], /data\.level\s*===\s*state\.level\s*&&\s*data\.difficultyApplied\s*===\s*false/);
     assert.match(startQuizMatch[0], /return/);
 });
 

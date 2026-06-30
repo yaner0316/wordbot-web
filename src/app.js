@@ -914,20 +914,28 @@ async function syncLearningSettingsFromServer(user, { silent = true } = {}) {
   }
 }
 
-function isElementaryLevel(level) {
-  return level === '小学';
+function getLevelCacheStatus(status, level = state.level) {
+  return status?.byLevel?.[level] || {};
 }
 
-function isElementaryCacheReady(status, level = state.level) {
-  if (!isElementaryLevel(level)) return true;
-  const levelStatus = status?.byLevel?.[level];
-  return Number(levelStatus?.ready || 0) >= 10;
+function getLevelCacheReadyCount(status, level = state.level) {
+  return Number(getLevelCacheStatus(status, level)?.ready || 0);
 }
 
-async function ensureElementaryCacheReadyForQuiz(user, level) {
-  if (!isElementaryLevel(level) || DEMO_MODE) return true;
+function isLevelCacheReady(status, level = state.level, requiredCount = 10) {
+  if (!status?.configured) return true;
+  return getLevelCacheReadyCount(status, level) >= requiredCount;
+}
+
+async function ensureLevelCacheReadyForQuiz(user, level) {
+  if (DEMO_MODE) return true;
   const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
-  return isElementaryCacheReady(data.status, level);
+  const status = data.status || {};
+  const requiredCount = 10;
+  if (isLevelCacheReady(status, level, requiredCount)) return true;
+  const readyCount = getLevelCacheReadyCount(status, level);
+  showToast(`${level}\u9898\u5e93\u51c6\u5907\u4e2d\uff08${readyCount}/${requiredCount}\uff09\uff0c\u8bf7\u5728\u5bb6\u957f\u63a7\u5236\u53f0\u91cd\u5efa\u7f13\u5b58\u540e\u7a0d\u540e\u518d\u8bd5`, 'info');
+  return false;
 }
 
 function activeReviewKey(user) {
@@ -1338,20 +1346,27 @@ async function loadParentLearningSettings() {
 
 async function saveParentLearningSettings() {
   const learningLevel = $('parentLearningLevel')?.value || state.level;
-  showLoading('正在保存设置...');
+  showLoading('\u6b63\u5728\u4fdd\u5b58\u8bbe\u7f6e...');
   try {
+    let data = {
+      settings: {
+        ...(state.learningSettings || {}),
+        learningLevel,
+        questionCacheStatus: 'ready',
+      },
+    };
     if (!DEMO_MODE) {
-      const data = await api('/api/admin/userSettings', {
+      data = await api('/api/admin/userSettings', {
         method: 'PUT',
         body: JSON.stringify({ userId: state.user, learningLevel })
       });
       if (data?.settings?.questionCacheStatus === 'building') {
-        showToast('学习难度已保存，新难度题库准备中…', 'success');
+        showToast('\u5b66\u4e60\u96be\u5ea6\u5df2\u4fdd\u5b58\uff0c\u65b0\u96be\u5ea6\u9898\u5e93\u51c6\u5907\u4e2d\u2026', 'success');
       } else {
-        showToast('学习设置已保存', 'success');
+        showToast('\u5b66\u4e60\u8bbe\u7f6e\u5df2\u4fdd\u5b58', 'success');
       }
     } else {
-      showToast('学习设置已保存', 'success');
+      showToast('\u5b66\u4e60\u8bbe\u7f6e\u5df2\u4fdd\u5b58', 'success');
     }
     state.learningSettings = data?.settings || state.learningSettings;
     state.level = state.learningSettings?.learningLevel || learningLevel;
@@ -1359,7 +1374,7 @@ async function saveParentLearningSettings() {
     updateLevelButtons();
     loadParentLearningSettings();
   } catch (error) {
-    showToast('保存失败: ' + normalizeApiError(error).message, 'error');
+    showToast('\u4fdd\u5b58\u5931\u8d25: ' + normalizeApiError(error).message, 'error');
   } finally {
     hideLoading();
   }
@@ -1463,8 +1478,7 @@ async function startQuiz() {
       return;
     }
     await syncLearningSettingsFromServer(state.user);
-    if (!(await ensureElementaryCacheReadyForQuiz(state.user, state.level))) {
-      showToast('小学题库准备中，请稍后再试', 'info');
+    if (!(await ensureLevelCacheReadyForQuiz(state.user, state.level))) {
       return;
     }
     const data = await api('/api/quiz', {
@@ -1472,8 +1486,8 @@ async function startQuiz() {
       timeoutMs: 70000,
       body: JSON.stringify({ user: state.user, level: state.level, mode: state.mode })
     });
-    if (data.level === '小学' && data.difficultyApplied === false) {
-      showToast('小学题干还没有准备好，请稍后再试', 'info');
+    if (data.level === state.level && data.difficultyApplied === false) {
+      showToast(`${state.level}\u9898\u5e72\u8fd8\u6ca1\u6709\u51c6\u5907\u597d\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5`, 'info');
       return;
     }
     state.quizDiagnostics = buildQuizDiagnosticsSummary(data);
