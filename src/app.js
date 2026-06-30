@@ -932,6 +932,20 @@ function isLevelCacheReady(status, level = state.level, requiredCount = 10) {
   return getLevelCacheReadyCount(status, level) >= requiredCount;
 }
 
+async function requestQuestionCacheRebuild(user) {
+  if (DEMO_MODE || !user) return null;
+  try {
+    return await api('/api/admin/questionCache/rebuild', {
+      method: 'POST',
+      timeoutMs: 90000,
+      body: JSON.stringify({ userId: user })
+    });
+  } catch (error) {
+    console.warn('question cache rebuild trigger failed', error);
+    return null;
+  }
+}
+
 async function ensureLevelCacheReadyForQuiz(user, level) {
   if (DEMO_MODE) return true;
   const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
@@ -939,7 +953,8 @@ async function ensureLevelCacheReadyForQuiz(user, level) {
   const requiredCount = 10;
   if (isLevelCacheReady(status, level, requiredCount)) return true;
   const readyCount = getLevelCacheReadyCount(status, level);
-  showToast(`${formatLearningLevel(level)}\u9898\u5e93\u51c6\u5907\u4e2d\uff08${readyCount}/${requiredCount}\uff09\uff0c\u8bf7\u5728\u5bb6\u957f\u63a7\u5236\u53f0\u91cd\u5efa\u7f13\u5b58\u540e\u7a0d\u540e\u518d\u8bd5`, 'info');
+  requestQuestionCacheRebuild(user);
+  showToast(`${formatLearningLevel(level)}\u9898\u5e93\u6b63\u5728\u81ea\u52a8\u51c6\u5907\u4e2d\uff08${readyCount}/${requiredCount}\uff09\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5`, 'info');
   return false;
 }
 
@@ -1366,7 +1381,8 @@ async function saveParentLearningSettings() {
         body: JSON.stringify({ userId: state.user, learningLevel })
       });
       if (data?.settings?.questionCacheStatus === 'building') {
-        showToast('\u5b66\u4e60\u96be\u5ea6\u5df2\u4fdd\u5b58\uff0c\u65b0\u96be\u5ea6\u9898\u5e93\u51c6\u5907\u4e2d\u2026', 'success');
+        requestQuestionCacheRebuild(state.user);
+        showToast('\u5b66\u4e60\u96be\u5ea6\u5df2\u4fdd\u5b58\uff0c\u65b0\u96be\u5ea6\u9898\u5e93\u6b63\u5728\u81ea\u52a8\u51c6\u5907\u4e2d\u2026', 'success');
       } else {
         showToast('\u5b66\u4e60\u8bbe\u7f6e\u5df2\u4fdd\u5b58', 'success');
       }

@@ -189,6 +189,15 @@ test('home load skips the unused all-users request for faster startup', () => {
     assert.match(loadHomeMatch[0], /loadStats\(state\.user\)/);
 });
 
+test('learning settings save asks the backend to keep rebuilding automatically', () => {
+    const start = app.indexOf('async function saveParentLearningSettings()');
+    const end = app.indexOf('async function rebuildParentQuestionCache()', start);
+    assert.ok(start >= 0 && end > start, 'saveParentLearningSettings function should exist');
+    const saveSettingsSource = app.slice(start, end);
+    assert.match(saveSettingsSource, /questionCacheStatus\s*===\s*'building'/);
+    assert.match(saveSettingsSource, /requestQuestionCacheRebuild\(state\.user\)/);
+});
+
 test('learning settings save refreshes cache status after background rebuild starts', () => {
     const saveSettingsMatch = app.match(/async function saveParentLearningSettings\(\) \{[\s\S]*?\n\}/);
     assert.ok(saveSettingsMatch, 'saveParentLearningSettings function should exist');
@@ -233,6 +242,9 @@ test('quizzes wait for the selected level cache before live generation fallback'
     assert.match(app, /function isLevelCacheReady\(status,\s*level/);
     assert.match(app, /async function ensureLevelCacheReadyForQuiz\(user,\s*level/);
     assert.match(app, /questionCache\/status/);
+    assert.match(app, /function requestQuestionCacheRebuild\(user\)/);
+    assert.match(app, /questionCache\/rebuild/);
+    assert.match(app, /requestQuestionCacheRebuild\(user\)/);
     assert.match(startQuizMatch[0], /ensureLevelCacheReadyForQuiz\(state\.user,\s*state\.level\)/);
     assert.doesNotMatch(startQuizMatch[0], /ensureElementaryCacheReadyForQuiz/);
     assert.match(startQuizMatch[0], /data\.level\s*===\s*state\.level\s*&&\s*data\.difficultyApplied\s*===\s*false/);
