@@ -11,6 +11,11 @@ const {
   getResultActions,
 } = WordBotReviewFlow;
 const DEFAULT_LEVEL = '中学';
+const LEVEL_LABELS = { '中学': '初中' };
+
+function formatLearningLevel(level) {
+  return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
+}
 const SESSION_USER_KEY = 'wordbot:session-user';
 const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
 const GAME_TIME_BANK_KEY_PREFIX = 'wordbot:game-time-bank:';
@@ -229,7 +234,7 @@ function buildQuizDiagnosticsSummary(quizData) {
   if (!diagnostics) return null;
   return {
     source: quizData.source || '',
-    level: diagnostics.level || quizData.level || state.level || '',
+    level: formatLearningLevel(diagnostics.level || quizData.level || state.level || ''),
     readyCount: diagnostics.readyCount,
     requiredCount: diagnostics.requiredCount,
     fallbackUsed: Boolean(diagnostics.fallbackUsed),
@@ -934,7 +939,7 @@ async function ensureLevelCacheReadyForQuiz(user, level) {
   const requiredCount = 10;
   if (isLevelCacheReady(status, level, requiredCount)) return true;
   const readyCount = getLevelCacheReadyCount(status, level);
-  showToast(`${level}\u9898\u5e93\u51c6\u5907\u4e2d\uff08${readyCount}/${requiredCount}\uff09\uff0c\u8bf7\u5728\u5bb6\u957f\u63a7\u5236\u53f0\u91cd\u5efa\u7f13\u5b58\u540e\u7a0d\u540e\u518d\u8bd5`, 'info');
+  showToast(`${formatLearningLevel(level)}\u9898\u5e93\u51c6\u5907\u4e2d\uff08${readyCount}/${requiredCount}\uff09\uff0c\u8bf7\u5728\u5bb6\u957f\u63a7\u5236\u53f0\u91cd\u5efa\u7f13\u5b58\u540e\u7a0d\u540e\u518d\u8bd5`, 'info');
   return false;
 }
 
@@ -984,7 +989,7 @@ function restoreActiveReview(user) {
 
 function updateLevelButtons() {
   const currentLevelText = $('currentLevelText');
-  if (currentLevelText) currentLevelText.textContent = state.level || DEFAULT_LEVEL;
+  if (currentLevelText) currentLevelText.textContent = formatLearningLevel(state.level || DEFAULT_LEVEL);
   document.querySelectorAll('.level-btn[data-level]').forEach(button => {
     button.classList.toggle('level-active', button.dataset.level === state.level);
   });
@@ -1325,7 +1330,7 @@ async function loadParentLearningSettings() {
       <label class="parent-field">
         <span>题干语言难度</span>
         <select id="parentLearningLevel">
-          ${['小学','中学','高中','CET4_6_TOEFL'].map(level => `<option value="${level}" ${level === currentLevel ? 'selected' : ''}>${level}</option>`).join('')}
+          ${['小学','中学','高中','CET4_6_TOEFL'].map(level => `<option value="${level}" ${level === currentLevel ? 'selected' : ''}>${formatLearningLevel(level)}</option>`).join('')}
         </select>
       </label>
       <div class="parent-cache-status">
@@ -1487,7 +1492,7 @@ async function startQuiz() {
       body: JSON.stringify({ user: state.user, level: state.level, mode: state.mode })
     });
     if (data.level === state.level && data.difficultyApplied === false) {
-      showToast(`${state.level}\u9898\u5e72\u8fd8\u6ca1\u6709\u51c6\u5907\u597d\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5`, 'info');
+      showToast(`${formatLearningLevel(state.level)}\u9898\u5e72\u8fd8\u6ca1\u6709\u51c6\u5907\u597d\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5`, 'info');
       return;
     }
     state.quizDiagnostics = buildQuizDiagnosticsSummary(data);

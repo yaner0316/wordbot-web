@@ -67,6 +67,17 @@ test('difficulty preference is stored per user and defaults to middle school', (
     assert.match(app, /localStorage\.setItem/);
 });
 
+test('middle school is displayed as junior high while keeping the cache key stable', () => {
+    const middleLevel = String.fromCharCode(0x4e2d, 0x5b66);
+    const juniorLevel = String.fromCharCode(0x521d, 0x4e2d);
+    assert.ok(app.includes(`const DEFAULT_LEVEL = '${middleLevel}'`));
+    assert.ok(app.includes(`const LEVEL_LABELS = { '${middleLevel}': '${juniorLevel}' };`));
+    assert.match(app, /function formatLearningLevel\(level\)/);
+    assert.ok(html.includes(`id="currentLevelText">${juniorLevel}<`));
+    assert.match(app, /value="\$\{level\}"[\s\S]*formatLearningLevel\(level\)/);
+    assert.doesNotMatch(app, /body: JSON\.stringify\(\{ userId: state\.user, learningLevel: formatLearningLevel/);
+});
+
 test('demo quiz generation applies the selected question-language level', () => {
     assert.match(app, /function generateDemoQuiz\(level\)/);
     assert.match(quizLogic, /function adaptDemoContextByLevel/);
