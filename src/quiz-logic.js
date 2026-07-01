@@ -60,8 +60,11 @@
     let reason = '';
     if (question.type === 1) {
       const completedSentence = question.context.replace(/_____/g, correctWord);
+      const cnLine = question.contextCN
+        ? `<div class="detail-line" style="margin-top:2px;color:#666;">${escape(question.contextCN)}</div>`
+        : '';
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>完整句子：</strong>${escape(completedSentence)}</div>
-        <div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>空格处需要 "${escape(correctWord)}"，代入后句意完整，并与句中其余信息形成合理语义关系。</div>`;
+        ${cnLine}<div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>空格处需要 "${escape(correctWord)}"，代入后句意完整，并与句中其余信息形成合理语义关系。</div>`;
     } else if (question.type === 2) {
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>英文释义 "${escape(question.context)}" 直接描述了 "${escape(correctWord)}" 的核心含义。</div>`;
     } else if (question.type === 3) {
