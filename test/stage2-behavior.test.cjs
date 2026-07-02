@@ -118,9 +118,9 @@ test('api helper rejects non-success HTTP responses', () => {
     assert.match(app, /error\.code\s*=\s*data\.code/);
 });
 
-test('user buttons are created with DOM APIs instead of inline onclick HTML', () => {
-    assert.match(app, /document\.createElement\('button'\)/);
-    assert.match(app, /addEventListener\('click'/);
+test('current user card keeps logout in the single global header action', () => {
+    assert.match(app, /card\.append\(avatar, text\);/);
+    assert.doesNotMatch(app, /logoutButton/);
     assert.doesNotMatch(html, /onclick="selectUser\('\$\{u\}'\)"/);
 });
 
@@ -359,7 +359,9 @@ test('main frontend strings do not leak mojibake or broken template fragments', 
 test('home stats and game prompts render clean Chinese text', () => {
     assert.ok(app.includes("const DEFAULT_LEVEL = '\u4e2d\u5b66'"));
     assert.ok(app.includes('\u5df2\u638c\u63e1'));
-    assert.ok(app.includes('\u5f85\u590d\u4e60'));
+    assert.ok(app.includes('\u5de9\u56fa\u4e2d'));
+    assert.ok(app.includes('\u5df2\u8ba4\u8bc6'));
+    assert.ok(app.includes('\u672a\u5f00\u59cb'));
     assert.ok(app.includes('\u603b\u8bcd\u6c47'));
     assert.ok(app.includes('\u8003\u6838\u6b21\u6570'));
     assert.ok(app.includes('\u6b63\u786e\u7387'));
@@ -460,4 +462,11 @@ test('parent console uses child-scoped parent username and password', () => {
     assert.match(app, /verifyParentPassword/);
     assert.ok(app.includes('/api/auth/parent/login'));
     assert.ok(!app.includes('/api/auth/parentOtp'));
+});
+test('parent console can reset the current child password after parent login', () => {
+    assert.ok(app.includes('\u91cd\u7f6e\u5b69\u5b50\u5bc6\u7801'));
+    assert.match(app, /openParentTool\('resetChildPassword'\)/);
+    assert.match(app, /function resetChildPassword/);
+    assert.ok(app.includes('/api/auth/parent/reset-child-password'));
+    assert.doesNotMatch(app, /resetChildPassword[\s\S]*\/api\/auth\/requestOtp/);
 });

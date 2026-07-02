@@ -27,6 +27,7 @@ const state = {
   user: null,
   authMode: 'login',
   parentAccess: false,
+  parentAuth: null,
   level: DEFAULT_LEVEL,
   mode: 'real',
   historyMode: 'real',
@@ -117,12 +118,14 @@ function generateDemoQuiz(level) {
 function generateDemoStats(user) {
   const total = DEMO_WORDS.length;
   const mastered = Math.floor(total * 0.4);
+  const consolidating = Math.floor(total * 0.25);
+  const recognized = Math.floor(total * 0.2);
   const pending = total - mastered;
   const totalTests = 5;
   const correctCount = 32;
   const totalQuestions = 50;
   return {
-    totalWords: total, masteredWords: mastered, pendingWords: pending,
+    totalWords: total, masteredWords: mastered, consolidatingWords: consolidating, recognizedWords: recognized, unseenWords: Math.max(0, total - mastered - consolidating - recognized), pendingWords: pending,
     totalTests, totalQuestions, correctCount,
     accuracyRate: ((correctCount/totalQuestions)*100).toFixed(1) + '%',
     lastTestTime: Date.now() - 86400000
@@ -769,6 +772,7 @@ function loginAs(user) {
   state.level = loadUserDifficulty(user);
   state.learningSettings = null;
   state.parentAccess = false;
+  state.parentAuth = null;
   state.mode = 'real';
   state.historyMode = 'real';
   setSessionUser(user);
@@ -780,12 +784,14 @@ function loginAs(user) {
 }
 
 function logout() {
+  clearQuizDraft();
   clearSessionUser();
   state.user = null;
   state.quiz = null;
   state.answers = [];
   state.confidences = [];
   state.parentAccess = false;
+  state.parentAuth = null;
   resetParentConsole();
   showLoginPage();
   showToast('已退出登录', 'info');
@@ -816,12 +822,7 @@ function renderUsers(users) {
       textContent: DEV_MODE ? '开发预览模式' : '正式学习模式',
     })
   );
-  const logoutButton = document.createElement('button');
-  logoutButton.className = 'level-btn';
-  logoutButton.type = 'button';
-  logoutButton.textContent = '退出';
-  logoutButton.addEventListener('click', logout);
-  card.append(avatar, text, logoutButton);
+  card.append(avatar, text);
   el.appendChild(card);
 }
 
@@ -834,10 +835,11 @@ function selectUser(user) {
   state.level = loadUserDifficulty(user);
   state.learningSettings = null;
   state.parentAccess = false;
+  state.parentAuth = null;
   resetParentConsole();
   updateLevelButtons();
   renderUsers(state.users);
-  syncLearningSettingsFromServer(user).finally(() => loadStats(user));
+  syncLearningSettingsFromServer(user).finally(() => { renderStudentTools(); loadStats(user); });
   restoreActiveReview(user);
 }
 
@@ -910,6 +912,62 @@ async function ensureLevelCacheReadyForQuiz(user, level) {
   return false;
 }
 
+function activeQuizKey(user) {
+  return `wordbot:active-quiz:${user}`;
+}
+
+function hasActiveQuizDraft(user) {
+  if (!user) return false;
+  try {
+    const saved = JSON.parse(localStorage.getItem(activeQuizKey(user)) || 'null');
+    return Boolean(saved?.quiz?.questions?.length && !saved.quiz.result);
+  } catch {
+    return false;
+  }
+}
+
+function saveQuizDraft() {
+  if (!state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || state.quiz.result) return;
+  localStorage.setItem(activeQuizKey(state.user), JSON.stringify({
+    session: state.session,
+    quiz: state.quiz,
+    currentQuestion: state.currentQuestion,
+    answers: state.answers,
+    confidences: state.confidences,
+    savedAt: Date.now(),
+  }));
+  renderStudentTools();
+}
+
+function clearQuizDraft() {
+  if (state.user) localStorage.removeItem(activeQuizKey(state.user));
+  renderStudentTools();
+}
+
+function restoreQuizDraft(user = state.user) {
+  const raw = localStorage.getItem(activeQuizKey(user));
+  if (!raw) return false;
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved?.quiz?.questions?.length || saved.quiz.result) return false;
+    state.session = saved.session || { kind: 'quiz' };
+    state.quiz = saved.quiz;
+    state.currentQuestion = saved.currentQuestion || 0;
+    state.answers = saved.answers || new Array(saved.quiz.questions.length).fill(null);
+    state.confidences = saved.confidences || new Array(saved.quiz.questions.length).fill(null);
+    navigateTo('quiz');
+    renderQuestion(state.currentQuestion);
+    return true;
+  } catch {
+    localStorage.removeItem(activeQuizKey(user));
+    return false;
+  }
+}
+
+function saveCurrentSessionProgress() {
+  saveActiveReview();
+  saveQuizDraft();
+}
 function activeReviewKey(user) {
   return `wordbot:active-review:${user}`;
 }
@@ -980,6 +1038,7 @@ async function loadHome() {
     }
     state.users = [state.user];
     renderUsers(state.users);
+    renderStudentTools();
     await loadStats(state.user);
   } catch(e) {
     showToast('加载用户失败: ' + e.message, 'error');
@@ -1049,6 +1108,107 @@ function manualSelectUser() {
   selectUser(name);
 }
 
+function renderStudentTools() {
+  if (!state.user) return;
+  let section = $('studentTools');
+  if (!section) {
+    section = document.createElement('section');
+    section.id = 'studentTools';
+    section.className = 'parent-tools student-tools';
+    const stats = $('statsContent');
+    stats?.insertAdjacentElement('afterend', section);
+  }
+  section.innerHTML = `
+    <div class="parent-tool-grid student-tool-grid">
+      ${hasActiveQuizDraft(state.user) ? `<button class="parent-tool-card" type="button" onclick="restoreQuizDraft()"><span class="parent-tool-icon">▶</span><span>继续上次答题</span><small>回到未完成考核</small></button>` : ''}
+      <button class="parent-tool-card" type="button" onclick="openStudentWordEntry()">
+        <span class="parent-tool-icon">＋</span>
+        <span>录入单词</span>
+        <small>添加自己的新词</small>
+      </button>
+      <button class="parent-tool-card" type="button" onclick="navigateTo('history')">
+        <span class="parent-tool-icon">◷</span>
+        <span>考核历史</span>
+        <small>查看过去题目</small>
+      </button>
+    </div>
+    <div class="parent-tool-panel" id="studentToolPanel" style="display:none;"></div>
+  `;
+}
+
+function openStudentWordEntry() {
+  const panel = $('studentToolPanel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="parent-panel-head">
+      <strong>录入单词</strong>
+      <button type="button" onclick="closeStudentTool()" aria-label="关闭">×</button>
+    </div>
+    <label class="parent-field">
+      <span>批量单词</span>
+      <textarea id="studentWordsInput" rows="6" placeholder="可以用换行、逗号或分号分隔，例如&#10;resilient, genuine; feasible"></textarea>
+    </label>
+    <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库；释义、例句和检查由后端生成。</div>
+    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
+  `;
+}
+
+function closeStudentTool() {
+  const panel = $('studentToolPanel');
+  if (!panel) return;
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+}
+
+function ensureParentPage() {
+  if ($('pageParent')) return;
+  const page = document.createElement('div');
+  page.className = 'page';
+  page.id = 'pageParent';
+  page.innerHTML = `
+    <div class="header">
+      <div class="header-title">
+        <div class="logo">⚙</div>
+        家长控制台
+      </div>
+      <div class="header-actions">
+        <button class="header-btn" onclick="navigateTo('home')" title="返回首页">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/><path d="M20 12H9"/></svg>
+        </button>
+      </div>
+    </div>
+    <section class="parent-console parent-console-page" aria-label="家长控制台">
+      <div id="parentPageMount"></div>
+    </section>
+  `;
+  $('app')?.appendChild(page);
+  const mount = $('parentPageMount');
+  for (const id of ['parentGatePanel', 'parentToolGrid', 'parentToolPanel']) {
+    const node = $(id);
+    if (node && mount) mount.appendChild(node);
+  }
+  const grid = $('parentToolGrid');
+  if (grid) {
+    grid.innerHTML = `
+      <button class="parent-tool-card" type="button" onclick="openParentTool('searchWord')">
+        <span class="parent-tool-icon">⌕</span>
+        <span>查询/编辑</span>
+        <small>检查单词掌握</small>
+      </button>
+      <button class="parent-tool-card" type="button" onclick="openParentTool('learningSettings')">
+        <span class="parent-tool-icon">⚙</span>
+        <span>学习设置</span>
+        <small>难度与缓存</small>
+      </button>
+      <button class="parent-tool-card" type="button" onclick="openParentTool('resetChildPassword')">
+        <span class="parent-tool-icon">钥</span>
+        <span>重置孩子密码</span>
+        <small>为当前孩子设置新密码</small>
+      </button>
+    `;
+  }
+}
 function getParentToolPanel() {
   return $('parentToolPanel');
 }
@@ -1077,6 +1237,8 @@ function openParentConsole() {
     showToast('请先登录用户', 'error');
     return;
   }
+  ensureParentPage();
+  navigateTo('parent');
   if (state.parentAccess) {
     showParentTools();
     return;
@@ -1089,6 +1251,7 @@ function openParentConsole() {
 
 function closeParentConsole() {
   resetParentConsole();
+  navigateTo('home');
 }
 
 function ensureParentAccess() {
@@ -1117,6 +1280,7 @@ async function verifyParentPassword() {
       throw new Error('家长账号不属于当前孩子');
     }
     state.parentAccess = true;
+    state.parentAuth = { parentUsername, password };
     showParentTools();
     showToast('已进入家长控制台', 'success');
   } catch (error) {
@@ -1175,6 +1339,71 @@ function openParentTool(tool) {
       <div id="parentSettingsContent" class="parent-result-empty">正在加载学习设置...</div>
     `;
     loadParentLearningSettings();
+    return;
+  }
+
+  if (tool === 'resetChildPassword') {
+    panel.innerHTML = `
+      <div class="parent-panel-head">
+        <strong>重置孩子密码</strong>
+        <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
+      </div>
+      <label class="parent-field">
+        <span>新密码</span>
+        <input id="parentResetChildPassword" type="password" autocomplete="new-password" placeholder="至少 4 位" />
+      </label>
+      <label class="parent-field">
+        <span>再次输入</span>
+        <input id="parentResetChildPasswordConfirm" type="password" autocomplete="new-password" placeholder="再输一次新密码" onkeydown="if(event.key==='Enter')resetChildPassword()" />
+      </label>
+      <div class="parent-help">只会重置当前孩子 ${escapeHtml(state.user)} 的登录密码；家长身份会由后端再次校验。</div>
+      <button class="btn btn-primary btn-small" type="button" onclick="resetChildPassword()">确认重置</button>
+    `;
+  }
+}
+
+async function resetChildPassword() {
+  if (!state.user) {
+    showToast('请先登录用户', 'error');
+    return;
+  }
+  if (!state.parentAuth?.parentUsername || !state.parentAuth?.password) {
+    state.parentAccess = false;
+    state.parentAuth = null;
+    openParentConsole();
+    showToast('请先重新完成家长验证', 'info');
+    return;
+  }
+  const newPassword = $('parentResetChildPassword')?.value || '';
+  const confirmPassword = $('parentResetChildPasswordConfirm')?.value || '';
+  if (newPassword.length < 4) {
+    showToast('新密码至少需要 4 位', 'error');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    showToast('两次输入的新密码不一致', 'error');
+    return;
+  }
+  showLoading('正在重置孩子密码...');
+  try {
+    if (!DEMO_MODE) {
+      await api('/api/auth/parent/reset-child-password', {
+        method: 'POST',
+        body: JSON.stringify({
+          user: state.user,
+          parentUsername: state.parentAuth.parentUsername,
+          parentPassword: state.parentAuth.password,
+          newPassword,
+        })
+      });
+    }
+    $('parentResetChildPassword').value = '';
+    $('parentResetChildPasswordConfirm').value = '';
+    showToast('孩子密码已重置', 'success');
+  } catch (error) {
+    showToast('重置失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
   }
 }
 
@@ -1193,7 +1422,7 @@ function parseParentWordsInput(value) {
 }
 
 async function submitParentWords() {
-  const input = $('parentWordsInput');
+  const input = $('parentWordsInput') || $('studentWordsInput');
   const words = parseParentWordsInput(input?.value);
   if (!words.length) {
     showToast('请先输入至少一个单词', 'warn');
@@ -1379,7 +1608,18 @@ async function loadStats(user) {
     const data = DEMO_MODE
       ? generateDemoStats(user)
       : await api('/api/stats/' + encodeURIComponent(user));
-    const { totalWords=0, masteredWords=0, pendingWords=0, totalTests=0, totalQuestions=0, correctCount=0, accuracyRate='0%', lastTestTime } = data;
+    const totalWords = Number(data.totalWords || 0);
+    const masteredWords = Number(data.masteredWords || 0);
+    const consolidatingWords = Number(data.consolidatingWords || 0);
+    const recognizedWords = Number(data.recognizedWords || 0);
+    const unseenWords = data.unseenWords === undefined
+      ? Math.max(0, totalWords - masteredWords - consolidatingWords - recognizedWords)
+      : Number(data.unseenWords || 0);
+    const totalTests = Number(data.totalTests || 0);
+    const totalQuestions = Number(data.totalQuestions || 0);
+    const correctCount = Number(data.correctCount || 0);
+    const accuracyRate = data.accuracyRate || '0%';
+    const lastTestTime = data.lastTestTime;
     const pct = totalWords > 0 ? Math.round(masteredWords / totalWords * 100) : 0;
     const dash = 282.7 * pct / 100;
 
@@ -1396,9 +1636,11 @@ async function loadStats(user) {
           </div>
         </div>
         <div class="ring-stats">
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>待复习</span><strong>${escapeHtml(pendingWords)}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--green);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></div>
+          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-secondary);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
         </div>
       </div>
       <div class="stats-grid">
@@ -1413,7 +1655,7 @@ async function loadStats(user) {
         </div>
       </div>
       ${lastTestTime ? `<div class="recent-test-note">上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
-      ${DEV_MODE ? `<div class="cleanup-row"><button class="btn btn-outline btn-small cleanup-btn" onclick="showCleanupConfirm()">清理测试模式记录（${escapeHtml(user)}）</button></div>` : ''}
+      ${DEV_MODE ? `<div class="cleanup-row"><button class="btn btn-outline btn-small cleanup-btn" onclick="showCleanupConfirm()">清理测试模式记录：${escapeHtml(user)}</button></div>` : ''}
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');
@@ -1425,6 +1667,7 @@ async function startQuiz() {
   if (!state.user) { showToast('请先选择一个用户', 'error'); return; }
   showLoading('正在生成题目...');
   clearActiveReview();
+  clearQuizDraft();
   state.session = {
     kind: 'quiz',
     sourceTestId: null,
@@ -1446,6 +1689,7 @@ async function startQuiz() {
       state.currentQuestion = 0;
       state.answers = new Array(demo.questions.length).fill(null);
       state.confidences = new Array(demo.questions.length).fill(null);
+      saveQuizDraft();
       navigateTo('quiz');
       renderQuestion(0);
       return;
@@ -1469,6 +1713,7 @@ async function startQuiz() {
     state.currentQuestion = 0;
     state.answers = new Array(data.questions.length).fill(null);
     state.confidences = new Array(data.questions.length).fill(null);
+    saveQuizDraft();
     navigateTo('quiz');
     renderQuestion(0);
   } catch(e) {
@@ -1567,7 +1812,7 @@ function renderQuestion(idx) {
 
 function setMeaningAnswer(qIdx, value) {
   state.answers[qIdx] = value;
-  saveActiveReview();
+  saveCurrentSessionProgress();
   const canContinue = String(value || '').trim().length > 0;
   $('nextBtn').disabled = !canContinue;
   $('submitBtn').disabled = !canContinue;
@@ -1577,19 +1822,20 @@ function selectOption(qIdx, optIdx) {
   if (state.confidences[qIdx] === null) {
     state.confidences[qIdx] = 'sure';
   }
-  saveActiveReview();
+  saveCurrentSessionProgress();
   renderQuestion(state.currentQuestion);
 }
 
 function selectConfidence(qIdx, confidence) {
   state.confidences[qIdx] = confidence;
-  saveActiveReview();
+  saveCurrentSessionProgress();
   renderQuestion(state.currentQuestion);
 }
 
 function prevQuestion() {
   if (state.currentQuestion > 0) {
     state.currentQuestion--;
+    saveCurrentSessionProgress();
     renderQuestion(state.currentQuestion);
   }
 }
@@ -1619,6 +1865,7 @@ function nextQuestion() {
   if (!canLeaveCurrentQuestion()) return;
   if (state.currentQuestion < state.quiz.questions.length - 1) {
     state.currentQuestion++;
+    saveCurrentSessionProgress();
     renderQuestion(state.currentQuestion);
   }
 }
@@ -1722,7 +1969,10 @@ async function submitQuiz() {
     }
     state.quiz.result = data;
 
-    if (state.session.kind === 'quiz') addGameRewardToBank(data.gameReward);
+    if (state.session.kind === 'quiz') {
+      clearQuizDraft();
+      addGameRewardToBank(data.gameReward);
+    }
     const remaining = (data.results || [])
       .filter(result => !result.correct)
       .map(result => result.recordId || result.word)
@@ -1735,7 +1985,7 @@ async function submitQuiz() {
     } else {
       state.session.reviewRounds.push(data);
       state.session.analysisViewed = true;
-      saveActiveReview();
+      saveCurrentSessionProgress();
     }
     navigateTo('results');
     renderResults(data);
@@ -2013,7 +2263,7 @@ async function startWrongAnswerReview(parentReviewId = '') {
     state.currentQuestion = 0;
     state.answers = new Array(data.questions.length).fill(null);
     state.confidences = new Array(data.questions.length).fill(null);
-    saveActiveReview();
+    saveCurrentSessionProgress();
     navigateTo('quiz');
     renderQuestion(0);
   } catch (error) {
