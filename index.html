@@ -23,6 +23,19 @@
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
+  <!-- History Detail Sheet -->
+  <div class="hd-backdrop" id="hdBackdrop" onclick="closeHistoryDetail()"></div>
+  <div class="hd-sheet" id="hdSheet">
+    <div class="hd-header">
+      <div class="hd-header-info">
+        <div class="hd-date" id="hdDate"></div>
+        <div class="hd-score" id="hdScore"></div>
+      </div>
+      <button class="hd-close" onclick="closeHistoryDetail()">✕</button>
+    </div>
+    <div class="hd-body" id="hdBody"></div>
+  </div>
+
   <!-- ===== PAGE: LOGIN ===== -->
   <div class="page active" id="pageLogin">
     <div class="auth-shell">
@@ -39,22 +52,12 @@
           <button class="auth-tab active" id="loginTab" onclick="setAuthMode('login')">登录</button>
           <button class="auth-tab" id="registerTab" onclick="setAuthMode('register')">注册</button>
         </div>
-
-        <div class="auth-method-row" id="authMethodWrap">
-          <button class="auth-method active" id="authPasswordMethod" type="button" onclick="setAuthLoginMethod('password')">密码登录</button>
-          <button class="auth-method" id="authOtpMethod" type="button" onclick="setAuthLoginMethod('otp')">手机验证码</button>
-        </div>
-
-        <div class="auth-form">
+<div class="auth-form">
           <label id="authUsernameWrap">
-            <span id="authIdentifierLabel">用户名/手机号</span>
-            <input type="text" id="authUsername" autocomplete="username" placeholder="用户名或手机号" />
+            <span id="authIdentifierLabel">用户名</span>
+            <input type="text" id="authUsername" autocomplete="username" placeholder="用户名" />
           </label>
-          <label id="authPhoneWrap" style="display:none;">
-            <span>手机号</span>
-            <input type="tel" id="authPhone" autocomplete="tel" placeholder="请输入手机号" />
-          </label>
-          <label id="authPasswordWrap">
+<label id="authPasswordWrap">
             <span>密码</span>
             <input type="password" id="authPassword" autocomplete="current-password" placeholder="请输入密码" onkeydown="if(event.key==='Enter')submitAuth()" />
           </label>
@@ -62,14 +65,7 @@
             <span>确认密码</span>
             <input type="password" id="authPasswordConfirm" autocomplete="new-password" placeholder="再输入一次密码" onkeydown="if(event.key==='Enter')submitAuth()" />
           </label>
-          <div class="auth-otp-row" id="authOtpWrap" style="display:none;">
-            <label>
-              <span>验证码</span>
-              <input type="text" id="authOtpCode" inputmode="numeric" maxlength="6" placeholder="6 位验证码" onkeydown="if(event.key==='Enter')submitAuth()" />
-            </label>
-            <button class="btn btn-secondary btn-small" type="button" onclick="requestLoginOtp()" id="authOtpButton">获取验证码</button>
-          </div>
-          <button class="btn btn-primary" onclick="submitAuth()" id="authSubmitBtn">登录</button>
+<button class="btn btn-primary" onclick="submitAuth()" id="authSubmitBtn">登录</button>
         </div>
 
         <div class="auth-hint" id="authHint">
@@ -140,13 +136,13 @@
           <button type="button" onclick="closeParentConsole()" aria-label="关闭">×</button>
         </div>
         <div class="parent-inline-form">
-          <input id="parentPhoneInput" type="tel" placeholder="家长手机号" />
+          <input id="parentUsernameInput" type="text" autocomplete="username" placeholder="家长用户名" />
         </div>
         <div class="parent-inline-form">
           <input id="parentPasswordInput" type="password" autocomplete="current-password" placeholder="登录密码" onkeydown="if(event.key==='Enter')verifyParentPassword()" />
           <button class="btn btn-primary btn-small" type="button" onclick="verifyParentPassword()">进入</button>
         </div>
-        <div class="parent-help" id="parentGateHint">需要使用本账户绑定手机号和登录密码。</div>
+        <div class="parent-help" id="parentGateHint">请输入当前孩子绑定的家长用户名和家长密码。</div>
       </div>
       <div class="parent-tool-grid" id="parentToolGrid" style="display:none;">
         <button class="parent-tool-card" type="button" onclick="openParentTool('addWords')">

@@ -15,6 +15,7 @@ const {
     adaptDemoContextByLevel,
     buildOptionMeaningsExplanation,
     buildQuestionExplanation,
+    buildMeaningReviewExplanation,
     normalizeArticleContext,
     optionWord,
 } = context.WordBotQuizLogic;
@@ -81,4 +82,17 @@ test('renders all option meanings before the reasoning', () => {
     assert.match(meanings, /B\. resilient：<\/strong>有韧性的/);
     assert.match(reasoning, /正确选项/);
     assert.match(reasoning, /你选择的 "abandon"/);
+});
+
+test('renders Chinese meaning review feedback without multiple-choice wording', () => {
+    const html = buildMeaningReviewExplanation(
+        { type: 4, answerMode: 'cn_meaning', word: 'kitten' },
+        { your: '小猫', answer: '小猫；幼猫', correct: true },
+        escapeHtml
+    );
+
+    assert.match(html, /你的答案/);
+    assert.match(html, /参考释义/);
+    assert.match(html, /小猫；幼猫/);
+    assert.doesNotMatch(html, /正确选项/);
 });

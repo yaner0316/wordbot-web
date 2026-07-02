@@ -73,11 +73,24 @@
 
     return correctLine + reason + comparison;
   }
+  function buildMeaningReviewExplanation(question, result, escapeHtml) {
+    const escape = escapeHtml || (value => String(value ?? ''));
+    const your = String(result?.your || '').trim();
+    const expected = String(result?.answer || question?.correctMeaning || question?.context || '').trim();
+    const verdict = result?.correct
+      ? '这次写对了，说明你已经能主动回忆这个中文释义。'
+      : '这次还没有完全对上，复习时重点记住参考释义里的核心意思。';
+    return '<div class="detail-line" style="margin-top:4px;"><strong>你的答案：</strong>' + escape(your || '（未作答）') + '</div>' +
+      '<div class="detail-line" style="margin-top:4px;"><strong>参考释义：</strong>' + escape(expected || '暂无参考释义') + '</div>' +
+      '<div class="detail-line" style="margin-top:4px;"><strong>判断：</strong>' + escape(verdict) + '</div>';
+  }
+
 
   return {
     adaptDemoContextByLevel,
     buildOptionMeaningsExplanation,
     buildQuestionExplanation,
+    buildMeaningReviewExplanation,
     normalizeArticleContext,
     optionWord,
   };

@@ -3,6 +3,7 @@ const {
   adaptDemoContextByLevel,
   buildOptionMeaningsExplanation,
   buildQuestionExplanation,
+  buildMeaningReviewExplanation,
   normalizeArticleContext,
   optionWord,
 } = WordBotQuizLogic;
@@ -25,7 +26,6 @@ const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
 const state = {
   user: null,
   authMode: 'login',
-  authLoginMethod: 'password',
   parentAccess: false,
   level: DEFAULT_LEVEL,
   mode: 'real',
@@ -605,35 +605,21 @@ function keepBankedGameForLater() {
 function updateAuthMode(mode) {
   state.authMode = mode;
   const isRegister = mode === 'register';
-  if (isRegister) state.authLoginMethod = 'password';
-  const isOtpLogin = !isRegister && state.authLoginMethod === 'otp';
 
   $('loginTab')?.classList.toggle('active', !isRegister);
   $('registerTab')?.classList.toggle('active', isRegister);
-  $('authMethodWrap').style.display = isRegister ? 'none' : 'flex';
-  $('authPasswordMethod')?.classList.toggle('active', !isOtpLogin);
-  $('authOtpMethod')?.classList.toggle('active', isOtpLogin);
-  $('authUsernameWrap').style.display = isOtpLogin ? 'none' : 'flex';
-  $('authPhoneWrap').style.display = (isRegister || isOtpLogin) ? 'flex' : 'none';
-  $('authPasswordWrap').style.display = isOtpLogin ? 'none' : 'flex';
+  $('authUsernameWrap').style.display = 'flex';
+  $('authPasswordWrap').style.display = 'flex';
   $('authConfirmWrap').style.display = isRegister ? 'flex' : 'none';
-  $('authOtpWrap').style.display = isOtpLogin ? 'flex' : 'none';
-  $('authIdentifierLabel').textContent = isRegister ? '用户名' : '用户名/手机号';
-  authSubmitBtn.textContent = isRegister ? '注册并登录' : (isOtpLogin ? '验证码登录' : '登录');
+  $('authIdentifierLabel').textContent = '用户名';
+  authSubmitBtn.textContent = isRegister ? '注册并登录' : '登录';
   authHint.textContent = isRegister
-    ? '注册后可在任意浏览器登录；手机号会绑定到这个账户。'
-    : (isOtpLogin
-      ? '输入绑定手机号和验证码登录。'
-      : '可以用用户名或手机号登录。');
+    ? '注册后可在任意浏览器用用户名和密码登录。'
+    : '请输入用户名和密码登录。';
 }
 
 function setAuthMode(mode) {
   updateAuthMode(mode);
-}
-
-function setAuthLoginMethod(method) {
-  state.authLoginMethod = method === 'otp' ? 'otp' : 'password';
-  updateAuthMode(state.authMode);
 }
 
 function showLoginPage() {
@@ -728,10 +714,6 @@ function normalizeUsername(value) {
   return String(value || '').trim().replace(/\s+/g, '');
 }
 
-function normalizePhone(value) {
-  return String(value || '').replace(/\D/g, '');
-}
-
 function handleUnregisteredPasswordLogin(error) {
   const message = normalizeApiError(error).message;
   if (state.authMode !== 'login' || !message.includes('尚未注册密码')) return false;
@@ -742,56 +724,26 @@ function handleUnregisteredPasswordLogin(error) {
   return true;
 }
 
-async function requestLoginOtp() {
-  const phone = normalizePhone(authPhone.value);
-  if (!/^\d{11}$/.test(phone)) {
-    showToast('请输入正确的手机号', 'error');
-    return;
-  }
-  showLoading('正在发送验证码...');
-  try {
-    const data = await api('/api/auth/requestOtp', {
-      method: 'POST',
-      body: JSON.stringify({ phone, purpose: 'login' })
-    });
-    if (data.devOtp) {
-      authOtpCode.value = data.devOtp;
-      authHint.textContent = '本地预览验证码：' + data.devOtp;
-    }
-    showToast('验证码已发送', 'success');
-  } catch (error) {
-    showToast('发送验证码失败: ' + normalizeApiError(error).message, 'error');
-  } finally {
-    hideLoading();
-  }
-}
-
 async function submitAuth() {
   const username = normalizeUsername(authUsername.value);
-  const phone = normalizePhone(authPhone.value);
   const password = authPassword.value;
   const confirm = authPasswordConfirm.value;
-  const otp = authOtpCode?.value?.trim() || '';
 
   if (state.authMode === 'register') {
     if (!username) { showToast('请输入用户名', 'error'); return; }
-    if (!/^\d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
+    if (/^\d{11}$/.test(username)) { showToast('用户名不能是手机号', 'error'); return; }
     if (!password || password.length < 4) { showToast('密码至少需要 4 位', 'error'); return; }
     if (password !== confirm) { showToast('两次输入的密码不一致', 'error'); return; }
-  } else if (state.authLoginMethod === 'otp') {
-    if (!/^\d{11}$/.test(phone)) { showToast('请输入正确的手机号', 'error'); return; }
-    if (!/^\d{6}$/.test(otp)) { showToast('请输入 6 位验证码', 'error'); return; }
   } else {
-    if (!username) { showToast('请输入用户名或手机号', 'error'); return; }
+    if (!username) { showToast('请输入用户名', 'error'); return; }
     if (!password || password.length < 4) { showToast('密码至少需要 4 位', 'error'); return; }
   }
 
   const isRegister = state.authMode === 'register';
-  const isOtpLogin = !isRegister && state.authLoginMethod === 'otp';
-  const endpoint = isRegister ? '/api/auth/register' : (isOtpLogin ? '/api/auth/otpLogin' : '/api/auth/login');
+  const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login';
   const body = isRegister
-    ? { username, phone, password }
-    : (isOtpLogin ? { phone, otp } : { identifier: username, password });
+    ? { username, password }
+    : { identifier: username, password };
 
   showLoading(isRegister ? '正在注册...' : '正在登录...');
   try {
@@ -1147,22 +1099,22 @@ function ensureParentAccess() {
 }
 
 async function verifyParentPassword() {
-  const phone = normalizePhone($('parentPhoneInput')?.value);
+  const parentUsername = normalizeUsername($('parentUsernameInput')?.value);
   const password = $('parentPasswordInput')?.value || '';
-  if (!/^\d{11}$/.test(phone) || !password) {
-    showToast('请输入手机号和登录密码', 'error');
+  if (!parentUsername || !password) {
+    showToast('请输入家长用户名和密码', 'error');
     return;
   }
   showLoading('正在验证...');
   try {
     const data = DEMO_MODE
       ? { user: state.user }
-      : await api('/api/auth/login', {
+      : await api('/api/auth/parent/login', {
           method: 'POST',
-          body: JSON.stringify({ identifier: phone, password })
+          body: JSON.stringify({ user: state.user, parentUsername, password })
         });
     if (normalizeUsername(data.user) !== normalizeUsername(state.user)) {
-      throw new Error('手机号不属于当前账户');
+      throw new Error('家长账号不属于当前孩子');
     }
     state.parentAccess = true;
     showParentTools();
@@ -1622,6 +1574,9 @@ function setMeaningAnswer(qIdx, value) {
 }
 function selectOption(qIdx, optIdx) {
   state.answers[qIdx] = optIdx;
+  if (state.confidences[qIdx] === null) {
+    state.confidences[qIdx] = 'sure';
+  }
   saveActiveReview();
   renderQuestion(state.currentQuestion);
 }
@@ -1859,13 +1814,17 @@ function renderResults(data) {
   if (data.results) {
     data.results.forEach((r, i) => {
       const q = state.quiz?.questions[i];
-      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中英释义'};
+      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中英释义', 4:'中文释义回忆'};
+      const isMeaningReview = isMeaningReviewQuestion(q);
 
       // 构建完整题干展示
       let contextDisplay = '';
       let explanationHtml = '';
 
-      if (q?.type === 1 && q?.context) {
+      if (isMeaningReview) {
+        contextDisplay = '请写出这个单词的中文释义';
+        explanationHtml = buildMeaningReviewExplanation(q, r, escapeHtml);
+      } else if (q?.type === 1 && q?.context) {
         // Type 1: 显示上下文，空白处用 ___ 占位
         contextDisplay = escapeHtml(q.context).replace(/_____/g, '<span class="inline-blank">&nbsp;</span>');
       } else if (q?.type === 2 && q?.context) {
@@ -1873,12 +1832,17 @@ function renderResults(data) {
       } else if (q?.type === 3 && q?.context) {
         contextDisplay = '🌐 ' + escapeHtml(q.context);
       }
-      explanationHtml = buildOptionMeaningsExplanation(q, escapeHtml)
-        + buildQuestionExplanation(q, r, escapeHtml);
+      if (!isMeaningReview) {
+        explanationHtml = buildOptionMeaningsExplanation(q, escapeHtml)
+          + buildQuestionExplanation(q, r, escapeHtml);
+      }
 
       // 构建选项列表
       let optionsHtml = '';
-      if (q?.options && q.options.length > 0) {
+      if (isMeaningReview) {
+        optionsHtml = `<div class="detail-line"><strong>你的答案：</strong>${escapeHtml(r.your || '（未作答）')}</div>
+          <div class="detail-line"><strong>参考释义：</strong>${escapeHtml(r.answer || q?.correctMeaning || '暂无参考释义')}</div>`;
+      } else if (q?.options && q.options.length > 0) {
         optionsHtml = q.options.map(opt => {
           const letter = opt[0];
           const isCorrect = letter === q.answer;
@@ -1904,7 +1868,7 @@ function renderResults(data) {
           </div>
           <div class="row" style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
             <span>${typeNames[q?.type] || ''} · 第 ${i+1} 题</span>
-            <span>${r.confidence === 'guess' ? '猜的 / 不确定：本题不计掌握证据' : '确定认识'}</span>
+            <span>${isMeaningReview ? '中文释义回忆' : (r.confidence === 'guess' ? '猜的 / 不确定：本题不计掌握证据' : '确定认识')}</span>
           </div>
 
           <div class="ctx-box">
@@ -1913,7 +1877,7 @@ function renderResults(data) {
           </div>
 
           <div class="opts-box">
-            <div class="opts-label">选项：</div>
+            <div class="opts-label">${isMeaningReview ? '答案：' : '选项：'}</div>
             ${optionsHtml}
           </div>
 
@@ -2149,9 +2113,7 @@ function renderHistoryList(list) {
     const pct = item.total > 0 ? Math.round(item.correct / item.total * 100) : 0;
     const card = document.createElement('div');
     card.className = 'history-item';
-    card.addEventListener('click', () => {
-      alert('考核: ' + item.testId + '\n日期: ' + formatDate(item.time) + '\n得分: ' + item.correct + '/' + item.total + ' (' + pct + '%)');
-    });
+    card.addEventListener('click', () => openHistoryDetail(item));
 
     const top = document.createElement('div');
     top.className = 'top';
@@ -2176,10 +2138,93 @@ function renderHistoryList(list) {
     accuracy.textContent = `${pct}%`;
     bottom.append(bar, accuracy);
 
-    card.append(top, bottom);
+    const detailHint = document.createElement('div');
+    detailHint.className = 'history-detail-hint';
+    detailHint.textContent = '查看题目 · ' + (item.questions?.length || item.total || 0) + ' 题';
+    card.append(top, bottom, detailHint);
     container.appendChild(card);
   });
   content.appendChild(container);
+}
+
+
+function historyTypeLabel(type) {
+  if (type === 1) return '语境填空';
+  if (type === 2) return '英英释义';
+  if (type === 3) return '中英释义';
+  if (type === 4) return '中文释义回忆';
+  return '题目';
+}
+
+function optionLetter(value) {
+  return String(value || '').trim().charAt(0).toUpperCase();
+}
+
+function optionTextByLetter(options, letter) {
+  const wanted = optionLetter(letter);
+  if (!wanted) return '未作答';
+  const match = (options || []).find(opt => optionLetter(opt) === wanted);
+  return match ? String(match).replace(/^[A-D]\.\s*/, '') : wanted;
+}
+
+function openHistoryDetail(item) {
+  const pass = item.correct / item.total >= 0.6;
+  const pct = item.total > 0 ? Math.round(item.correct / item.total * 100) : 0;
+  $('hdDate').textContent = formatDate(item.time);
+  const scoreEl = $('hdScore');
+  scoreEl.textContent = item.correct + '/' + item.total + '  ' + pct + '%';
+  scoreEl.className = 'hd-score ' + (pass ? 'pass' : 'fail');
+
+  const body = $('hdBody');
+  body.replaceChildren();
+  const questions = item.questions || [];
+  if (!questions.length) {
+    const empty = document.createElement('div');
+    empty.className = 'history-empty';
+    empty.textContent = '这次考核暂时没有保存题目明细';
+    body.appendChild(empty);
+  }
+  questions.forEach((q, i) => {
+    const card = document.createElement('div');
+    card.className = 'hd-q';
+    const rawStem = escapeHtml(q.question || q.word || '');
+    const stemHtml = q.type === 1
+      ? rawStem.replace(/_____/g, '<span class="blank"></span>')
+      : rawStem;
+    const optsHtml = (q.options || []).map(opt => {
+      const letter = optionLetter(opt);
+      const word = String(opt).replace(/^[A-D]\.\s*/, '');
+      let cls = 'hd-opt';
+      if (letter === optionLetter(q.correctAnswer)) cls += ' correct';
+      else if (letter === optionLetter(q.yourAnswer) && !q.isCorrect) cls += ' wrong';
+      return '<div class="' + cls + '"><strong>' + escapeHtml(letter) + '.</strong> ' + escapeHtml(word) + '</div>';
+    }).join('');
+    const answerSummary =
+      '<div class="hd-answer-row">' +
+        '<span>孩子答案：' + escapeHtml(optionTextByLetter(q.options, q.yourAnswer)) + '</span>' +
+        '<span>正确答案：' + escapeHtml(optionTextByLetter(q.options, q.correctAnswer)) + '</span>' +
+      '</div>';
+    card.innerHTML =
+      '<div class="hd-q-head">' +
+        '<span class="hd-q-num">第 ' + (i + 1) + ' 题</span>' +
+        '<span class="hd-q-type">' + historyTypeLabel(q.type) + '</span>' +
+        '<span class="hd-q-result ' + (q.isCorrect ? 'pass' : 'fail') + '">' + (q.isCorrect ? '答对' : '答错') + '</span>' +
+      '</div>' +
+      '<div class="hd-q-word">' + escapeHtml(q.word || '') + '</div>' +
+      '<div class="hd-q-stem">' + stemHtml + '</div>' +
+      '<div class="hd-opts">' + (optsHtml || '<div class="hd-opt muted">选项未保存</div>') + '</div>' +
+      answerSummary;
+    body.appendChild(card);
+  });
+  $('hdBackdrop').classList.add('active');
+  $('hdSheet').classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeHistoryDetail() {
+  $('hdBackdrop').classList.remove('active');
+  $('hdSheet').classList.remove('active');
+  document.body.style.overflow = '';
 }
 
 async function loadHistory() {

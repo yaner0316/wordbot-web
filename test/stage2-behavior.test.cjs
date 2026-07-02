@@ -131,14 +131,15 @@ test('quiz generation always clears the loading overlay', () => {
     );
 });
 
-test('every quiz answer requires an explicit confidence choice', () => {
-    assert.match(app, /confidences:\s*\[\]/);
-    assert.match(app, /selectConfidence/);
-    assert.match(app, /confidence:\s*state\.confidences\[i\]/);
-    assert.match(app, /function canLeaveCurrentQuestion/);
-    assert.match(app, /nextBtn'\)\.disabled\s*=\s*!canContinue/);
-    assert.match(app, /submitBtn'\)\.disabled\s*=\s*!canContinue/);
-    assert.match(app, /if\s*\(!canLeaveCurrentQuestion\(\)\)\s*return/);
+test('quiz answers default to sure confidence but can be changed to guess', () => {
+    assert.ok(app.includes('confidences: []'));
+    assert.ok(app.includes('function selectOption(qIdx, optIdx)'));
+    assert.match(app, /if \(state\.confidences\[qIdx\] === null\)\s*\{\s*state\.confidences\[qIdx\] = 'sure';\s*\}/);
+    assert.ok(app.includes('function selectConfidence(qIdx, confidence)'));
+    assert.ok(app.includes('confidence: state.confidences[i]'));
+    assert.ok(app.includes('function canLeaveCurrentQuestion()'));
+    assert.ok(app.includes("$('nextBtn').disabled = !canContinue;"));
+    assert.ok(app.includes("$('submitBtn').disabled = !canContinue;"));
 });
 
 test('answer analysis explains the concrete question and compares a wrong choice', () => {
@@ -153,6 +154,19 @@ test('answer analysis lists Chinese meanings for all options before the reasonin
         app,
         /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)[\s\S]*buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/
     );
+});
+
+
+test('review result analysis uses Chinese meaning feedback instead of option analysis', () => {
+    assert.match(app, /buildMeaningReviewExplanation\(q,\s*r,\s*escapeHtml\)/);
+    assert.match(app, /isMeaningReviewQuestion\(q\)/);
+});
+
+test('history detail exposes the saved questions and answers', () => {
+    assert.match(app, /openHistoryDetail\(item\)/);
+    assert.match(app, /查看题目/);
+    assert.match(app, /孩子答案/);
+    assert.match(app, /正确答案/);
 });
 
 test('the last question shows only one submit action', () => {
@@ -433,18 +447,17 @@ test('quiz diagnostics are kept out of the child quiz flow and shown in parent s
     assert.doesNotMatch(app, /id="questionArea"[\s\S]{0,3000}quizDiagnostics/);
 });
 
-test('phone and OTP validation use digit regexes', () => {
-    assert.match(app, /\/\^\\d\{11\}\$\//);
-    assert.match(app, /\/\^\\d\{6\}\$\//);
-    assert.doesNotMatch(app, /\/\^d\{11\}\$\//);
-    assert.doesNotMatch(app, /\/\^d\{6\}\$\//);
+test('student auth uses username and password without phone or OTP login', () => {
+    assert.doesNotMatch(html, /authOtpMethod/);
+    assert.doesNotMatch(html, /authPhoneWrap/);
+    assert.doesNotMatch(app, /requestLoginOtp/);
+    assert.ok(!app.includes('/api/auth/otpLogin'));
+    assert.ok(!app.includes('/api/auth/requestOtp'));
 });
 
-test('parent console uses phone and password before SMS is integrated', () => {
-    assert.match(html, /id="parentPasswordInput"/);
-    assert.match(app, /function verifyParentPassword/);
-    assert.match(app, /\/api\/auth\/login/);
-    assert.doesNotMatch(html, /id="parentOtpInput"/);
-    assert.doesNotMatch(app, /requestParentOtp/);
-    assert.doesNotMatch(app, /\/api\/auth\/parentOtp/);
+test('parent console uses child-scoped parent username and password', () => {
+    assert.match(html, /parentUsernameInput/);
+    assert.match(app, /verifyParentPassword/);
+    assert.ok(app.includes('/api/auth/parent/login'));
+    assert.ok(!app.includes('/api/auth/parentOtp'));
 });
