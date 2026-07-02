@@ -229,12 +229,13 @@ test('learning settings save keeps the API response in scope for state sync', ()
     assert.match(saveSettingsSource, /state\.learningSettings\s*=\s*data\?\.settings/);
 });
 
-test('frontend syncs learning level from server settings', () => {
+test('frontend syncs learning level from server settings after login and user switch', () => {
     assert.match(app, /async function syncLearningSettingsFromServer\(user/);
     assert.match(app, /\/api\/admin\/userSettings\?userId=/);
     assert.match(app, /state\.learningSettings\s*=\s*settings/);
     assert.match(app, /state\.level\s*=\s*settings\.learningLevel/);
-    assert.match(app, /await syncLearningSettingsFromServer\(state\.user/);
+    assert.match(app, /syncLearningSettingsFromServer\(user\)\.finally\(\(\) => loadHome\(\)\)/);
+    assert.match(app, /syncLearningSettingsFromServer\(user\)\.finally\(\(\) => \{ renderStudentTools\(\); loadStats\(user\); \}\)/);
 });
 
 test('learning level changes are saved only from parent settings', () => {
@@ -250,19 +251,17 @@ test('learning level changes are saved only from parent settings', () => {
     assert.ok(saveSettingsSource.includes("questionCacheStatus === 'building'"));
 });
 
-test('quizzes wait for the selected level cache before live generation fallback', () => {
-    const startQuizMatch = app.match(/async function startQuiz\(\) \{[\s\S]*?\n\}/);
+test('quiz cache-not-ready response triggers rebuild without serial preflight', () => {
+    const startQuizMatch = app.match(/async function startQuiz\(\) \{[\s\S]*?function isMeaningReviewQuestion/);
     assert.ok(startQuizMatch, 'startQuiz function should exist');
-    assert.match(app, /function isLevelCacheReady\(status,\s*level/);
-    assert.match(app, /async function ensureLevelCacheReadyForQuiz\(user,\s*level/);
-    assert.match(app, /questionCache\/status/);
     assert.match(app, /function requestQuestionCacheRebuild\(user\)/);
     assert.match(app, /questionCache\/rebuild/);
-    assert.match(app, /requestQuestionCacheRebuild\(user\)/);
-    assert.match(startQuizMatch[0], /ensureLevelCacheReadyForQuiz\(state\.user,\s*state\.level\)/);
-    assert.doesNotMatch(startQuizMatch[0], /ensureElementaryCacheReadyForQuiz/);
+    assert.match(app, /error\.diagnostics\s*=\s*data\.diagnostics/);
+    assert.match(startQuizMatch[0], /e\.code\s*===\s*'QUESTION_CACHE_NOT_READY'/);
+    assert.match(startQuizMatch[0], /requestQuestionCacheRebuild\(state\.user\)/);
+    assert.match(startQuizMatch[0], /readyCount/);
+    assert.doesNotMatch(startQuizMatch[0], /ensureLevelCacheReadyForQuiz\(state\.user/);
     assert.match(startQuizMatch[0], /data\.level\s*===\s*state\.level\s*&&\s*data\.difficultyApplied\s*===\s*false/);
-    assert.match(startQuizMatch[0], /return/);
 });
 
 test('quiz results can show animal garden reward summary from submit response', () => {
@@ -469,4 +468,33 @@ test('parent console can reset the current child password after parent login', (
     assert.match(app, /function resetChildPassword/);
     assert.ok(app.includes('/api/auth/parent/reset-child-password'));
     assert.doesNotMatch(app, /resetChildPassword[\s\S]*\/api\/auth\/requestOtp/);
+});
+test('browser back stays inside the app and preserves in-progress quizzes', () => {
+    assert.match(app, /function initializeAppHistory/);
+    assert.match(app, /window\.addEventListener\('popstate',\s*handleBrowserBack/);
+    assert.match(app, /function handleBrowserBack/);
+    assert.match(app, /function handleInAppBack/);
+    assert.match(app, /saveCurrentSessionProgress\(\)/);
+    assert.match(app, /navigateTo\('home',\s*\{\s*replace:\s*true/);
+    assert.match(app, /history\.pushState/);
+    assert.match(app, /history\.replaceState/);
+});
+
+test('backspace only navigates normally inside editable fields', () => {
+    assert.match(app, /function isEditableTarget/);
+    assert.match(app, /function handleGlobalKeydown/);
+    assert.match(app, /event\.key === 'Backspace'/);
+    assert.match(app, /event\.preventDefault\(\)/);
+    assert.match(app, /window\.addEventListener\('keydown',\s*handleGlobalKeydown/);
+});
+
+test('quiz start relies on quiz diagnostics instead of serial cache preflight', () => {
+    const start = app.indexOf('async function startQuiz()');
+    const end = app.indexOf('function isMeaningReviewQuestion', start);
+    assert.ok(start >= 0 && end > start, 'startQuiz function should exist');
+    const startQuizSource = app.slice(start, end);
+    assert.match(startQuizSource, /\/api\/quiz/);
+    assert.match(startQuizSource, /state\.quizDiagnostics\s*=\s*buildQuizDiagnosticsSummary\(data\)/);
+    assert.doesNotMatch(startQuizSource, /await syncLearningSettingsFromServer\(state\.user/);
+    assert.doesNotMatch(startQuizSource, /ensureLevelCacheReadyForQuiz\(state\.user/);
 });

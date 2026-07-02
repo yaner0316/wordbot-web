@@ -31,6 +31,8 @@ const state = {
   level: DEFAULT_LEVEL,
   mode: 'real',
   historyMode: 'real',
+  currentPage: 'login',
+  historyInitialized: false,
   quiz: null,
   currentQuestion: 0,
   answers: [],
@@ -625,14 +627,32 @@ function setAuthMode(mode) {
   updateAuthMode(mode);
 }
 
-function showLoginPage() {
+function activatePage(page) {
+  const target = $('page' + page.charAt(0).toUpperCase() + page.slice(1));
+  if (!target) return false;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  $('pageLogin').classList.add('active');
+  target.classList.add('active');
+  state.currentPage = page;
+  return true;
 }
 
-function showAppPage() {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  $('pageHome').classList.add('active');
+function updateAppHistory(page, { replace = false } = {}) {
+  if (!window.history) return;
+  const entry = { wordbotPage: page };
+  if (replace || !state.historyInitialized) {
+    history.replaceState(entry, '', window.location.href);
+  } else {
+    history.pushState(entry, '', window.location.href);
+  }
+  state.historyInitialized = true;
+}
+
+function showLoginPage(options = {}) {
+  if (activatePage('login')) updateAppHistory('login', { replace: options.replace !== false });
+}
+
+function showAppPage(options = {}) {
+  if (activatePage('home')) updateAppHistory('home', { replace: options.replace !== false });
 }
 
 function applyEnvironmentControls() {
@@ -684,6 +704,8 @@ async function api(path, opts = {}) {
     if (!response.ok) {
       const error = new Error(data.error || ('请求失败（HTTP ' + response.status + '）'));
       error.code = data.code || 'HTTP_ERROR';
+      error.source = data.source;
+      error.diagnostics = data.diagnostics;
       throw error;
     }
     return data;
@@ -701,15 +723,60 @@ function normalizeApiError(error) {
   return error;
 }
 
-function navigateTo(page) {
+function navigateTo(page, options = {}) {
   if (!state.user && page !== 'login') {
-    showLoginPage();
+    showLoginPage({ replace: true });
     return;
   }
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  $('page' + page.charAt(0).toUpperCase() + page.slice(1)).classList.add('active');
+  if (!activatePage(page)) return;
+  if (!options.skipHistory) updateAppHistory(page, { replace: Boolean(options.replace) });
   if (page === 'home') loadHome();
   if (page === 'history') loadHistory();
+}
+function hasInProgressSession() {
+  return state.currentPage === 'quiz' && Boolean(state.quiz?.questions?.length && !state.quiz.result);
+}
+
+function handleInAppBack() {
+  if (hasInProgressSession()) {
+    saveCurrentSessionProgress();
+    navigateTo('home', { replace: true });
+    showToast('\u5df2\u4fdd\u5b58\u8fdb\u5ea6\uff0c\u53ef\u4ece\u9996\u9875\u7ee7\u7eed', 'info');
+    return true;
+  }
+  if (['parent', 'history', 'results'].includes(state.currentPage)) {
+    navigateTo('home', { replace: true });
+    return true;
+  }
+  return false;
+}
+
+function handleBrowserBack() {
+  const handled = handleInAppBack();
+  if (!handled && state.currentPage === 'home') {
+    updateAppHistory('home', { replace: true });
+  }
+}
+
+function isEditableTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName?.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key === 'Backspace' && !isEditableTarget(event.target)) {
+    event.preventDefault();
+    handleInAppBack();
+  }
+}
+
+function initializeAppHistory() {
+  if (state.historyInitialized) return;
+  history.replaceState({ wordbotPage: state.currentPage }, '', window.location.href);
+  state.historyInitialized = true;
+  window.addEventListener('popstate', handleBrowserBack);
+  window.addEventListener('keydown', handleGlobalKeydown);
 }
 
 // ========== Auth ==========
@@ -1694,10 +1761,6 @@ async function startQuiz() {
       renderQuestion(0);
       return;
     }
-    await syncLearningSettingsFromServer(state.user);
-    if (!(await ensureLevelCacheReadyForQuiz(state.user, state.level))) {
-      return;
-    }
     const data = await api('/api/quiz', {
       method: 'POST',
       timeoutMs: 70000,
@@ -1717,7 +1780,14 @@ async function startQuiz() {
     navigateTo('quiz');
     renderQuestion(0);
   } catch(e) {
-    showToast('生成题目失败: ' + normalizeApiError(e).message, 'error');
+    if (e.code === 'QUESTION_CACHE_NOT_READY') {
+      requestQuestionCacheRebuild(state.user);
+      const ready = e.diagnostics?.readyCount ?? 0;
+      const required = e.diagnostics?.requiredCount ?? 10;
+      showToast(`${formatLearningLevel(state.level)}题库正在准备中（${ready}/${required}），请稍后再试`, 'info');
+    } else {
+      showToast('生成题目失败: ' + normalizeApiError(e).message, 'error');
+    }
   } finally {
     hideLoading();
   }
@@ -2512,6 +2582,7 @@ function startDemoGamePreviewSession() {
 
 function initApp() {
   updateAuthMode('login');
+  initializeAppHistory();
   if (GAME_PREVIEW_MODE) {
     startDemoGamePreviewSession();
     return;
