@@ -84,6 +84,24 @@ test('renders all option meanings before the reasoning', () => {
     assert.match(reasoning, /你选择的 "abandon"/);
 });
 
+test('fill-in analysis shows a sentence translation as the question explanation', () => {
+    const html = buildQuestionExplanation(
+        {
+            type: 1,
+            context: 'I used bright _____ to draw a happy sun.',
+            contextCN: '\u6211\u7528\u660e\u4eae\u7684\u8721\u7b14\u753b\u4e86\u4e00\u4e2a\u5f00\u5fc3\u7684\u592a\u9633\u3002',
+            answer: 'A',
+            options: ['A. crayons', 'B. pencils', 'C. erasers', 'D. rulers'],
+        },
+        { your: 'A', correct: true },
+        escapeHtml
+    );
+
+    assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.match(html, /\u6211\u7528\u660e\u4eae\u7684\u8721\u7b14\u753b\u4e86\u4e00\u4e2a\u5f00\u5fc3\u7684\u592a\u9633/);
+    assert.doesNotMatch(html, /\u9898\u5e72\u7ebf\u7d22/);
+    assert.doesNotMatch(html, /\u7a7a\u683c\u5904\u9700\u8981/);
+});
 test('renders Chinese meaning review feedback without multiple-choice wording', () => {
     const html = buildMeaningReviewExplanation(
         { type: 4, answerMode: 'cn_meaning', word: 'kitten' },

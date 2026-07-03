@@ -90,7 +90,7 @@ function generateDemoQuiz(level) {
   // fill remaining with more words
   const remaining = shuffle(DEMO_WORDS.filter(w => !selected.includes(w)));
   const words = [...selected, ...remaining.slice(0, 4)];
-  const types = [1,1,1,1,1,1,2,2,3,3];
+  const types = level === '小学' ? [1,1,1,1,1,1,1,1,1,1] : [1,1,1,1,1,1,2,2,3,3];
   const shuffledTypes = shuffle(types);
   const questions = words.map((w, i) => {
     const type = shuffledTypes[i];
@@ -871,7 +871,7 @@ function renderUsers(users) {
   const currentUser = state.user || users[0];
   if (!currentUser) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'color:var(--text-secondary);font-size:14px;';
+    empty.className = 'current-user-empty';
     empty.textContent = '尚未登录';
     el.appendChild(empty);
     return;
@@ -882,13 +882,18 @@ function renderUsers(users) {
   avatar.className = 'avatar';
   avatar.textContent = currentUser.charAt(0).toUpperCase();
   const text = document.createElement('div');
-  text.style.flex = '1';
-  text.append(
-    document.createTextNode('当前用户：' + currentUser),
-    Object.assign(document.createElement('small'), {
-      textContent: DEV_MODE ? '开发预览模式' : '正式学习模式',
-    })
-  );
+  text.className = 'current-user-text';
+  const label = document.createElement('span');
+  label.className = 'current-user-label';
+  label.textContent = '当前用户：';
+  const name = document.createElement('strong');
+  name.textContent = currentUser;
+  const mode = document.createElement('small');
+  mode.textContent = DEV_MODE ? '开发预览模式' : '正式学习模式';
+  const title = document.createElement('div');
+  title.className = 'current-user-title';
+  title.append(label, name);
+  text.append(title, mode);
   card.append(avatar, text);
   el.appendChild(card);
 }
@@ -1181,26 +1186,21 @@ function renderStudentTools() {
   if (!section) {
     section = document.createElement('section');
     section.id = 'studentTools';
-    section.className = 'parent-tools student-tools';
+    section.className = 'quick-actions-card student-tools';
     const stats = $('statsContent');
     stats?.insertAdjacentElement('afterend', section);
   }
-  section.innerHTML = `
-    <div class="parent-tool-grid student-tool-grid">
-      ${hasActiveQuizDraft(state.user) ? `<button class="parent-tool-card" type="button" onclick="restoreQuizDraft()"><span class="parent-tool-icon">▶</span><span>继续上次答题</span><small>回到未完成考核</small></button>` : ''}
-      <button class="parent-tool-card" type="button" onclick="openStudentWordEntry()">
-        <span class="parent-tool-icon">＋</span>
-        <span>录入单词</span>
-        <small>添加自己的新词</small>
-      </button>
-      <button class="parent-tool-card" type="button" onclick="navigateTo('history')">
-        <span class="parent-tool-icon">◷</span>
-        <span>考核历史</span>
-        <small>查看过去题目</small>
-      </button>
-    </div>
-    <div class="parent-tool-panel" id="studentToolPanel" style="display:none;"></div>
-  `;
+  const continueAction = hasActiveQuizDraft(state.user)
+    ? '<button class="quick-action-item quick-action-continue" type="button" onclick="restoreQuizDraft()"><span class="quick-action-icon" aria-hidden="true">▶</span><span>继续上次答题</span><small>回到未完成考核</small></button>'
+    : '';
+  section.innerHTML = [
+    '<div class="quick-action-grid">',
+    continueAction,
+    '<button class="quick-action-item quick-action-add" type="button" onclick="openStudentWordEntry()"><span class="quick-action-icon" aria-hidden="true">＋</span><span>录入单词</span><small>添加自己的新词</small></button>',
+    '<button class="quick-action-item quick-action-history" type="button" onclick="navigateTo(\'history\')"><span class="quick-action-icon" aria-hidden="true">◷</span><span>考核历史</span><small>查看过去题目</small></button>',
+    '</div>',
+    '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
+  ].join('');
 }
 
 function openStudentWordEntry() {
@@ -1691,37 +1691,40 @@ async function loadStats(user) {
     const dash = 282.7 * pct / 100;
 
     $('statsContent').innerHTML = `
-      <div class="progress-ring-wrap">
-        <div class="progress-ring">
-          <svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true">
-            <circle class="bg" cx="50" cy="50" r="45"/>
-            <circle class="fg" cx="50" cy="50" r="45" style="stroke-dasharray:282.7;stroke-dashoffset:${282.7 - dash};"/>
-          </svg>
-          <div class="center">
-            <div class="pct">${pct}%</div>
-            <div class="pct-label">已掌握</div>
+      <section class="vocab-progress-card" aria-label="词汇进度">
+        <div class="section-title">词汇进度</div>
+        <div class="progress-ring-wrap">
+          <div class="progress-ring">
+            <svg width="132" height="132" viewBox="0 0 100 100" aria-hidden="true">
+              <circle class="bg" cx="50" cy="50" r="45"/>
+              <circle class="fg" cx="50" cy="50" r="45" style="stroke-dasharray:282.7;stroke-dashoffset:${282.7 - dash};"/>
+            </svg>
+            <div class="center">
+              <div class="pct">${pct}%</div>
+              <div class="pct-label">已掌握</div>
+            </div>
+          </div>
+          <div class="ring-stats">
+            <div class="ring-stat-item"><span><span class="dot" style="background:var(--green);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
+            <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></div>
+            <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></div>
+            <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></div>
+            <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-secondary);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
           </div>
         </div>
-        <div class="ring-stats">
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--green);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></div>
-          <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-secondary);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
-        </div>
-      </div>
-      <div class="stats-grid">
-        <div class="stat-card orange">
-          <div class="label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>考核次数</div>
+      </section>
+      <div class="home-stat-grid">
+        <div class="home-stat-card home-stat-tests">
+          <div class="label">考核次数</div>
           <div class="value">${escapeHtml(totalTests)}</div>
         </div>
-        <div class="stat-card green">
-          <div class="label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>正确率</div>
+        <div class="home-stat-card home-stat-accuracy">
+          <div class="label">正确率</div>
           <div class="value">${escapeHtml(accuracyRate)}</div>
           <div class="sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</div>
         </div>
       </div>
-      ${lastTestTime ? `<div class="recent-test-note">上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
+      ${lastTestTime ? `<div class="recent-test-note"><span aria-hidden="true">◷</span> 上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
       ${DEV_MODE ? `<div class="cleanup-row"><button class="btn btn-outline btn-small cleanup-btn" onclick="showCleanupConfirm()">清理测试模式记录：${escapeHtml(user)}</button></div>` : ''}
     `;
   } catch(e) {
@@ -1832,9 +1835,9 @@ function renderQuestion(idx) {
     $('submitBtn').disabled = !canContinue;
     return;
   }
-  const types = {1:'语境填空', 2:'英英释义', 3:'中英释义'};
+  const types = {1:'\u8bed\u5883\u586b\u7a7a', 2:'\u82f1\u82f1\u91ca\u4e49', 3:'\u4e2d\u6587\u9009\u8bcd'};
   const typeClasses = {1:'type1', 2:'type2', 3:'type3'};
-  const typeIcons = {1:'□', 2:'EN', 3:'中'};
+  const typeIcons = {1:'\u25a1', 2:'EN', 3:'CN'};
 
   let questionDisplay = escapeHtml(q.context || '');
   // For type 1, show the blank
@@ -1940,6 +1943,34 @@ function nextQuestion() {
   }
 }
 
+function waitForMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function submitWithTimeoutConfirmation(path, payload) {
+  const request = () => api(path, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  try {
+    return await request();
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      showLoading('提交时间较长，正在确认结果...');
+      await waitForMs(1200);
+      return await request();
+    }
+    throw error;
+  }
+}
+
+async function submitQuizToBackend(payload) {
+  return submitWithTimeoutConfirmation('/api/submit', payload);
+}
+
+async function submitReviewToBackend(reviewId, payload) {
+  return submitWithTimeoutConfirmation(`/api/reviews/${encodeURIComponent(reviewId)}/submit`, payload);
+}
 async function submitQuiz() {
   if (!state.quiz) return;
   if (state.submitting) return;
@@ -2016,26 +2047,21 @@ async function submitQuiz() {
         stats: { total: 42, mastered: 18, pending: 24 }
       };
     } else if (state.session.kind === 'review') {
-      data = await api(`/api/reviews/${encodeURIComponent(state.session.reviewId)}/submit`, {
-        method: 'POST',
-        body: JSON.stringify({
-          user: state.user,
-          answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
-            ? { text: String(answer ?? '').trim() }
-            : { option: answer, confidence: state.confidences[i] })
-        })
+      data = await submitReviewToBackend(state.session.reviewId, {
+        user: state.user,
+        answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
+          ? { text: String(answer ?? '').trim() }
+          : { option: answer, confidence: state.confidences[i] })
       });
     } else {
-      data = await api('/api/submit', {
-        method: 'POST',
-        body: JSON.stringify({
-          user: state.user,
-          testId: state.quiz.testId,
-          answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
-            ? { text: String(answer ?? '').trim() }
-            : { option: answer, confidence: state.confidences[i] })
-        })
-      });
+      const payload = {
+        user: state.user,
+        testId: state.quiz.testId,
+        answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
+          ? { text: String(answer ?? '').trim() }
+          : { option: answer, confidence: state.confidences[i] })
+      };
+      data = await submitQuizToBackend(payload);
     }
     state.quiz.result = data;
 
@@ -2060,7 +2086,7 @@ async function submitQuiz() {
     navigateTo('results');
     renderResults(data);
   } catch(e) {
-    showToast('提交失败: ' + e.message, 'error');
+    showToast('提交失败: ' + normalizeApiError(e).message, 'error');
   } finally {
     state.submitting = false;
     $('submitBtn').disabled = false;
@@ -2134,7 +2160,7 @@ function renderResults(data) {
   if (data.results) {
     data.results.forEach((r, i) => {
       const q = state.quiz?.questions[i];
-      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中英释义', 4:'中文释义回忆'};
+      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
       const isMeaningReview = isMeaningReviewQuestion(q);
 
       // 构建完整题干展示
@@ -2471,7 +2497,7 @@ function renderHistoryList(list) {
 function historyTypeLabel(type) {
   if (type === 1) return '语境填空';
   if (type === 2) return '英英释义';
-  if (type === 3) return '中英释义';
+  if (type === 3) return '中文选词';
   if (type === 4) return '中文释义回忆';
   return '题目';
 }

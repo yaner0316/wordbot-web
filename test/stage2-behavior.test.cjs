@@ -498,3 +498,11 @@ test('quiz start relies on quiz diagnostics instead of serial cache preflight', 
     assert.doesNotMatch(startQuizSource, /await syncLearningSettingsFromServer\(state\.user/);
     assert.doesNotMatch(startQuizSource, /ensureLevelCacheReadyForQuiz\(state\.user/);
 });
+test('quiz submit automatically confirms the result once after a timeout', () => {
+    assert.match(app, /async function submitQuizToBackend/);
+    assert.match(app, /error\?\.name\s*===\s*'AbortError'/);
+    assert.match(app, /提交时间较长，正在确认结果/);
+    const submitSource = app.slice(app.indexOf('async function submitQuiz()'), app.indexOf('// ========== Results =========='));
+    assert.match(submitSource, /submitQuizToBackend\(payload\)/);
+    assert.doesNotMatch(submitSource, /timeoutMs:\s*90000/);
+});

@@ -100,19 +100,35 @@
       <button onclick="manualSelectUser()" style="margin-top:8px;background:var(--orange);color:white;border:none;border-radius:20px;padding:8px 24px;font-size:14px;cursor:pointer;">确定</button>
     </div>
 
-    <section class="home-hero-strip" aria-label="小龙陪练">
-      <div class="home-hero-copy">
-        <div class="learning-level-badge">
-          <span class="level-lock" aria-hidden="true">🔒</span>
-          <span class="current-level-label">当前难度</span>
-          <strong id="currentLevelText">初中</strong>
-          <small>家长管理</small>
+    <section class="dragon-hero-card" aria-label="小龙陪练">
+      <div class="dragon-hero-content">
+        <div class="dragon-hero-chips">
+          <div class="learning-level-badge" aria-label="当前学习难度">
+            <span class="chip-icon" aria-hidden="true">▥</span>
+            <span>当前难度</span>
+            <strong id="currentLevelText">初中</strong>
+          </div>
+          <button class="hero-chip hero-chip-parent" type="button" onclick="openParentConsole()" aria-label="打开家长管理">
+            <span class="chip-icon" aria-hidden="true">🔒</span>
+            <span>家长管理</span>
+          </button>
+        </div>
+        <div class="dragon-hero-title-wrap">
+          <h2>今天也和小龙一起学单词</h2>
+          <span class="hero-underline" aria-hidden="true"></span>
         </div>
       </div>
-      <img class="home-dragon" src="assets/xiaolong.png" alt="小龙" />
+      <div class="dragon-scene" aria-hidden="true">
+        <span class="hero-cloud hero-cloud-one"></span>
+        <span class="hero-cloud hero-cloud-two"></span>
+        <span class="hero-spark hero-spark-one">✦</span>
+        <span class="hero-spark hero-spark-two">✧</span>
+        <img class="home-dragon" src="assets/reward-game/v1/characters/word-dragon/stage-01/happy.svg" data-legacy-src="assets/xiaolong.png" alt="" />
+        <span class="hero-ground"></span>
+      </div>
     </section>
 
-    <div id="modeSelectorWrap" style="margin:10px auto 18px;text-align:center;max-width:340px;">
+    <div id="modeSelectorWrap" class="home-mode-switch" style="margin:10px auto 18px;text-align:center;max-width:340px;">
       <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">数据模式</div>
       <div style="display:flex;gap:8px;">
         <button class="level-btn level-active mode-btn" data-mode="real" onclick="selectMode(this,'real')" style="flex:1;">正式学习</button>
@@ -125,11 +141,7 @@
       <!-- Filled by JS -->
     </div>
 
-    <section class="parent-console" id="parentConsoleEntry" aria-label="家长控制台入口">
-      <button class="parent-console-button" type="button" onclick="openParentConsole()">
-        <span class="parent-console-icon">⚙</span>
-        <span>家长控制台</span>
-      </button>
+    <section class="parent-console parent-console-home-shell" id="parentConsoleEntry" aria-label="家长控制台入口">
       <div class="parent-gate-panel" id="parentGatePanel" style="display:none;">
         <div class="parent-panel-head">
           <strong>家长验证</strong>
@@ -161,7 +173,7 @@
           <small>难度与缓存</small>
         </button>
         <button class="parent-tool-card" type="button" onclick="navigateTo('history')">
-          <span class="parent-tool-icon">▦</span>
+          <span class="parent-tool-icon">▣</span>
           <span>统计看板</span>
           <small>查看历史表现</small>
         </button>
@@ -169,8 +181,9 @@
       <div class="parent-tool-panel" id="parentToolPanel" style="display:none;"></div>
     </section>
 
-    <div class="actions">
-      <button class="btn btn-primary" onclick="startQuiz()">
+
+    <div class="actions home-cta-wrap">
+      <button class="btn btn-primary home-primary-cta" onclick="startQuiz()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         开始单词挑战吧！
       </button>

@@ -60,11 +60,11 @@
     let reason = '';
     if (question.type === 1) {
       const completedSentence = question.context.replace(/_____/g, correctWord);
-      const cnLine = question.contextCN
-        ? `<div class="detail-line" style="margin-top:2px;color:#666;">${escape(question.contextCN)}</div>`
-        : '';
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>完整句子：</strong>${escape(completedSentence)}</div>
-        ${cnLine}<div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>空格处需要 "${escape(correctWord)}"，代入后句意完整，并与句中其余信息形成合理语义关系。</div>`;
+      const questionExplanation = question.contextCN
+        ? question.contextCN
+        : `\u628a "${correctWord}" \u4ee3\u5165\u540e\uff0c\u6574\u53e5\u610f\u601d\u662f\uff1a${completedSentence}`;
+      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentence)}</div>
+        <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     } else if (question.type === 2) {
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>英文释义 "${escape(question.context)}" 直接描述了 "${escape(correctWord)}" 的核心含义。</div>`;
     } else if (question.type === 3) {
