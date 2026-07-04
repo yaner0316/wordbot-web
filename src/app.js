@@ -4,6 +4,7 @@ const {
   buildOptionMeaningsExplanation,
   buildQuestionExplanation,
   buildMeaningReviewExplanation,
+  formatOptionDisplayText,
   normalizeArticleContext,
   optionWord,
 } = WordBotQuizLogic;
@@ -13,13 +14,25 @@ const {
 } = WordBotReviewFlow;
 const DEFAULT_LEVEL = '中学';
 const LEVEL_LABELS = { '中学': '初中' };
+const STATUS_LABELS = {
+  Pending: '待学习',
+  Recognized: '已认识',
+  Consolidating: '巩固中',
+  Mastered: '已掌握',
+};
+const STATUS_OPTIONS = ['Pending', 'Recognized', 'Consolidating', 'Mastered'];
 
 function formatLearningLevel(level) {
   return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
 }
+
+function formatWordStatus(status) {
+  return STATUS_LABELS[status] || status || STATUS_LABELS.Pending;
+}
 const SESSION_USER_KEY = 'wordbot:session-user';
 const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
 const GAME_TIME_BANK_KEY_PREFIX = 'wordbot:game-time-bank:';
+const GAME_TIME_REWARD_CLAIM_KEY_PREFIX = 'wordbot:game-time-reward-claims:';
 const ANIMAL_GARDEN_STATE_KEY_PREFIX = 'wordbot:animal-garden:';
 const REWARD_GAME_ASSET_MANIFEST = 'assets/reward-game/v1/manifest.json';
 const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
@@ -221,6 +234,10 @@ function gameTimeBankKey(user) {
   return `${GAME_TIME_BANK_KEY_PREFIX}${user}`;
 }
 
+function gameTimeRewardClaimKey(user) {
+  return `${GAME_TIME_REWARD_CLAIM_KEY_PREFIX}${user}`;
+}
+
 function getBankedGameMinutes(user = state.user) {
   if (!user) return 0;
   const minutes = Number(localStorage.getItem(gameTimeBankKey(user)) || 0);
@@ -232,6 +249,23 @@ function setBankedGameMinutes(minutes, user = state.user) {
   const safeMinutes = Math.max(0, Math.floor(Number(minutes) || 0));
   localStorage.setItem(gameTimeBankKey(user), String(safeMinutes));
   return safeMinutes;
+}
+
+function getClaimedGameRewardIds(user = state.user) {
+  if (!user) return new Set();
+  try {
+    const parsed = JSON.parse(localStorage.getItem(gameTimeRewardClaimKey(user)) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.filter(Boolean) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markGameRewardClaimed(claimId, user = state.user) {
+  if (!user || !claimId) return;
+  const claimed = getClaimedGameRewardIds(user);
+  claimed.add(String(claimId));
+  localStorage.setItem(gameTimeRewardClaimKey(user), JSON.stringify([...claimed]));
 }
 
 function buildQuizDiagnosticsSummary(quizData) {
@@ -275,9 +309,15 @@ function renderQuizDiagnosticsPanel() {
     <small>level: ${escapeHtml(diagnostics.level || '-')}；ready: ${escapeHtml(readyText)}；cache: ${escapeHtml(cacheLatency)}；testWrite: ${escapeHtml(testWriteLatency)}；cacheWrite: ${escapeHtml(cacheWriteLatency)}；live: ${escapeHtml(liveLatency)}；fallback: ${diagnostics.fallbackUsed ? 'yes' : 'no'}</small>
   </div>`;
 }
-function addGameRewardToBank(reward, user = state.user) {
+function addGameRewardToBank(reward, user = state.user, claimId = '') {
   if (!reward?.eligible || !reward.minutes || !user) return getBankedGameMinutes(user);
-  return setBankedGameMinutes(getBankedGameMinutes(user) + Number(reward.minutes), user);
+  const normalizedClaimId = String(claimId || '').trim();
+  if (normalizedClaimId && getClaimedGameRewardIds(user).has(normalizedClaimId)) {
+    return getBankedGameMinutes(user);
+  }
+  const minutes = setBankedGameMinutes(getBankedGameMinutes(user) + Number(reward.minutes), user);
+  markGameRewardClaimed(normalizedClaimId, user);
+  return minutes;
 }
 
 function animalGardenStateKey(user = state.user) {
@@ -659,9 +699,9 @@ function applyEnvironmentControls() {
   const modeWrap = $('modeSelectorWrap');
   const historyWrap = $('historyModeSelectorWrap');
   const gamePreviewBtn = $('gamePreviewBtn');
-  if (modeWrap) modeWrap.style.display = DEV_MODE ? 'block' : 'none';
+  if (modeWrap) modeWrap.style.display = URL_PARAMS.get('dev') === '1' ? 'block' : 'none';
   if (historyWrap) historyWrap.style.display = DEV_MODE ? 'flex' : 'none';
-  if (gamePreviewBtn) gamePreviewBtn.style.display = DEV_MODE ? 'flex' : 'none';
+  if (gamePreviewBtn) gamePreviewBtn.style.display = 'none';
   if (!DEV_MODE && state.mode === 'test') state.mode = 'real';
   if (!DEV_MODE && state.historyMode === 'test') state.historyMode = 'real';
   const realModeBtn = document.querySelector('.mode-btn[data-mode="real"]');
@@ -706,6 +746,9 @@ async function api(path, opts = {}) {
       error.code = data.code || 'HTTP_ERROR';
       error.source = data.source;
       error.diagnostics = data.diagnostics;
+      error.payload = data;
+      error.duplicateWords = data.duplicateWords;
+      error.missingWords = data.missingWords;
       throw error;
     }
     return data;
@@ -786,7 +829,8 @@ function normalizeUsername(value) {
 
 function handleUnregisteredPasswordLogin(error) {
   const message = normalizeApiError(error).message;
-  if (state.authMode !== 'login' || !message.includes('尚未注册密码')) return false;
+  const isUnregisteredPassword = message.includes('尚未注册密码') || message.includes('user has no password yet');
+  if (state.authMode !== 'login' || !isUnregisteredPassword) return false;
   updateAuthMode('register');
   authPasswordConfirm.value = authPassword.value;
   authHint.textContent = '这个账号还没有绑定服务端密码。首次使用请再点一次注册并登录，之后任何浏览器都可以直接登录。';
@@ -889,7 +933,7 @@ function renderUsers(users) {
   const name = document.createElement('strong');
   name.textContent = currentUser;
   const mode = document.createElement('small');
-  mode.textContent = DEV_MODE ? '开发预览模式' : '正式学习模式';
+  mode.textContent = URL_PARAMS.get('dev') === '1' ? '开发预览模式' : '正式学习模式';
   const title = document.createElement('div');
   title.className = 'current-user-title';
   title.append(label, name);
@@ -1103,6 +1147,7 @@ async function loadHome() {
     if (DEMO_MODE) {
       state.users = [state.user];
       renderUsers(state.users);
+      renderStudentTools();
       await loadStats(state.user);
       showToast('当前为演示模式，数据不会写入服务器', 'info');
       hideLoading();
@@ -1180,6 +1225,13 @@ function manualSelectUser() {
   selectUser(name);
 }
 
+function handleContinueQuizEntry() {
+  if (restoreQuizDraft()) return true;
+  showToast('暂无未完成考核', 'info');
+  renderStudentTools();
+  return false;
+}
+
 function renderStudentTools() {
   if (!state.user) return;
   let section = $('studentTools');
@@ -1190,19 +1242,19 @@ function renderStudentTools() {
     const stats = $('statsContent');
     stats?.insertAdjacentElement('afterend', section);
   }
-  const continueAction = hasActiveQuizDraft(state.user)
-    ? '<button class="quick-action-item quick-action-continue" type="button" onclick="restoreQuizDraft()"><span class="quick-action-icon" aria-hidden="true">▶</span><span>继续上次答题</span><small>回到未完成考核</small></button>'
-    : '';
+  const hasDraft = hasActiveQuizDraft(state.user);
+  const quickActions = [
+    hasDraft ? `<button class="quick-action-item quick-action-continue" type="button" onclick="handleContinueQuizEntry()" aria-disabled="false"><span class="quick-action-icon" aria-hidden="true">▶</span><span>继续上次答题</span><small>未完成考核</small></button>` : '',
+    '<button class="quick-action-item quick-action-add" type="button" onclick="openStudentWordEntry()"><span class="quick-action-icon" aria-hidden="true">＋</span><span>录入单词</span><small>添加新词</small></button>',
+    '<button class="quick-action-item quick-action-history" type="button" onclick="navigateTo(\'history\')"><span class="quick-action-icon" aria-hidden="true">◷</span><span>考核历史</span><small>查看过去题目</small></button>'
+  ].filter(Boolean).join('');
   section.innerHTML = [
     '<div class="quick-action-grid">',
-    continueAction,
-    '<button class="quick-action-item quick-action-add" type="button" onclick="openStudentWordEntry()"><span class="quick-action-icon" aria-hidden="true">＋</span><span>录入单词</span><small>添加自己的新词</small></button>',
-    '<button class="quick-action-item quick-action-history" type="button" onclick="navigateTo(\'history\')"><span class="quick-action-icon" aria-hidden="true">◷</span><span>考核历史</span><small>查看过去题目</small></button>',
+    quickActions,
     '</div>',
     '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
   ].join('');
 }
-
 function openStudentWordEntry() {
   const panel = $('studentToolPanel');
   if (!panel) return;
@@ -1214,9 +1266,10 @@ function openStudentWordEntry() {
     </div>
     <label class="parent-field">
       <span>批量单词</span>
-      <textarea id="studentWordsInput" rows="6" placeholder="可以用换行、逗号或分号分隔，例如&#10;resilient, genuine; feasible"></textarea>
+      <textarea id="studentWordsInput" rows="6" placeholder="可以用换行、逗号或分号分隔，例如&#10;resilient, genuine&#10;promotion | 促销活动"></textarea>
     </label>
     <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库；释义、例句和检查由后端生成。</div>
+    <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
   `;
 }
@@ -1258,10 +1311,15 @@ function ensureParentPage() {
   const grid = $('parentToolGrid');
   if (grid) {
     grid.innerHTML = `
-      <button class="parent-tool-card" type="button" onclick="openParentTool('searchWord')">
+      <button class="parent-tool-card" type="button" onclick="openParentTool('queryWord')">
         <span class="parent-tool-icon">⌕</span>
-        <span>查询/编辑</span>
-        <small>检查单词掌握</small>
+        <span>查询单词</span>
+        <small>查看单词状态</small>
+      </button>
+      <button class="parent-tool-card" type="button" onclick="openParentTool('editWords')">
+        <span class="parent-tool-icon">✎</span>
+        <span>编辑词库</span>
+        <small>分页管理状态</small>
       </button>
       <button class="parent-tool-card" type="button" onclick="openParentTool('learningSettings')">
         <span class="parent-tool-icon">⚙</span>
@@ -1275,6 +1333,7 @@ function ensureParentPage() {
       </button>
     `;
   }
+
 }
 function getParentToolPanel() {
   return $('parentToolPanel');
@@ -1374,26 +1433,39 @@ function openParentTool(tool) {
       </div>
       <label class="parent-field">
         <span>批量单词</span>
-        <textarea id="parentWordsInput" rows="6" placeholder="一行一个英文单词，例如&#10;resilient&#10;genuine&#10;feasible"></textarea>
+        <textarea id="parentWordsInput" rows="6" placeholder="一行一个英文单词；新义项可写 word | 中文释义，例如&#10;resilient&#10;promotion | 促销活动"></textarea>
       </label>
       <div class="parent-help">当前会把单词加入 ${escapeHtml(state.user)} 的词库；英文释义、中文释义、例句和干扰项由后端生成。</div>
-      <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
+      <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
+    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
     `;
     return;
   }
 
-  if (tool === 'searchWord') {
+  if (tool === 'queryWord') {
     panel.innerHTML = `
       <div class="parent-panel-head">
-        <strong>查询/编辑</strong>
+        <strong>查询单词</strong>
         <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
       </div>
       <div class="parent-inline-form">
         <input id="parentSearchWordInput" type="text" placeholder="输入英文单词" onkeydown="if(event.key==='Enter')searchParentWord()" />
         <button class="btn btn-secondary btn-small" type="button" onclick="searchParentWord()">查询</button>
       </div>
-      <div id="parentWordResult" class="parent-result-empty">可查询当前用户词库中的单词记录。</div>
+      <div id="parentWordResult" class="parent-result-empty">输入一个单词，只查看它在当前孩子词库里的状态。</div>
     `;
+    return;
+  }
+
+  if (tool === 'editWords') {
+    panel.innerHTML = `
+      <div class="parent-panel-head">
+        <strong>编辑词库</strong>
+        <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
+      </div>
+      <div id="parentWordLibrary" class="parent-result-empty">正在加载词库...</div>
+    `;
+    loadParentWordLibrary(1);
     return;
   }
 
@@ -1481,34 +1553,108 @@ function closeParentTool() {
   panel.innerHTML = '';
 }
 
-function parseParentWordsInput(value) {
-  return Array.from(new Set(String(value || '')
-    .split(/[\n,，;；\s]+/)
-    .map(word => word.trim().toLowerCase())
-    .filter(Boolean)));
+function parseParentWordEntries(value) {
+  const raw = String(value || '');
+  return Array.from(new Map(raw
+    .split(/\n+/)
+    .flatMap(line => line.includes('|') ? [line] : line.split(/[,，;；\s]+/))
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => {
+      const [wordPart, ...meaningParts] = item.split('|');
+      const word = String(wordPart || '').trim().toLowerCase();
+      const cnMeaning = meaningParts.join('|').trim();
+      return { word, cnMeaning };
+    })
+    .filter(entry => entry.word)
+    .map(entry => [`${entry.word}|${entry.cnMeaning}`, entry])
+  ).values());
 }
 
-async function submitParentWords() {
+function parseParentWordsInput(value) {
+  return parseParentWordEntries(value).map(entry => entry.word);
+}
+
+function getWordEntryDuplicatePanel() {
+  return $('parentWordsInput') ? $('parentWordEntryDuplicatePanel') : $('studentWordEntryDuplicatePanel');
+}
+
+function renderDuplicateWordConfirmation(duplicateWords = []) {
+  const panel = getWordEntryDuplicatePanel();
+  if (!panel) return;
+  const rows = duplicateWords.map(item => {
+    const existing = (item.existing || []).map(record => {
+      const meaning = record.cnMeaning || record.meaning || '暂无释义';
+      return `<li>${escapeHtml(meaning)}</li>`;
+    }).join('');
+    return `<div class="duplicate-word-card"><strong>${escapeHtml(item.word)}</strong><ul>${existing}</ul></div>`;
+  }).join('');
+  panel.innerHTML = `
+    <div class="duplicate-word-confirm">
+      <div class="parent-help">这些单词已经在词库里。若是新义项，请在输入框里写成 <strong>promotion | 促销活动</strong> 后再确认新增。</div>
+      ${rows}
+      <div class="parent-inline-form">
+        <button class="btn btn-secondary btn-small" type="button" onclick="submitParentWords({ skipDuplicateWords: true })">跳过重复，只添加新词</button>
+        <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords({ confirmNewMeanings: true })">作为新义项添加</button>
+      </div>
+    </div>
+  `;
+}
+
+function clearDuplicateWordConfirmation() {
+  const panel = getWordEntryDuplicatePanel();
+  if (panel) panel.innerHTML = '';
+}
+
+async function submitParentWords(options = {}) {
   const input = $('parentWordsInput') || $('studentWordsInput');
-  const words = parseParentWordsInput(input?.value);
-  if (!words.length) {
+  const entries = parseParentWordEntries(input?.value);
+  if (!entries.length) {
     showToast('请先输入至少一个单词', 'warn');
     return;
+  }
+  if (options.confirmNewMeanings) {
+    const validation = await api('/api/admin/validateWords', {
+      method: 'POST',
+      body: JSON.stringify({ targetUser: state.user, words: entries })
+    });
+    const duplicateWordSet = new Set((validation.duplicateWords || []).map(item => item.word));
+    const missingMeaning = entries.filter(entry => duplicateWordSet.has(entry.word) && !entry.cnMeaning);
+    if (missingMeaning.length) {
+      showToast('新增义项请写成 promotion | 促销活动 这种格式', 'warn');
+      renderDuplicateWordConfirmation(validation.duplicateWords || []);
+      return;
+    }
   }
   showLoading('正在录入单词...');
   try {
     const result = DEMO_MODE
-      ? { success: true, count: words.length }
+      ? { success: true, count: entries.length }
       : await api('/api/admin/addWords', {
           method: 'POST',
           timeoutMs: 90000,
-          body: JSON.stringify({ targetUser: state.user, words })
+          body: JSON.stringify({
+            targetUser: state.user,
+            words: entries,
+            confirmNewMeanings: Boolean(options.confirmNewMeanings),
+            skipDuplicateWords: Boolean(options.skipDuplicateWords),
+          })
         });
-    showToast('已提交 ' + (result.count || words.length) + ' 个单词', 'success');
+    const skipped = result.skippedDuplicateWords?.length ? `，跳过重复 ${result.skippedDuplicateWords.length} 个` : '';
+    showToast('已提交 ' + (result.count ?? entries.length) + ' 个单词' + skipped, 'success');
     if (input) input.value = '';
+    clearDuplicateWordConfirmation();
     loadStats(state.user);
   } catch (error) {
-    showToast('录入失败: ' + normalizeApiError(error).message, 'error');
+    const normalized = normalizeApiError(error);
+    if (normalized.code === 'DUPLICATE_WORD_CONFIRMATION_REQUIRED') {
+      renderDuplicateWordConfirmation(normalized.duplicateWords || normalized.payload?.duplicateWords || []);
+      showToast('发现重复单词，请确认是否作为新义项添加', 'info');
+    } else if (normalized.code === 'NEW_MEANING_REQUIRES_MEANING') {
+      showToast('新增义项需要填写中文释义，例如 promotion | 促销活动', 'warn');
+    } else {
+      showToast('录入失败: ' + normalized.message, 'error');
+    }
   } finally {
     hideLoading();
   }
@@ -1521,29 +1667,138 @@ async function searchParentWord() {
     showToast('请输入要查询的单词', 'warn');
     return;
   }
+  if (!resultEl) return;
   resultEl.textContent = '正在查询...';
   try {
     const data = DEMO_MODE
-      ? { exists: true, word, meaning: 'demo meaning', cnMeaning: '演示释义', pos: 'n.', context: `A demo sentence uses ${word}.` }
+      ? { exists: true, word, meaning: 'demo meaning', cnMeaning: '演示释义', pos: 'n.', context: `A demo sentence uses ${word}.`, status: 'Pending' }
       : await api(`/api/word?userId=${encodeURIComponent(state.user)}&word=${encodeURIComponent(word)}`);
     if (!data || data.exists === false) {
       resultEl.innerHTML = `<div class="parent-result-empty">没有找到 ${escapeHtml(word)}，可以先在“录入单词”里添加。</div>`;
       return;
     }
-    const recordId = data.recordId || data.id || '';
+    const cnMeaning = data.cnMeaning || data.CN_Meaning || '暂无中文释义';
+    const meaning = data.meaning || data.Meaning || '暂无英文释义';
+    const pos = data.pos || data.POS || '';
+    const context = data.context || data.Context || '';
     resultEl.innerHTML = `
-      <div class="parent-word-editor">
-        <input id="parentEditRecordId" type="hidden" value="${escapeHtml(recordId)}" />
-        <label class="parent-field"><span>英文</span><input id="parentEditWord" value="${escapeHtml(data.word || word)}" /></label>
-        <label class="parent-field"><span>英文释义</span><textarea id="parentEditMeaning" rows="3">${escapeHtml(data.meaning || data.Meaning || '')}</textarea></label>
-        <label class="parent-field"><span>中文释义</span><input id="parentEditCnMeaning" value="${escapeHtml(data.cnMeaning || data.CN_Meaning || '')}" /></label>
-        <label class="parent-field"><span>词性</span><input id="parentEditPos" value="${escapeHtml(data.pos || data.POS || '')}" /></label>
-        <label class="parent-field"><span>例句</span><textarea id="parentEditContext" rows="3">${escapeHtml(data.context || data.Context || '')}</textarea></label>
-        <button class="btn btn-primary btn-small" type="button" onclick="saveParentWord()">保存修改</button>
+      <div class="parent-word-query-card">
+        <div class="parent-word-query-head">
+          <strong>${escapeHtml(data.word || word)}</strong>
+          <span class="parent-word-status">${escapeHtml(formatWordStatus(data.status || data.Status || 'Pending'))}</span>
+        </div>
+        <dl class="parent-word-detail-list">
+          <div><dt>中文释义</dt><dd>${escapeHtml(cnMeaning)}</dd></div>
+          <div><dt>英文释义</dt><dd>${escapeHtml(meaning)}</dd></div>
+          ${pos ? `<div><dt>词性</dt><dd>${escapeHtml(pos)}</dd></div>` : ''}
+          ${context ? `<div><dt>例句</dt><dd>${escapeHtml(context)}</dd></div>` : ''}
+        </dl>
       </div>
     `;
   } catch (error) {
     resultEl.innerHTML = `<div class="parent-result-empty">查询失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+  }
+}
+
+function parentWordDomId(recordId) {
+  return String(recordId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+async function loadParentWordLibrary(page = 1) {
+  const libraryEl = $('parentWordLibrary');
+  if (!libraryEl) return;
+  libraryEl.textContent = '正在加载词库...';
+  try {
+    const pageSize = 20;
+    const data = DEMO_MODE
+      ? (() => {
+          const words = DEMO_WORDS.map((item, index) => ({
+            recordId: `demo-${index}`,
+            word: item.word,
+            cnMeaning: item.cn,
+            meaning: item.meaning,
+            pos: item.pos,
+            context: item.context,
+            status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
+          }));
+          const total = words.length;
+          const totalPages = Math.max(1, Math.ceil(total / pageSize));
+          const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+          const start = (safePage - 1) * pageSize;
+          return { words: words.slice(start, start + pageSize), page: safePage, pageSize, total, totalPages };
+        })()
+      : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`);
+    renderParentWordLibrary(data);
+  } catch (error) {
+    libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+  }
+}
+
+function renderParentWordLibrary(data) {
+  const libraryEl = $('parentWordLibrary');
+  if (!libraryEl) return;
+  const words = Array.isArray(data?.words) ? data.words : [];
+  const page = Number(data?.page || 1);
+  const totalPages = Number(data?.totalPages || 1);
+  const total = Number(data?.total || words.length);
+  if (!words.length) {
+    libraryEl.innerHTML = '<div class="parent-result-empty">当前孩子词库里还没有单词。</div>';
+    return;
+  }
+  const rows = words.map(item => {
+    const recordId = item.recordId || item.id || item.record_id || '';
+    const domId = parentWordDomId(recordId || item.word);
+    const currentStatus = item.status || item.Status || 'Pending';
+    const optionHtml = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${STATUS_LABELS[status]}</option>`).join('');
+    return `
+      <div class="parent-word-row">
+        <div class="parent-word-main">
+          <strong>${escapeHtml(item.word || item.Word || '')}</strong>
+          <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
+        </div>
+        <label class="parent-word-status-edit">
+          <span>状态</span>
+          <select class="parent-status-select" id="parentWordStatus-${escapeHtml(domId)}">${optionHtml}</select>
+        </label>
+        <button class="btn btn-secondary btn-small" type="button" onclick="saveParentWordStatus('${escapeHtml(recordId)}', '${escapeHtml(domId)}')">保存</button>
+      </div>
+    `;
+  }).join('');
+  libraryEl.innerHTML = `
+    <div class="parent-word-library">
+      <div class="parent-word-library-head">
+        <strong>共 ${escapeHtml(total)} 个单词</strong>
+        <span>第 ${escapeHtml(page)} / ${escapeHtml(totalPages)} 页</span>
+      </div>
+      ${rows}
+      <div class="parent-word-pager">
+        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveParentWordStatus(recordId, domId) {
+  const status = $(`parentWordStatus-${domId}`)?.value;
+  if (!recordId || !status) {
+    showToast('缺少要保存的单词记录', 'warn');
+    return;
+  }
+  showLoading('正在保存状态...');
+  try {
+    if (!DEMO_MODE) {
+      await api('/api/word', {
+        method: 'PUT',
+        body: JSON.stringify({ userId: state.user, recordId, status })
+      });
+    }
+    showToast('单词状态已更新为' + formatWordStatus(status), 'success');
+    loadStats(state.user);
+  } catch (error) {
+    showToast('保存状态失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
   }
 }
 
@@ -1715,17 +1970,18 @@ async function loadStats(user) {
       </section>
       <div class="home-stat-grid">
         <div class="home-stat-card home-stat-tests">
+          <div class="stat-icon stat-icon-star" aria-hidden="true">☆</div>
           <div class="label">考核次数</div>
           <div class="value">${escapeHtml(totalTests)}</div>
         </div>
         <div class="home-stat-card home-stat-accuracy">
+          <div class="stat-icon stat-icon-check" aria-hidden="true">✓</div>
           <div class="label">正确率</div>
           <div class="value">${escapeHtml(accuracyRate)}</div>
           <div class="sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</div>
         </div>
       </div>
       ${lastTestTime ? `<div class="recent-test-note"><span aria-hidden="true">◷</span> 上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
-      ${DEV_MODE ? `<div class="cleanup-row"><button class="btn btn-outline btn-small cleanup-btn" onclick="showCleanupConfirm()">清理测试模式记录：${escapeHtml(user)}</button></div>` : ''}
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');
@@ -1850,7 +2106,7 @@ function renderQuestion(idx) {
     const selected = state.answers[idx] === i ? 'selected' : '';
     return `<button class="option-btn ${selected}" onclick="selectOption(${idx}, ${i})">
       <span class="letter">${letter}</span>
-      <span>${escapeHtml(opt.replace(/^[A-D]\.\s*/, ''))}</span>
+      <span>${escapeHtml(formatOptionDisplayText(opt.replace(/^[A-D]\.\s*/, ''), q.options))}</span>
     </button>`;
   }).join('');
   const confidence = state.confidences[idx];
@@ -2067,7 +2323,7 @@ async function submitQuiz() {
 
     if (state.session.kind === 'quiz') {
       clearQuizDraft();
-      addGameRewardToBank(data.gameReward);
+      addGameRewardToBank(data.gameReward, state.user, state.quiz?.testId || data.testId);
     }
     const remaining = (data.results || [])
       .filter(result => !result.correct)

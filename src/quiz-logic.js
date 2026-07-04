@@ -35,6 +35,30 @@
       ?.replace(/^[A-D]\.\s*/, '') || '';
   }
 
+  const calendarProperNouns = new Map([
+    ['january', 'January'], ['february', 'February'], ['march', 'March'],
+    ['april', 'April'], ['may', 'May'], ['june', 'June'],
+    ['july', 'July'], ['august', 'August'], ['september', 'September'],
+    ['october', 'October'], ['november', 'November'], ['december', 'December'],
+    ['monday', 'Monday'], ['tuesday', 'Tuesday'], ['wednesday', 'Wednesday'],
+    ['thursday', 'Thursday'], ['friday', 'Friday'], ['saturday', 'Saturday'],
+    ['sunday', 'Sunday'],
+  ]);
+
+  function cleanOptionDisplayWord(value) {
+    return String(value || '').replace(/^[A-D]\.\s*/i, '').trim();
+  }
+
+  function formatOptionDisplayText(value, allOptions = []) {
+    const word = cleanOptionDisplayWord(value);
+    const key = word.toLowerCase();
+    const optionWords = (allOptions || []).map(cleanOptionDisplayWord);
+    const calendarCount = optionWords.filter(item => calendarProperNouns.has(item.toLowerCase())).length;
+    if (calendarCount >= 2 && calendarProperNouns.has(key)) {
+      return calendarProperNouns.get(key);
+    }
+    return word;
+  }
   function buildOptionMeaningsExplanation(question, escapeHtml) {
     if (!question?.options?.length) return '';
     const escape = escapeHtml || (value => String(value ?? ''));
@@ -66,9 +90,10 @@
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentence)}</div>
         <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     } else if (question.type === 2) {
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>英文释义 "${escape(question.context)}" 直接描述了 "${escape(correctWord)}" 的核心含义。</div>`;
+      const questionExplanation = question.contextCN || question.correctMeaning || question.context;
+      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     } else if (question.type === 3) {
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>题干线索：</strong>中文释义 "${escape(question.context)}" 对应的英文词是 "${escape(correctWord)}"。</div>`;
+      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(question.context)}</div>`;
     }
 
     return correctLine + reason + comparison;
@@ -91,6 +116,7 @@
     buildOptionMeaningsExplanation,
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
+    formatOptionDisplayText,
     normalizeArticleContext,
     optionWord,
   };

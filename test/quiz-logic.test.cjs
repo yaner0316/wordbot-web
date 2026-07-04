@@ -16,6 +16,7 @@ const {
     buildOptionMeaningsExplanation,
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
+    formatOptionDisplayText,
     normalizeArticleContext,
     optionWord,
 } = context.WordBotQuizLogic;
@@ -64,6 +65,21 @@ test('finds the option word by answer letter', () => {
     const question = { options: ['A. abandon', 'B. resilient'] };
     assert.equal(optionWord(question, 'B'), 'resilient');
 });
+test('formats month options as proper nouns when the option set is calendar-based', () => {
+    const options = ['A. march', 'B. january', 'C. october', 'D. september'];
+
+    assert.equal(formatOptionDisplayText('march', options), 'March');
+    assert.equal(formatOptionDisplayText('january', options), 'January');
+    assert.equal(formatOptionDisplayText('october', options), 'October');
+    assert.equal(formatOptionDisplayText('september', options), 'September');
+});
+
+test('keeps ordinary lowercase words lowercase in non-calendar option sets', () => {
+    const options = ['A. march', 'B. walk', 'C. jump', 'D. clap'];
+
+    assert.equal(formatOptionDisplayText('march', options), 'march');
+    assert.equal(formatOptionDisplayText('walk', options), 'walk');
+});
 
 test('renders all option meanings before the reasoning', () => {
     const question = {
@@ -84,6 +100,23 @@ test('renders all option meanings before the reasoning', () => {
     assert.match(reasoning, /你选择的 "abandon"/);
 });
 
+test('definition analysis shows a translated stem as the question explanation', () => {
+    const html = buildQuestionExplanation(
+        {
+            type: 2,
+            context: 'A word that can refer to a person, animal, place, thing, or idea.',
+            contextCN: '\u53ef\u4ee5\u6307\u4eba\u3001\u52a8\u7269\u3001\u5730\u65b9\u3001\u4e8b\u7269\u6216\u60f3\u6cd5\u7684\u8bcd\u3002',
+            answer: 'B',
+            options: ['A. verb', 'B. noun', 'C. adjective', 'D. adverb'],
+        },
+        { your: 'B', correct: true },
+        escapeHtml
+    );
+
+    assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.match(html, /\u53ef\u4ee5\u6307\u4eba\u3001\u52a8\u7269\u3001\u5730\u65b9/);
+    assert.doesNotMatch(html, /\u9898\u5e72\u7ebf\u7d22/);
+});
 test('fill-in analysis shows a sentence translation as the question explanation', () => {
     const html = buildQuestionExplanation(
         {

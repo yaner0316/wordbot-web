@@ -94,8 +94,8 @@ test('home shows current learning level without student level buttons', () => {
     assert.match(html, /id="currentLevelText"/);
     assert.ok(html.includes('当前难度'));
     const start = html.indexOf('<div class="learning-level-badge"');
-    const end = html.indexOf('<div id="modeSelectorWrap"', start);
-    assert.ok(start >= 0 && end > start, 'home current level badge should exist before mode selector');
+    const end = html.indexOf('<div id="statsContent"', start);
+    assert.ok(start >= 0 && end > start, 'home current level badge should exist before stats content');
     const homeLevelBlock = html.slice(start, end);
     assert.doesNotMatch(homeLevelBlock, /data-level=/);
     assert.doesNotMatch(homeLevelBlock, /onclick="selectLevel/);
@@ -131,6 +131,11 @@ test('quiz generation always clears the loading overlay', () => {
     );
 });
 
+test('quiz option labels use display formatting without changing answer indexes', () => {
+    assert.match(app, /formatOptionDisplayText/);
+    assert.ok(app.includes("formatOptionDisplayText(opt.replace(/^[A-D]\\.\\s*/, ''), q.options)"));
+    assert.match(app, /selectOption\(\$\{idx\}, \$\{i\}\)/);
+});
 test('quiz answers default to sure confidence but can be changed to guess', () => {
     assert.ok(app.includes('confidences: []'));
     assert.ok(app.includes('function selectOption(qIdx, optIdx)'));
@@ -274,6 +279,10 @@ test('quiz results can show animal garden reward summary from submit response', 
 test('game reward minutes are banked and offered after at least one review round', () => {
     assert.match(app, /GAME_TIME_BANK_KEY_PREFIX/);
     assert.match(app, /function addGameRewardToBank/);
+    assert.match(app, /GAME_TIME_REWARD_CLAIM_KEY_PREFIX/);
+    assert.match(app, /function getClaimedGameRewardIds/);
+    assert.match(app, /function markGameRewardClaimed/);
+    assert.match(app, /addGameRewardToBank\(data\.gameReward, state\.user, state\.quiz\?\.testId \|\| data\.testId\)/);
     assert.match(app, /function getBankedGameMinutes/);
     assert.match(app, /function renderGameTimePrompt/);
     assert.match(app, /state\.session\.reviewRounds\.length\s*>\s*0/);
@@ -316,22 +325,23 @@ test('animal garden rewards render through manifest-driven art assets', () => {
     assert.doesNotMatch(app, /animal-visitor-chip/);
 });
 
-test('dev and demo modes expose a mini game preview entry', () => {
+test('home does not expose mini game preview or data mode controls', () => {
+    const homeStart = html.indexOf('id="pageHome"');
+    const homeEnd = html.indexOf('id="pageQuiz"', homeStart);
+    assert.ok(homeStart >= 0 && homeEnd > homeStart, 'home page markup should exist');
+    const homeHtml = html.slice(homeStart, homeEnd);
+    assert.doesNotMatch(homeHtml, /gamePreviewBtn/);
+    assert.doesNotMatch(homeHtml, /modeSelectorWrap/);
+    assert.doesNotMatch(homeHtml, /data-mode="test"/);
+    assert.doesNotMatch(homeHtml, /\u5c0f\u6e38\u620f\u4f53\u9a8c/);
     assert.match(app, /function startGamePreview/);
-    assert.match(app, /DEV_MODE[\s\S]*startGamePreview/);
-    assert.match(html + app, /\u5c0f\u6e38\u620f\u4f53\u9a8c/);
 });
-
-test('mini game preview is on the home actions, not quiz navigation', () => {
-    assert.match(html, /id="pageHome"[\s\S]*id="gamePreviewBtn"/);
-    assert.doesNotMatch(html, /class="quiz-nav"[\s\S]*id="gamePreviewBtn"/);
-});
-
 
 test('unregistered legacy users are guided into first password binding', () => {
     assert.match(app, /function handleUnregisteredPasswordLogin/);
     assert.match(app, /updateAuthMode\('register'\)/);
     assert.match(app, /authPasswordConfirm\.value\s*=\s*authPassword\.value/);
+    assert.ok(app.includes('user has no password yet'));
     assert.ok(app.includes('\u9996\u6b21\u4f7f\u7528\u8bf7\u518d\u70b9\u4e00\u6b21\u6ce8\u518c\u5e76\u767b\u5f55'));
 });
 
@@ -365,7 +375,6 @@ test('home stats and game prompts render clean Chinese text', () => {
     assert.ok(app.includes('\u8003\u6838\u6b21\u6570'));
     assert.ok(app.includes('\u6b63\u786e\u7387'));
     assert.ok(app.includes('\u4e0a\u6b21\u8003\u6838'));
-    assert.ok(app.includes('\u6e05\u7406\u6d4b\u8bd5\u6a21\u5f0f\u8bb0\u5f55'));
     assert.ok(app.includes('\u5c0f\u6e38\u620f\u65f6\u95f4'));
     assert.ok(app.includes('\u5b58\u7559\u65f6\u95f4'));
     assert.ok(app.includes('\u73b0\u5728\u73a9'));
@@ -414,10 +423,27 @@ test('animal garden v0.3 keeps polished meters with manifest art stage', () => {
 
 
 test('home shows the Xiaolong character image as a first-screen mascot', () => {
-    assert.match(html, /assets\/xiaolong\.png/);
+    assert.match(html, /assets\/xiaolong(?:-transparent)?\.png/);
     assert.match(html, /class="home-dragon"/);
     assert.match(styles, /\.home-dragon/);
     assert.match(styles, /\.home-hero-strip/);
+});
+
+test('home quick actions show only study entries and continue only when a draft exists', () => {
+    const start = app.indexOf('function renderStudentTools()');
+    const end = app.indexOf('function openStudentWordEntry()', start);
+    assert.ok(start >= 0 && end > start, 'renderStudentTools function should exist');
+    const renderStudentToolsSource = app.slice(start, end);
+    assert.match(renderStudentToolsSource, /const hasDraft = hasActiveQuizDraft\(state\.user\)/);
+    assert.match(renderStudentToolsSource, /hasDraft \? `[\s\S]*quick-action-continue/);
+    assert.match(renderStudentToolsSource, /\.filter\(Boolean\)\.join\(''\)/);
+    assert.match(renderStudentToolsSource, /openStudentWordEntry\(\)/);
+    assert.ok(renderStudentToolsSource.includes("navigateTo(\\'history\\')"));
+    assert.doesNotMatch(renderStudentToolsSource, /quick-action-disabled/);
+    assert.doesNotMatch(renderStudentToolsSource, /renderBankedGameTimeCard\(\)/);
+    assert.doesNotMatch(renderStudentToolsSource, /已存游戏时间|小游戏体验|数据模式|清理测试模式记录/);
+    assert.match(app, /function handleContinueQuizEntry\(\)/);
+    assert.match(app, /restoreQuizDraft\(\)/);
 });
 
 test('current learning level is shown as a parent-managed compact badge', () => {
@@ -505,4 +531,58 @@ test('quiz submit automatically confirms the result once after a timeout', () =>
     const submitSource = app.slice(app.indexOf('async function submitQuiz()'), app.indexOf('// ========== Results =========='));
     assert.match(submitSource, /submitQuizToBackend\(payload\)/);
     assert.doesNotMatch(submitSource, /timeoutMs:\s*90000/);
+});
+test('word entry supports duplicate confirmation before adding same-word meanings', () => {
+    assert.match(app, /function parseParentWordEntries/);
+    assert.match(app, /promotion \| 促销活动/);
+    assert.match(app, /DUPLICATE_WORD_CONFIRMATION_REQUIRED/);
+    assert.match(app, /confirmNewMeanings/);
+    assert.match(app, /skipDuplicateWords/);
+    assert.match(app, /function renderDuplicateWordConfirmation/);
+    assert.match(app, /error\.payload\s*=\s*data/);
+});
+
+
+test('parent word query and library editing are separate tools with Chinese status labels', () => {
+    assert.match(app, /openParentTool\('queryWord'\)/);
+    assert.match(app, /openParentTool\('editWords'\)/);
+    assert.match(app, /function loadParentWordLibrary/);
+    assert.match(app, /function renderParentWordLibrary/);
+    assert.match(app, /function saveParentWordStatus/);
+    assert.match(app, /\/api\/admin\/words\?userId=/);
+    assert.match(app, /STATUS_LABELS/);
+    assert.match(app, /待学习/);
+    assert.match(app, /已掌握/);
+    const searchStart = app.indexOf('async function searchParentWord()');
+    const searchEnd = app.indexOf('async function loadParentWordLibrary', searchStart);
+    assert.ok(searchStart >= 0 && searchEnd > searchStart, 'searchParentWord should appear before library editor');
+    const searchSource = app.slice(searchStart, searchEnd);
+    assert.doesNotMatch(searchSource, /parent-word-editor/);
+    assert.doesNotMatch(searchSource, /saveParentWord/);
+});
+
+test('parent console omits word entry because students add words from home', () => {
+    const htmlGridStart = html.indexOf('id="parentToolGrid"');
+    const htmlGridEnd = html.indexOf('<div class="parent-tool-panel"', htmlGridStart);
+    assert.ok(htmlGridStart >= 0 && htmlGridEnd > htmlGridStart, 'static parent tool grid should exist');
+    const htmlGrid = html.slice(htmlGridStart, htmlGridEnd);
+    assert.ok(!htmlGrid.includes("openParentTool('addWords')"));
+    assert.ok(htmlGrid.includes("openParentTool('queryWord')"));
+    assert.ok(htmlGrid.includes("openParentTool('editWords')"));
+
+    const ensureStart = app.indexOf('function ensureParentPage()');
+    const ensureEnd = app.indexOf('function getParentToolPanel()', ensureStart);
+    assert.ok(ensureStart >= 0 && ensureEnd > ensureStart, 'dynamic parent page should exist');
+    const ensureSource = app.slice(ensureStart, ensureEnd);
+    assert.ok(!ensureSource.includes("openParentTool('addWords')"));
+    assert.ok(ensureSource.includes("openParentTool('queryWord')"));
+    assert.ok(ensureSource.includes("openParentTool('editWords')"));
+});
+
+test('home quick actions exclude banked game time entry', () => {
+    assert.doesNotMatch(app, /function renderBankedGameTimeCard/);
+    assert.doesNotMatch(app, /function handleBankedGameTimeEntry/);
+    assert.doesNotMatch(app, /已存游戏时间/);
+    assert.match(app, /function getBankedGameMinutes/);
+    assert.match(app, /function renderAnimalGardenGame/);
 });
