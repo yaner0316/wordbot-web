@@ -429,19 +429,31 @@ test('home shows the Xiaolong character image as a first-screen mascot', () => {
     assert.match(styles, /\.home-hero-strip/);
 });
 
-test('home quick actions show only study entries and continue only when a draft exists', () => {
+test('home quick actions expose the required four entry points', () => {
     const start = app.indexOf('function renderStudentTools()');
     const end = app.indexOf('function openStudentWordEntry()', start);
     assert.ok(start >= 0 && end > start, 'renderStudentTools function should exist');
     const renderStudentToolsSource = app.slice(start, end);
+
     assert.match(renderStudentToolsSource, /const hasDraft = hasActiveQuizDraft\(state\.user\)/);
-    assert.match(renderStudentToolsSource, /hasDraft \? `[\s\S]*quick-action-continue/);
-    assert.match(renderStudentToolsSource, /\.filter\(Boolean\)\.join\(''\)/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-grid/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-continue/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-bank/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-add/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-history/);
+
+    assert.match(renderStudentToolsSource, /\u7ee7\u7eed\u4e0a\u6b21\u7ec3\u4e60/);
+    assert.match(renderStudentToolsSource, /hasDraft \? '\u56de\u5230\u672a\u5b8c\u6210\u7ec3\u4e60' : '\u6682\u65e0\u672a\u5b8c\u6210\u7ec3\u4e60'/);
+    assert.match(renderStudentToolsSource, /\u5df2\u5b58\u6e38\u620f\u65f6\u95f4/);
+    assert.match(renderStudentToolsSource, /getBankedGameMinutes\(state\.user\)/);
+    assert.match(renderStudentToolsSource, /startBankedGameNow\(\)/);
+    assert.match(renderStudentToolsSource, /\u5f55\u5165\u5355\u8bcd/);
     assert.match(renderStudentToolsSource, /openStudentWordEntry\(\)/);
+    assert.match(renderStudentToolsSource, /\u8003\u6838\u5386\u53f2/);
     assert.ok(renderStudentToolsSource.includes("navigateTo(\\'history\\')"));
-    assert.doesNotMatch(renderStudentToolsSource, /quick-action-disabled/);
+
+    assert.doesNotMatch(renderStudentToolsSource, /\u5c0f\u6e38\u620f\u4f53\u9a8c|\u6570\u636e\u6a21\u5f0f|\u6e05\u7406\u6d4b\u8bd5\u6a21\u5f0f\u8bb0\u5f55|\u6e05\u7406\u6d4b\u8bd5\u8bb0\u5f55/);
     assert.doesNotMatch(renderStudentToolsSource, /renderBankedGameTimeCard\(\)/);
-    assert.doesNotMatch(renderStudentToolsSource, /已存游戏时间|小游戏体验|数据模式|清理测试模式记录/);
     assert.match(app, /function handleContinueQuizEntry\(\)/);
     assert.match(app, /restoreQuizDraft\(\)/);
 });
@@ -579,10 +591,18 @@ test('parent console omits word entry because students add words from home', () 
     assert.ok(ensureSource.includes("openParentTool('editWords')"));
 });
 
-test('home quick actions exclude banked game time entry', () => {
-    assert.doesNotMatch(app, /function renderBankedGameTimeCard/);
-    assert.doesNotMatch(app, /function handleBankedGameTimeEntry/);
-    assert.doesNotMatch(app, /已存游戏时间/);
+test('home quick actions include banked game time without preview or debug controls', () => {
+    const start = app.indexOf('function renderStudentTools()');
+    const end = app.indexOf('function openStudentWordEntry()', start);
+    assert.ok(start >= 0 && end > start, 'renderStudentTools function should exist');
+    const renderStudentToolsSource = app.slice(start, end);
+
+    assert.match(renderStudentToolsSource, /\u5df2\u5b58\u6e38\u620f\u65f6\u95f4/);
+    assert.match(renderStudentToolsSource, /getBankedGameMinutes\(state\.user\)/);
+    assert.match(renderStudentToolsSource, /startBankedGameNow\(\)/);
+    assert.doesNotMatch(renderStudentToolsSource, /\u5c0f\u6e38\u620f\u4f53\u9a8c|\u6570\u636e\u6a21\u5f0f|\u6e05\u7406\u6d4b\u8bd5\u6a21\u5f0f\u8bb0\u5f55|\u6e05\u7406\u6d4b\u8bd5\u8bb0\u5f55/);
+    assert.doesNotMatch(renderStudentToolsSource, /renderBankedGameTimeCard\(\)/);
+    assert.doesNotMatch(renderStudentToolsSource, /handleBankedGameTimeEntry\(\)/);
     assert.match(app, /function getBankedGameMinutes/);
     assert.match(app, /function renderAnimalGardenGame/);
 });

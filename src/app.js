@@ -637,11 +637,15 @@ function renderGameTimePrompt() {
 }
 
 function startBankedGameNow() {
-  const host = $('animalGardenMount');
-  if (host) {
-    host.innerHTML = renderAnimalGardenGame();
-    mountCurrentRewardGardenArt();
+  if (getBankedGameMinutes() <= 0) {
+    showToast('暂无可用小游戏时间', 'info');
+    return;
   }
+  const host = $('animalGardenMount') || document.createElement('div');
+  host.id = 'animalGardenMount';
+  if (!host.parentNode) $('pageHome')?.appendChild(host);
+  host.innerHTML = renderAnimalGardenGame();
+  mountCurrentRewardGardenArt();
 }
 
 function keepBankedGameForLater() {
@@ -1136,8 +1140,49 @@ function updateLevelButtons() {
   });
 }
 
+function ensureHomeV2Hero() {
+  const hero = document.querySelector('#pageHome .dragon-hero-card');
+  if (!hero) return;
+  hero.classList.add('home-v2-hero-card');
+
+  const content = hero.querySelector('.dragon-hero-content');
+  if (content) {
+    content.classList.add('home-v2-hero-copy');
+    const titleWrap = content.querySelector('.dragon-hero-title-wrap');
+    if (titleWrap) {
+      titleWrap.innerHTML = '<h2>和小龙一起学单词</h2><p class="home-v2-hero-note">把新词慢慢变成朋友</p>';
+    }
+  }
+
+  const chips = hero.querySelector('.dragon-hero-chips');
+  if (chips) {
+    chips.classList.add('home-v2-hero-chips');
+    const parentChip = chips.querySelector('.hero-chip-parent');
+    if (parentChip) parentChip.classList.add('home-v2-parent-chip');
+  }
+
+  const dragon = hero.querySelector('.home-dragon');
+  if (dragon) {
+    dragon.src = 'assets/xiaolong-transparent.png';
+    dragon.removeAttribute('data-legacy-src');
+  }
+
+  const scene = hero.querySelector('.dragon-scene');
+  if (scene && !scene.querySelector('.home-v2-mountain')) {
+    scene.insertAdjacentHTML('afterbegin', [
+      '<span class="home-v2-cloud home-v2-cloud-one"></span>',
+      '<span class="home-v2-cloud home-v2-cloud-two"></span>',
+      '<span class="home-v2-mountain"></span>',
+      '<span class="home-v2-water"></span>',
+      '<span class="home-v2-grass home-v2-grass-one"></span>',
+      '<span class="home-v2-grass home-v2-grass-two"></span>',
+      '<span class="home-v2-grass home-v2-grass-three"></span>'
+    ].join(''));
+  }
+}
 // ========== Home ==========
 async function loadHome() {
+  ensureHomeV2Hero();
   if (!state.user) {
     showLoginPage();
     return;
@@ -1238,19 +1283,19 @@ function renderStudentTools() {
   if (!section) {
     section = document.createElement('section');
     section.id = 'studentTools';
-    section.className = 'quick-actions-card student-tools';
+    section.className = 'home-v2-quick-card student-tools';
     const stats = $('statsContent');
     stats?.insertAdjacentElement('afterend', section);
   }
+  section.className = 'home-v2-quick-card student-tools';
   const hasDraft = hasActiveQuizDraft(state.user);
-  const quickActions = [
-    hasDraft ? `<button class="quick-action-item quick-action-continue" type="button" onclick="handleContinueQuizEntry()" aria-disabled="false"><span class="quick-action-icon" aria-hidden="true">▶</span><span>继续上次答题</span><small>未完成考核</small></button>` : '',
-    '<button class="quick-action-item quick-action-add" type="button" onclick="openStudentWordEntry()"><span class="quick-action-icon" aria-hidden="true">＋</span><span>录入单词</span><small>添加新词</small></button>',
-    '<button class="quick-action-item quick-action-history" type="button" onclick="navigateTo(\'history\')"><span class="quick-action-icon" aria-hidden="true">◷</span><span>考核历史</span><small>查看过去题目</small></button>'
-  ].filter(Boolean).join('');
+  const bankedMinutes = getBankedGameMinutes(state.user);
   section.innerHTML = [
-    '<div class="quick-action-grid">',
-    quickActions,
+    '<div class="home-v2-quick-grid">',
+    '<button class="home-v2-quick-item home-v2-quick-continue" type="button" onclick="handleContinueQuizEntry()" aria-disabled="' + (!hasDraft) + '"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m8 5 10 7-10 7z"/></svg></span><span class="home-v2-quick-text"><strong>继续上次练习</strong><small>' + (hasDraft ? '回到未完成练习' : '暂无未完成练习') + '</small></span></button>',
+    '<button class="home-v2-quick-item home-v2-quick-bank" type="button" onclick="startBankedGameNow()"><span class="home-v2-quick-icon green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8h8v8H8z"/><path d="M9 4h6"/><path d="M9 20h6"/></svg></span><span class="home-v2-quick-text"><strong>已存游戏时间</strong><small>' + escapeHtml(bankedMinutes) + ' 分钟</small></span></button>',
+    '<button class="home-v2-quick-item home-v2-quick-add" type="button" onclick="openStudentWordEntry()"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><span class="home-v2-quick-text"><strong>录入单词</strong><small>添加新词</small></span></button>',
+    '<button class="home-v2-quick-item home-v2-quick-history" type="button" onclick="navigateTo(\'history\')"><span class="home-v2-quick-icon blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg></span><span class="home-v2-quick-text"><strong>考核历史</strong><small>查看记录</small></span></button>',
     '</div>',
     '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
   ].join('');
@@ -1943,45 +1988,39 @@ async function loadStats(user) {
     const accuracyRate = data.accuracyRate || '0%';
     const lastTestTime = data.lastTestTime;
     const pct = totalWords > 0 ? Math.round(masteredWords / totalWords * 100) : 0;
-    const dash = 282.7 * pct / 100;
 
     $('statsContent').innerHTML = `
-      <section class="vocab-progress-card" aria-label="词汇进度">
-        <div class="section-title">词汇进度</div>
-        <div class="progress-ring-wrap">
-          <div class="progress-ring">
-            <svg width="132" height="132" viewBox="0 0 100 100" aria-hidden="true">
-              <circle class="bg" cx="50" cy="50" r="45"/>
-              <circle class="fg" cx="50" cy="50" r="45" style="stroke-dasharray:282.7;stroke-dashoffset:${282.7 - dash};"/>
-            </svg>
-            <div class="center">
-              <div class="pct">${pct}%</div>
-              <div class="pct-label">已掌握</div>
-            </div>
+      <section class="home-v2-progress-card" aria-label="词汇进度">
+        <div class="home-v2-section-head">
+          <span class="home-v2-section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 5.5h8.8a2.7 2.7 0 0 1 0 5.4H6.5z"/><path d="M6.5 10.9h10a2.8 2.8 0 0 1 0 5.6h-10z"/></svg></span>
+          <h2>词汇进度</h2>
+        </div>
+        <div class="home-v2-progress-body">
+          <div class="home-v2-donut" aria-label="已掌握 ${escapeHtml(pct)}%" style="--pct:${pct};">
+            <div class="home-v2-donut-core"><strong>${escapeHtml(pct)}%</strong><span>已掌握</span></div>
           </div>
-          <div class="ring-stats">
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--green);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-secondary);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
-          </div>
+          <ul class="home-v2-progress-list">
+            <li><span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></li>
+            <li><span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></li>
+            <li><span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></li>
+            <li><span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></li>
+            <li><span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></li>
+          </ul>
         </div>
       </section>
-      <div class="home-stat-grid">
-        <div class="home-stat-card home-stat-tests">
-          <div class="stat-icon stat-icon-star" aria-hidden="true">☆</div>
-          <div class="label">考核次数</div>
-          <div class="value">${escapeHtml(totalTests)}</div>
+      <section class="home-v2-stats-grid" aria-label="学习统计">
+        <div class="home-v2-stat-card">
+          <div class="home-v2-stat-top"><span class="home-v2-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5 14.3 9l5 .7-3.6 3.5.8 4.9L12 15.8l-4.5 2.3.8-4.9L4.7 9.7l5-.7z"/></svg></span><span>考核次数</span></div>
+          <strong class="home-v2-stat-value">${escapeHtml(totalTests)}</strong>
+          <span class="home-v2-stat-sub home-v2-stat-sub-placeholder" aria-hidden="true">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</span>
         </div>
-        <div class="home-stat-card home-stat-accuracy">
-          <div class="stat-icon stat-icon-check" aria-hidden="true">✓</div>
-          <div class="label">正确率</div>
-          <div class="value">${escapeHtml(accuracyRate)}</div>
-          <div class="sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</div>
+        <div class="home-v2-stat-card">
+          <div class="home-v2-stat-top"><span class="home-v2-stat-icon green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4L18.5 8"/></svg></span><span>正确率</span></div>
+          <strong class="home-v2-stat-value green">${escapeHtml(accuracyRate)}</strong>
+          <span class="home-v2-stat-sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</span>
         </div>
-      </div>
-      ${lastTestTime ? `<div class="recent-test-note"><span aria-hidden="true">◷</span> 上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
+      </section>
+      ${lastTestTime ? `<p class="home-v2-last-test"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg>上次考核：${escapeHtml(formatDate(lastTestTime))}</p>` : ''}
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');
