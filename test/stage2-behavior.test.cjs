@@ -201,6 +201,25 @@ test('home page gates parent tools behind phone password access', () => {
     assert.match(app, /\/api\/admin\/userSettings/);
 });
 
+test('quiz page has a header-aligned return home action', () => {
+    const quizStart = html.indexOf('id="pageQuiz"');
+    const quizEnd = html.indexOf('id="pageResults"', quizStart);
+    assert.ok(quizStart >= 0 && quizEnd > quizStart, 'quiz page markup should exist');
+    const quizHtml = html.slice(quizStart, quizEnd);
+    assert.match(quizHtml, /class="quiz-header-row"/);
+    assert.match(quizHtml, /class="quiz-home-btn"/);
+    assert.match(quizHtml, /onclick="navigateTo\('home'\)"/);
+    assert.match(quizHtml, /\u8fd4\u56de\u9996\u9875/);
+    assert.match(styles, /\.quiz-header-row/);
+    assert.match(styles, /\.quiz-home-btn/);
+});
+
+test('parent auth explains child-scoped credentials on generic backend failure', () => {
+    assert.match(app, /function formatParentLoginError/);
+    assert.match(app, /formatParentLoginError\(error\)/);
+    assert.ok(app.includes('\u5f53\u524d\u5b69\u5b50'));
+    assert.ok(app.includes('\u7ed1\u5b9a\u7684\u5bb6\u957f\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u5bf9'));
+});
 test('home load skips the unused all-users request for faster startup', () => {
     const loadHomeMatch = app.match(/async function loadHome\(\) \{[\s\S]*?\n\}/);
     assert.ok(loadHomeMatch, 'loadHome function should exist');

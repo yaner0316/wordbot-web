@@ -472,6 +472,43 @@
       flex-wrap: wrap;
     }
     /* ===== Quiz Page ===== */
+    .quiz-header {
+      display: block;
+    }
+    .quiz-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+    }
+    .quiz-home-btn {
+      min-height: 38px;
+      padding: 0 14px;
+      border: none;
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--text-secondary);
+      box-shadow: var(--shadow);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .quiz-home-btn:hover {
+      color: var(--orange);
+      box-shadow: var(--shadow-hover);
+    }
+    .quiz-home-btn svg {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+    }
     .quiz-progress {
       display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
     }

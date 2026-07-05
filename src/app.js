@@ -769,6 +769,13 @@ function normalizeApiError(error) {
   }
   return error;
 }
+function formatParentLoginError(error) {
+  const message = normalizeApiError(error).message || '';
+  if (/parent username\/password error/i.test(message)) {
+    return `当前孩子 ${state.user || ''} 绑定的家长用户名或密码不对，请确认用的是这个孩子账号下设置的家长密码。`;
+  }
+  return message;
+}
 
 function navigateTo(page, options = {}) {
   if (!state.user && page !== 'login') {
@@ -1455,7 +1462,7 @@ async function verifyParentPassword() {
     showParentTools();
     showToast('已进入家长控制台', 'success');
   } catch (error) {
-    showToast('验证失败: ' + normalizeApiError(error).message, 'error');
+    showToast('验证失败: ' + formatParentLoginError(error), 'error');
   } finally {
     hideLoading();
   }
