@@ -448,7 +448,77 @@
     .parent-word-editor {
       margin-top: 10px;
     }
-    .parent-cache-status {
+    .parent-word-filter {
+      max-width: 240px;
+    }
+    .parent-word-library {
+      display: grid;
+      gap: 8px;
+    }
+    .parent-word-library-head,
+    .parent-word-editor-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+    .parent-word-library-head span {
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .parent-word-list-item {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 11px;
+      border: 1px solid #E7D9CB;
+      border-radius: var(--radius-sm);
+      background: #FFFCF8;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+    .parent-word-list-item:hover {
+      border-color: var(--orange);
+      background: #fff;
+    }
+    .parent-word-main {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+    .parent-word-main strong,
+    .parent-word-main small {
+      overflow-wrap: anywhere;
+    }
+    .parent-word-main small {
+      color: var(--text-secondary);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .parent-word-status-badge {
+      border-radius: 999px;
+      background: var(--orange-subtle);
+      color: var(--orange-dark);
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .parent-word-pager {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .parent-word-editor-card {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #F0E4D8;
+    }    .parent-cache-status {
       border-radius: 10px;
       background: #F6FAFF;
       border: 1px solid #D8E9FF;

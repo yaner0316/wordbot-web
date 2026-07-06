@@ -579,7 +579,8 @@ test('parent word query and library editing are separate tools with Chinese stat
     assert.match(app, /openParentTool\('editWords'\)/);
     assert.match(app, /function loadParentWordLibrary/);
     assert.match(app, /function renderParentWordLibrary/);
-    assert.match(app, /function saveParentWordStatus/);
+    assert.match(app, /function openParentWordEditor/);
+    assert.match(app, /function saveParentWord/);
     assert.match(app, /\/api\/admin\/words\?userId=/);
     assert.match(app, /STATUS_LABELS/);
     assert.match(app, /待学习/);
@@ -590,6 +591,22 @@ test('parent word query and library editing are separate tools with Chinese stat
     const searchSource = app.slice(searchStart, searchEnd);
     assert.doesNotMatch(searchSource, /parent-word-editor/);
     assert.doesNotMatch(searchSource, /saveParentWord/);
+});
+
+test('parent word management opens a list first, then a clicked word editor with status filters', () => {
+    assert.match(app, /parentWordStatusFilter/);
+    assert.match(app, /function getParentWordStatusFilter/);
+    assert.match(app, /status=\$\{encodeURIComponent\(statusFilter\)\}/);
+    assert.match(app, /function openParentWordEditor/);
+    assert.match(app, /onclick="openParentWordEditor/);
+
+    const libraryStart = app.indexOf('function renderParentWordLibrary');
+    const editorStart = app.indexOf('function openParentWordEditor', libraryStart);
+    assert.ok(libraryStart >= 0 && editorStart > libraryStart, 'word list should render before editor function');
+    const listSource = app.slice(libraryStart, editorStart);
+    assert.doesNotMatch(listSource, /parent-status-select/);
+    assert.doesNotMatch(listSource, /saveParentWordStatus/);
+    assert.match(listSource, /parent-word-list-item/);
 });
 
 test('parent console omits word entry because students add words from home', () => {

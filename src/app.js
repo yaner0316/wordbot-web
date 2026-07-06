@@ -21,7 +21,13 @@ const STATUS_LABELS = {
   Mastered: '已掌握',
 };
 const STATUS_OPTIONS = ['Pending', 'Recognized', 'Consolidating', 'Mastered'];
-
+const parentWordLibraryState = {
+  page: 1,
+  pageSize: 20,
+  total: 0,
+  totalPages: 1,
+  words: [],
+};
 function formatLearningLevel(level) {
   return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
 }
@@ -1515,12 +1521,20 @@ function openParentTool(tool) {
         <strong>编辑词库</strong>
         <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
       </div>
+      <div class="parent-help">单词管理 → 单词列表 → 点击单词进入编辑。</div>
+      <label class="parent-field parent-word-filter">
+        <span>按状态筛选</span>
+        <select id="parentWordStatusFilter" onchange="loadParentWordLibrary(1)">
+          <option value="">全部状态</option>
+          ${STATUS_OPTIONS.map(status => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('')}
+        </select>
+      </label>
       <div id="parentWordLibrary" class="parent-result-empty">正在加载词库...</div>
+      <div id="parentWordEditor" class="parent-word-editor"></div>
     `;
     loadParentWordLibrary(1);
     return;
   }
-
   if (tool === 'learningSettings') {
     panel.innerHTML = `
       <div class="parent-panel-head">
@@ -1756,15 +1770,21 @@ function parentWordDomId(recordId) {
   return String(recordId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+function getParentWordStatusFilter() {
+  const status = $('parentWordStatusFilter')?.value || '';
+  return STATUS_OPTIONS.includes(status) ? status : '';
+}
+
 async function loadParentWordLibrary(page = 1) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
   libraryEl.textContent = '正在加载词库...';
+  const statusFilter = getParentWordStatusFilter();
   try {
     const pageSize = 20;
     const data = DEMO_MODE
       ? (() => {
-          const words = DEMO_WORDS.map((item, index) => ({
+          const allWords = DEMO_WORDS.map((item, index) => ({
             recordId: `demo-${index}`,
             word: item.word,
             cnMeaning: item.cn,
@@ -1773,19 +1793,21 @@ async function loadParentWordLibrary(page = 1) {
             context: item.context,
             status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
           }));
+          const words = statusFilter ? allWords.filter(item => item.status === statusFilter) : allWords;
           const total = words.length;
           const totalPages = Math.max(1, Math.ceil(total / pageSize));
           const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
           const start = (safePage - 1) * pageSize;
           return { words: words.slice(start, start + pageSize), page: safePage, pageSize, total, totalPages };
         })()
-      : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`);
+      : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`);
     renderParentWordLibrary(data);
   } catch (error) {
     libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+    const editorEl = $('parentWordEditor');
+    if (editorEl) editorEl.innerHTML = '';
   }
 }
-
 function renderParentWordLibrary(data) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
@@ -1793,27 +1815,28 @@ function renderParentWordLibrary(data) {
   const page = Number(data?.page || 1);
   const totalPages = Number(data?.totalPages || 1);
   const total = Number(data?.total || words.length);
+  parentWordLibraryState.page = page;
+  parentWordLibraryState.pageSize = Number(data?.pageSize || 20);
+  parentWordLibraryState.total = total;
+  parentWordLibraryState.totalPages = totalPages;
+  parentWordLibraryState.words = words;
+  const editorEl = $('parentWordEditor');
+  if (editorEl) editorEl.innerHTML = '';
   if (!words.length) {
-    libraryEl.innerHTML = '<div class="parent-result-empty">当前孩子词库里还没有单词。</div>';
+    libraryEl.innerHTML = '<div class="parent-result-empty">当前筛选条件下没有单词。</div>';
     return;
   }
   const rows = words.map(item => {
     const recordId = item.recordId || item.id || item.record_id || '';
-    const domId = parentWordDomId(recordId || item.word);
     const currentStatus = item.status || item.Status || 'Pending';
-    const optionHtml = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${STATUS_LABELS[status]}</option>`).join('');
     return `
-      <div class="parent-word-row">
+      <button class="parent-word-list-item" type="button" onclick="openParentWordEditor('${escapeHtml(recordId)}', ${page})">
         <div class="parent-word-main">
           <strong>${escapeHtml(item.word || item.Word || '')}</strong>
           <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
         </div>
-        <label class="parent-word-status-edit">
-          <span>状态</span>
-          <select class="parent-status-select" id="parentWordStatus-${escapeHtml(domId)}">${optionHtml}</select>
-        </label>
-        <button class="btn btn-secondary btn-small" type="button" onclick="saveParentWordStatus('${escapeHtml(recordId)}', '${escapeHtml(domId)}')">保存</button>
-      </div>
+        <span class="parent-word-status-badge">${escapeHtml(formatWordStatus(currentStatus))}</span>
+      </button>
     `;
   }).join('');
   libraryEl.innerHTML = `
@@ -1831,29 +1854,65 @@ function renderParentWordLibrary(data) {
   `;
 }
 
-async function saveParentWordStatus(recordId, domId) {
-  const status = $(`parentWordStatus-${domId}`)?.value;
-  if (!recordId || !status) {
-    showToast('缺少要保存的单词记录', 'warn');
+async function openParentWordEditor(recordId, page = parentWordLibraryState.page) {
+  const editorEl = $('parentWordEditor');
+  if (!editorEl) return;
+  const cached = parentWordLibraryState.words.find(item => {
+    const itemRecordId = item.recordId || item.id || item.record_id || '';
+    return itemRecordId === recordId;
+  });
+  let item = cached;
+  if (!item && recordId && !DEMO_MODE) {
+    editorEl.innerHTML = '<div class="parent-result-empty">正在加载单词详情...</div>';
+    item = await api(`/api/word?recordId=${encodeURIComponent(recordId)}`);
+  }
+  if (!item || item.exists === false) {
+    editorEl.innerHTML = '<div class="parent-result-empty">没有找到这条单词记录。</div>';
     return;
   }
-  showLoading('正在保存状态...');
-  try {
-    if (!DEMO_MODE) {
-      await api('/api/word', {
-        method: 'PUT',
-        body: JSON.stringify({ userId: state.user, recordId, status })
-      });
-    }
-    showToast('单词状态已更新为' + formatWordStatus(status), 'success');
-    loadStats(state.user);
-  } catch (error) {
-    showToast('保存状态失败: ' + normalizeApiError(error).message, 'error');
-  } finally {
-    hideLoading();
-  }
+  parentWordLibraryState.page = Number(page) || parentWordLibraryState.page || 1;
+  const word = item.word || item.Word || '';
+  const meaning = item.meaning || item.Meaning || '';
+  const cnMeaning = item.cnMeaning || item.CN_Meaning || '';
+  const pos = item.pos || item.POS || '';
+  const context = item.context || item.Context || '';
+  const currentStatus = item.status || item.Status || 'Pending';
+  const statusOptions = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${STATUS_LABELS[status]}</option>`).join('');
+  editorEl.innerHTML = `
+    <div class="parent-word-editor-card">
+      <div class="parent-word-editor-head">
+        <strong>编辑单词：${escapeHtml(word)}</strong>
+        <button class="btn btn-secondary btn-small" type="button" onclick="$('parentWordEditor').innerHTML=''">返回列表</button>
+      </div>
+      <input id="parentEditRecordId" type="hidden" value="${escapeHtml(recordId)}" />
+      <label class="parent-field">
+        <span>单词</span>
+        <input id="parentEditWord" type="text" value="${escapeHtml(word)}" />
+      </label>
+      <label class="parent-field">
+        <span>状态</span>
+        <select id="parentEditStatus">${statusOptions}</select>
+      </label>
+      <label class="parent-field">
+        <span>中文释义</span>
+        <input id="parentEditCnMeaning" type="text" value="${escapeHtml(cnMeaning)}" />
+      </label>
+      <label class="parent-field">
+        <span>英文释义</span>
+        <input id="parentEditMeaning" type="text" value="${escapeHtml(meaning)}" />
+      </label>
+      <label class="parent-field">
+        <span>词性</span>
+        <input id="parentEditPos" type="text" value="${escapeHtml(pos)}" />
+      </label>
+      <label class="parent-field">
+        <span>例句</span>
+        <textarea id="parentEditContext" rows="3">${escapeHtml(context)}</textarea>
+      </label>
+      <button class="btn btn-primary btn-small" type="button" onclick="saveParentWord()">保存修改</button>
+    </div>
+  `;
 }
-
 async function saveParentWord() {
   const word = $('parentEditWord')?.value.trim();
   if (!word) {
@@ -1872,18 +1931,20 @@ async function saveParentWord() {
           meaning: $('parentEditMeaning')?.value || '',
           cnMeaning: $('parentEditCnMeaning')?.value || '',
           pos: $('parentEditPos')?.value || '',
-          context: $('parentEditContext')?.value || ''
+          context: $('parentEditContext')?.value || '',
+          status: $('parentEditStatus')?.value || undefined
         })
       });
     }
     showToast('已保存单词记录', 'success');
+    await loadParentWordLibrary(parentWordLibraryState.page || 1);
+    loadStats(state.user);
   } catch (error) {
     showToast('保存失败: ' + normalizeApiError(error).message, 'error');
   } finally {
     hideLoading();
   }
 }
-
 async function loadParentLearningSettings() {
   const content = $('parentSettingsContent');
   try {
