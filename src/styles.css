@@ -479,11 +479,23 @@
       background: #FFFCF8;
       color: var(--text);
       text-align: left;
-      cursor: pointer;
     }
     .parent-word-list-item:hover {
       border-color: var(--orange);
       background: #fff;
+    }
+    .parent-word-list-main {
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      padding: 0;
+      text-align: left;
+      cursor: pointer;
+    }
+    .parent-word-list-main:hover strong {
+      color: var(--orange-dark);
     }
     .parent-word-main {
       min-width: 0;
@@ -499,7 +511,8 @@
       font-size: 12px;
       line-height: 1.4;
     }
-    .parent-word-status-badge {
+    .parent-word-status-badge,
+    .parent-word-status-select {
       border-radius: 999px;
       background: var(--orange-subtle);
       color: var(--orange-dark);
@@ -507,6 +520,17 @@
       font-size: 12px;
       font-weight: 800;
       white-space: nowrap;
+    }
+    .parent-word-status-select {
+      min-width: 86px;
+      max-width: 112px;
+      border: 1px solid #F0C79F;
+      cursor: pointer;
+      outline: none;
+    }
+    .parent-word-status-select:focus {
+      border-color: var(--orange);
+      box-shadow: 0 0 0 2px rgba(245, 139, 52, 0.16);
     }
     .parent-word-pager {
       display: flex;

@@ -1775,6 +1775,11 @@ function getParentWordStatusFilter() {
   return STATUS_OPTIONS.includes(status) ? status : '';
 }
 
+function parentWordStatusOptions(currentStatus) {
+  const selectedStatus = STATUS_OPTIONS.includes(currentStatus) ? currentStatus : 'Pending';
+  return STATUS_OPTIONS.map(status => `<option value="${status}" ${status === selectedStatus ? 'selected' : ''}>${escapeHtml(STATUS_LABELS[status])}</option>`).join('');
+}
+
 async function loadParentWordLibrary(page = 1) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
@@ -1829,14 +1834,19 @@ function renderParentWordLibrary(data) {
   const rows = words.map(item => {
     const recordId = item.recordId || item.id || item.record_id || '';
     const currentStatus = item.status || item.Status || 'Pending';
+    const word = item.word || item.Word || '';
     return `
-      <button class="parent-word-list-item" type="button" onclick="openParentWordEditor('${escapeHtml(recordId)}', ${page})">
-        <div class="parent-word-main">
-          <strong>${escapeHtml(item.word || item.Word || '')}</strong>
-          <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
-        </div>
-        <span class="parent-word-status-badge">${escapeHtml(formatWordStatus(currentStatus))}</span>
-      </button>
+      <div class="parent-word-list-item">
+        <button class="parent-word-list-main" type="button" onclick="openParentWordEditor('${escapeHtml(recordId)}', ${page})">
+          <div class="parent-word-main">
+            <strong>${escapeHtml(word)}</strong>
+            <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
+          </div>
+        </button>
+        <select class="parent-word-status-select" aria-label="修改 ${escapeHtml(word)} 状态" data-record-id="${escapeHtml(recordId)}" data-previous-status="${escapeHtml(currentStatus)}" onchange="saveParentWordStatusFromList(this)">
+          ${parentWordStatusOptions(currentStatus)}
+        </select>
+      </div>
     `;
   }).join('');
   libraryEl.innerHTML = `
@@ -1852,6 +1862,44 @@ function renderParentWordLibrary(data) {
       </div>
     </div>
   `;
+}
+
+
+async function saveParentWordStatusFromList(selectEl) {
+  const recordId = selectEl?.dataset?.recordId || '';
+  const status = STATUS_OPTIONS.includes(selectEl?.value) ? selectEl.value : '';
+  if (!recordId || !status) return;
+  const previousStatus = STATUS_OPTIONS.includes(selectEl?.dataset?.previousStatus) ? selectEl.dataset.previousStatus : '';
+  selectEl.disabled = true;
+  try {
+    if (!DEMO_MODE) {
+      await api('/api/word', {
+        method: 'PUT',
+        body: JSON.stringify({ userId: state.user, recordId, status })
+      });
+    }
+    const item = parentWordLibraryState.words.find(wordItem => {
+      const itemRecordId = wordItem.recordId || wordItem.id || wordItem.record_id || '';
+      return itemRecordId === recordId;
+    });
+    if (item) {
+      item.status = status;
+      item.Status = status;
+    }
+    selectEl.dataset.previousStatus = status;
+    showToast(`状态已更新为${formatWordStatus(status)}`, 'success');
+    const activeFilter = getParentWordStatusFilter();
+    if (activeFilter && activeFilter !== status) {
+      await loadParentWordLibrary(parentWordLibraryState.page || 1);
+    } else {
+      loadStats(state.user);
+    }
+  } catch (error) {
+    if (previousStatus) selectEl.value = previousStatus;
+    showToast('状态保存失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    selectEl.disabled = false;
+  }
 }
 
 async function openParentWordEditor(recordId, page = parentWordLibraryState.page) {

@@ -604,9 +604,11 @@ test('parent word management opens a list first, then a clicked word editor with
     const editorStart = app.indexOf('function openParentWordEditor', libraryStart);
     assert.ok(libraryStart >= 0 && editorStart > libraryStart, 'word list should render before editor function');
     const listSource = app.slice(libraryStart, editorStart);
-    assert.doesNotMatch(listSource, /parent-status-select/);
-    assert.doesNotMatch(listSource, /saveParentWordStatus/);
+    assert.match(listSource, /parent-word-status-select/);
+    assert.match(listSource, /onchange="saveParentWordStatusFromList/);
+    assert.match(listSource, /parentWordStatusOptions\(currentStatus\)/);
     assert.match(listSource, /parent-word-list-item/);
+    assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
 });
 
 test('parent console omits word entry because students add words from home', () => {
