@@ -74,15 +74,21 @@ test('formats month options as proper nouns when the option set is calendar-base
     assert.equal(formatOptionDisplayText('september', options), 'September');
 });
 
-test('capitalizes all type-1 fill-in options regardless of blank position', () => {
+test('capitalizes type-1 fill-in options only when the blank is sentence-initial', () => {
     const options = ['A. punished', 'B. rewarded', 'C. condemned', 'D. pardoned'];
     const sentenceInitial = { type: 1, context: '_____ people unfairly is wrong.', options };
     const sentenceMiddle = { type: 1, context: 'He was _____ for the mistake.', options };
 
     assert.equal(formatOptionDisplayText('punished', options, sentenceInitial), 'Punished');
-    assert.equal(formatOptionDisplayText('rewarded', options, sentenceMiddle), 'Rewarded');
+    assert.equal(formatOptionDisplayText('rewarded', options, sentenceMiddle), 'rewarded');
 });
 
+test('normalizes ordinary capitalized option words to lowercase', () => {
+    const options = ['A. Invigorate', 'B. Refresh', 'C. Tire', 'D. Energize'];
+
+    assert.equal(formatOptionDisplayText('Invigorate', options), 'invigorate');
+    assert.equal(formatOptionDisplayText('Refresh', options), 'refresh');
+});
 test('keeps ordinary lowercase words lowercase in non-calendar option sets', () => {
     const options = ['A. march', 'B. walk', 'C. jump', 'D. clap'];
 
@@ -180,6 +186,26 @@ test('fill-in analysis shows the completed sentence in Chinese, not English', ()
     assert.doesNotMatch(completedSentenceLine, /She took a course/);
 });
 
+test('fill-in analysis does not repeat the translated sentence as the question explanation', () => {
+    const sentenceCN = '\u5c3d\u7ba1\u8fd9\u4e9b\u6307\u63a7\u88ab\u5426\u8ba4\uff0c\u8fd9\u8d77\u4e11\u95fb\u4ecd\u7136\u635f\u5bb3\u4e86\u4ed6\u7684\u58f0\u8a89\u3002';
+    const meaningCN = '\u4e11\u95fb';
+    const html = buildQuestionExplanation(
+        {
+            type: 1,
+            context: 'Although the accusations were denied, the _____ damaged his reputation.',
+            contextCN: sentenceCN,
+            correctMeaning: meaningCN,
+            answer: 'C',
+            options: ['A. soil', 'B. mud', 'C. dirt', 'D. dust'],
+        },
+        { your: 'C', correct: true },
+        escapeHtml
+    );
+
+    assert.equal(html.split(sentenceCN).length - 1, 1);
+    assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.match(html, new RegExp(meaningCN));
+});
 test('renders Chinese meaning review feedback without multiple-choice wording', () => {
     const html = buildMeaningReviewExplanation(
         { type: 4, answerMode: 'cn_meaning', word: 'kitten' },

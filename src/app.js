@@ -21,6 +21,7 @@ const STATUS_LABELS = {
   Mastered: '已掌握',
 };
 const STATUS_OPTIONS = ['Pending', 'Recognized', 'Consolidating', 'Mastered'];
+const PARENT_WORD_DELETE_VALUE = '__delete__';
 const parentWordLibraryState = {
   page: 1,
   pageSize: 20,
@@ -1777,7 +1778,8 @@ function getParentWordStatusFilter() {
 
 function parentWordStatusOptions(currentStatus) {
   const selectedStatus = STATUS_OPTIONS.includes(currentStatus) ? currentStatus : 'Pending';
-  return STATUS_OPTIONS.map(status => `<option value="${status}" ${status === selectedStatus ? 'selected' : ''}>${escapeHtml(STATUS_LABELS[status])}</option>`).join('');
+  const options = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === selectedStatus ? 'selected' : ''}>${escapeHtml(STATUS_LABELS[status])}</option>`).join('');
+  return `${options}<option value="${PARENT_WORD_DELETE_VALUE}">删除</option>`;
 }
 
 async function loadParentWordLibrary(page = 1) {
@@ -1843,7 +1845,7 @@ function renderParentWordLibrary(data) {
             <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
           </div>
         </button>
-        <select class="parent-word-status-select" aria-label="修改 ${escapeHtml(word)} 状态" data-record-id="${escapeHtml(recordId)}" data-previous-status="${escapeHtml(currentStatus)}" onchange="saveParentWordStatusFromList(this)">
+        <select class="parent-word-status-select" aria-label="修改 ${escapeHtml(word)} 状态" data-record-id="${escapeHtml(recordId)}" data-word="${escapeHtml(word)}" data-previous-status="${escapeHtml(currentStatus)}" onchange="saveParentWordStatusFromList(this)">
           ${parentWordStatusOptions(currentStatus)}
         </select>
       </div>
@@ -1867,9 +1869,38 @@ function renderParentWordLibrary(data) {
 
 async function saveParentWordStatusFromList(selectEl) {
   const recordId = selectEl?.dataset?.recordId || '';
-  const status = STATUS_OPTIONS.includes(selectEl?.value) ? selectEl.value : '';
-  if (!recordId || !status) return;
+  const selectedValue = selectEl?.value || '';
   const previousStatus = STATUS_OPTIONS.includes(selectEl?.dataset?.previousStatus) ? selectEl.dataset.previousStatus : '';
+  const word = selectEl?.dataset?.word || '';
+  if (!recordId) return;
+
+  if (selectedValue === PARENT_WORD_DELETE_VALUE) {
+    const label = word || '这个单词';
+    const confirmed = window.confirm ? window.confirm(`确定删除 ${label} 吗？`) : true;
+    if (!confirmed) {
+      if (previousStatus) selectEl.value = previousStatus;
+      return;
+    }
+    selectEl.disabled = true;
+    try {
+      if (!DEMO_MODE) {
+        const deleteUrl = `/api/word?recordId=${encodeURIComponent(recordId)}&userId=${encodeURIComponent(state.user)}&word=${encodeURIComponent(word)}`;
+        await api(deleteUrl, { method: 'DELETE' });
+      }
+      showToast(`已删除单词：${label}`, 'success');
+      await loadParentWordLibrary(parentWordLibraryState.page || 1);
+      loadStats(state.user);
+    } catch (error) {
+      if (previousStatus) selectEl.value = previousStatus;
+      showToast('删除失败: ' + normalizeApiError(error).message, 'error');
+    } finally {
+      selectEl.disabled = false;
+    }
+    return;
+  }
+
+  const status = STATUS_OPTIONS.includes(selectedValue) ? selectedValue : '';
+  if (!status) return;
   selectEl.disabled = true;
   try {
     if (!DEMO_MODE) {
@@ -1901,7 +1932,6 @@ async function saveParentWordStatusFromList(selectEl) {
     selectEl.disabled = false;
   }
 }
-
 async function openParentWordEditor(recordId, page = parentWordLibraryState.page) {
   const editorEl = $('parentWordEditor');
   if (!editorEl) return;
@@ -2358,9 +2388,10 @@ function waitForMs(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function submitWithTimeoutConfirmation(path, payload) {
+async function submitWithTimeoutConfirmation(path, payload, options = {}) {
   const request = () => api(path, {
     method: 'POST',
+    timeoutMs: options.timeoutMs,
     body: JSON.stringify(payload)
   });
   try {
@@ -2380,7 +2411,11 @@ async function submitQuizToBackend(payload) {
 }
 
 async function submitReviewToBackend(reviewId, payload) {
-  return submitWithTimeoutConfirmation(`/api/reviews/${encodeURIComponent(reviewId)}/submit`, payload);
+  return submitWithTimeoutConfirmation(
+    `/api/reviews/${encodeURIComponent(reviewId)}/submit`,
+    payload,
+    { timeoutMs: 90000 }
+  );
 }
 async function submitQuiz() {
   if (!state.quiz) return;
@@ -2752,7 +2787,7 @@ async function startWrongAnswerReview(parentReviewId = '') {
       ? generateDemoReviewQuiz()
       : await api('/api/reviews', {
           method: 'POST',
-          timeoutMs: 30000,
+          timeoutMs: 90000,
           body: JSON.stringify({
             user: state.user,
             sourceTestId: state.session.sourceTestId,

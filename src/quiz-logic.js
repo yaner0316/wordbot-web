@@ -54,6 +54,14 @@
     return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
   }
 
+  function isSentenceInitialBlank(context) {
+    const text = String(context || '');
+    const index = text.indexOf('_____');
+    if (index < 0) return false;
+    const before = text.slice(0, index).trim();
+    return before === '' || /[.!?]\s*$/.test(before);
+  }
+
   function formatOptionDisplayText(value, allOptions = [], question = null) {
     const word = cleanOptionDisplayWord(value);
     const key = word.toLowerCase();
@@ -62,8 +70,11 @@
     if (calendarCount >= 2 && calendarProperNouns.has(key)) {
       return calendarProperNouns.get(key);
     }
-    if (Number(question?.type) === 1) {
+    if (Number(question?.type) === 1 && isSentenceInitialBlank(question?.context)) {
       return capitalizeFirst(word);
+    }
+    if (/^[A-Z][a-z]+(?:[-\s][A-Z]?[a-z]+)*$/.test(word)) {
+      return word.toLowerCase();
     }
     return word;
   }
@@ -94,11 +105,11 @@
       const completedSentence = question.context.replace(/_____/g, correctWord);
       const completedSentenceCN = question.contextCN || '';
       const completedSentenceDisplay = completedSentenceCN || question.correctMeaning || '中文翻译暂未生成';
-      const questionExplanation = completedSentenceCN
-        ? `把 "${correctWord}" 代入后，整句意思是：${completedSentenceCN}`
-        : `这道题考察 "${correctWord}" 的中文释义：${question.correctMeaning || '暂无中文释义'}`;
+      const meaningExplanation = question.correctMeaning
+        ? `"${correctWord}" 在本题中的意思是：${question.correctMeaning}`
+        : `这道题考察 "${correctWord}" 的中文释义，暂无更具体的中文释义。`;
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentenceDisplay)}</div>
-        <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
+        <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(meaningExplanation)}</div>`;
     } else if (question.type === 2) {
       const questionExplanation = question.correctMeaning || question.context;
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;

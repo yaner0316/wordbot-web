@@ -621,6 +621,23 @@ test('parent word management opens a list first, then a clicked word editor with
     assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
 });
 
+
+test('parent word status dropdown can delete the selected word row by record id', () => {
+    assert.match(app, /const PARENT_WORD_DELETE_VALUE = '__delete__'/);
+    assert.match(app, /<option value="\$\{PARENT_WORD_DELETE_VALUE\}">\u5220\u9664<\/option>/);
+    assert.match(app, /data-word="\$\{escapeHtml\(word\)\}"/);
+
+    const saveStart = app.indexOf('async function saveParentWordStatusFromList');
+    const editorStart = app.indexOf('async function openParentWordEditor', saveStart);
+    assert.ok(saveStart >= 0 && editorStart > saveStart, 'status save function should exist before editor');
+    const saveSource = app.slice(saveStart, editorStart);
+    assert.match(saveSource, /selectedValue\s*===\s*PARENT_WORD_DELETE_VALUE/);
+    assert.match(saveSource, /method:\s*'DELETE'/);
+    assert.match(saveSource, /\/api\/word\?recordId=\$\{encodeURIComponent\(recordId\)\}/);
+    assert.match(saveSource, /loadParentWordLibrary\(parentWordLibraryState\.page \|\| 1\)/);
+    assert.doesNotMatch(saveSource, /body:\s*JSON\.stringify\(\{ userId: state\.user, recordId, status \}\)[\s\S]*PARENT_WORD_DELETE_VALUE/);
+});
+
 test('parent console omits word entry because students add words from home', () => {
     const htmlGridStart = html.indexOf('id="parentToolGrid"');
     const htmlGridEnd = html.indexOf('<div class="parent-tool-panel"', htmlGridStart);
@@ -653,4 +670,19 @@ test('home quick actions include banked game time without preview or debug contr
     assert.doesNotMatch(renderStudentToolsSource, /handleBankedGameTimeEntry\(\)/);
     assert.match(app, /function getBankedGameMinutes/);
     assert.match(app, /function renderAnimalGardenGame/);
+});
+test('review result submission uses a long timeout', () => {
+    const start = app.indexOf('async function submitReviewToBackend');
+    const end = app.indexOf('async function submitQuiz', start);
+    assert.ok(start >= 0 && end > start, 'submitReviewToBackend should exist');
+    const source = app.slice(start, end);
+    assert.match(source, /submitWithTimeoutConfirmation\([^,]+,\s*payload,\s*\{\s*timeoutMs:\s*90000\s*\}/);
+});
+test('review generation uses a long timeout because it may wait on Feishu and AI rewrite', () => {
+    const start = app.indexOf('async function startWrongAnswerReview');
+    const end = app.indexOf('function continueWrongAnswerReview', start);
+    assert.ok(start >= 0 && end > start, 'startWrongAnswerReview should exist');
+    const source = app.slice(start, end);
+    assert.ok(source.includes('/api/reviews'));
+    assert.match(source, /timeoutMs:\s*90000/);
 });
