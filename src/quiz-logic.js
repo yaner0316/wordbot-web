@@ -49,13 +49,21 @@
     return String(value || '').replace(/^[A-D]\.\s*/i, '').trim();
   }
 
-  function formatOptionDisplayText(value, allOptions = []) {
+  function capitalizeFirst(value) {
+    const text = String(value || '');
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+  }
+
+  function formatOptionDisplayText(value, allOptions = [], question = null) {
     const word = cleanOptionDisplayWord(value);
     const key = word.toLowerCase();
     const optionWords = (allOptions || []).map(cleanOptionDisplayWord);
     const calendarCount = optionWords.filter(item => calendarProperNouns.has(item.toLowerCase())).length;
     if (calendarCount >= 2 && calendarProperNouns.has(key)) {
       return calendarProperNouns.get(key);
+    }
+    if (Number(question?.type) === 1) {
+      return capitalizeFirst(word);
     }
     return word;
   }
@@ -90,10 +98,11 @@
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentence)}</div>
         <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     } else if (question.type === 2) {
-      const questionExplanation = question.contextCN || question.correctMeaning || question.context;
+      const questionExplanation = question.correctMeaning || question.context;
       reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     } else if (question.type === 3) {
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(question.context)}</div>`;
+      const questionExplanation = `\u8fd9\u4e2a\u4e2d\u6587\u91ca\u4e49\u5bf9\u5e94\u82f1\u6587\u5355\u8bcd "${correctWord}"\u3002`;
+      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     }
 
     return correctLine + reason + comparison;

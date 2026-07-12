@@ -133,8 +133,18 @@ test('quiz generation always clears the loading overlay', () => {
 
 test('quiz option labels use display formatting without changing answer indexes', () => {
     assert.match(app, /formatOptionDisplayText/);
-    assert.ok(app.includes("formatOptionDisplayText(opt.replace(/^[A-D]\\.\\s*/, ''), q.options)"));
+    assert.ok(app.includes("formatOptionDisplayText(opt.replace(/^[A-D]\\.\\s*/, ''), q.options, q)"));
     assert.match(app, /selectOption\(\$\{idx\}, \$\{i\}\)/);
+});
+
+test('result review option labels use the same display formatting as quiz options', () => {
+    const start = app.indexOf('function renderResults(data)');
+    const end = app.indexOf('function toggleAnalysis()', start);
+    assert.ok(start >= 0 && end > start, 'renderResults function should exist');
+    const renderResultsSource = app.slice(start, end);
+
+    assert.match(renderResultsSource, /formatOptionDisplayText/);
+    assert.doesNotMatch(renderResultsSource, /return `<div class="\$\{cls\}">\$\{escapeHtml\(opt\)\}/);
 });
 test('quiz answers default to sure confidence but can be changed to guess', () => {
     assert.ok(app.includes('confidences: []'));

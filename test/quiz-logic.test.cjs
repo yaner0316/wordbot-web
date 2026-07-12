@@ -74,6 +74,15 @@ test('formats month options as proper nouns when the option set is calendar-base
     assert.equal(formatOptionDisplayText('september', options), 'September');
 });
 
+test('capitalizes all type-1 fill-in options regardless of blank position', () => {
+    const options = ['A. punished', 'B. rewarded', 'C. condemned', 'D. pardoned'];
+    const sentenceInitial = { type: 1, context: '_____ people unfairly is wrong.', options };
+    const sentenceMiddle = { type: 1, context: 'He was _____ for the mistake.', options };
+
+    assert.equal(formatOptionDisplayText('punished', options, sentenceInitial), 'Punished');
+    assert.equal(formatOptionDisplayText('rewarded', options, sentenceMiddle), 'Rewarded');
+});
+
 test('keeps ordinary lowercase words lowercase in non-calendar option sets', () => {
     const options = ['A. march', 'B. walk', 'C. jump', 'D. clap'];
 
@@ -100,22 +109,40 @@ test('renders all option meanings before the reasoning', () => {
     assert.match(reasoning, /你选择的 "abandon"/);
 });
 
-test('definition analysis shows a translated stem as the question explanation', () => {
+test('definition analysis uses the target meaning instead of an unrelated sentence translation', () => {
+    const unrelatedContextCN = '\u5b69\u5b50\u5728\u64cd\u573a\u4e0a\u8dd1\u6b65\u3002';
+    const correctMeaning = '\u80fd\u5f88\u5feb\u6062\u590d\u7684\uff1b\u6709\u97e7\u6027\u7684';
     const html = buildQuestionExplanation(
         {
             type: 2,
-            context: 'A word that can refer to a person, animal, place, thing, or idea.',
-            contextCN: '\u53ef\u4ee5\u6307\u4eba\u3001\u52a8\u7269\u3001\u5730\u65b9\u3001\u4e8b\u7269\u6216\u60f3\u6cd5\u7684\u8bcd\u3002',
+            context: 'able to recover quickly after something difficult',
+            contextCN: unrelatedContextCN,
+            correctMeaning,
             answer: 'B',
-            options: ['A. verb', 'B. noun', 'C. adjective', 'D. adverb'],
+            options: ['A. fragile', 'B. resilient', 'C. careless', 'D. noisy'],
         },
         { your: 'B', correct: true },
         escapeHtml
     );
 
     assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
-    assert.match(html, /\u53ef\u4ee5\u6307\u4eba\u3001\u52a8\u7269\u3001\u5730\u65b9/);
-    assert.doesNotMatch(html, /\u9898\u5e72\u7ebf\u7d22/);
+    assert.match(html, new RegExp(correctMeaning));
+    assert.doesNotMatch(html, new RegExp(unrelatedContextCN));
+});
+test('translation-choice analysis explains which English word matches the Chinese meaning', () => {
+    const html = buildQuestionExplanation(
+        {
+            type: 3,
+            context: '\u80fd\u5f88\u5feb\u6062\u590d\u7684\uff1b\u6709\u97e7\u6027\u7684',
+            answer: 'B',
+            options: ['A. fragile', 'B. resilient', 'C. careless', 'D. noisy'],
+        },
+        { your: 'B', correct: true },
+        escapeHtml
+    );
+
+    assert.match(html, /resilient/);
+    assert.match(html, /\u5bf9\u5e94\u82f1\u6587\u5355\u8bcd/);
 });
 test('fill-in analysis shows a sentence translation as the question explanation', () => {
     const html = buildQuestionExplanation(

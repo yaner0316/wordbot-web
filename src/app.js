@@ -2106,7 +2106,7 @@ function renderQuestion(idx) {
     const selected = state.answers[idx] === i ? 'selected' : '';
     return `<button class="option-btn ${selected}" onclick="selectOption(${idx}, ${i})">
       <span class="letter">${letter}</span>
-      <span>${escapeHtml(formatOptionDisplayText(opt.replace(/^[A-D]\.\s*/, ''), q.options))}</span>
+      <span>${escapeHtml(formatOptionDisplayText(opt.replace(/^[A-D]\.\s*/, ''), q.options, q))}</span>
     </button>`;
   }).join('');
   const confidence = state.confidences[idx];
@@ -2456,7 +2456,9 @@ function renderResults(data) {
           if (isCorrect && isUserChoice) tag = '<span class="opt-tag tag-correct">✓ 正确答案</span>';
           else if (isCorrect) tag = '<span class="opt-tag tag-correct">✓ 正确答案</span>';
           else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">你的选择</span>';
-          return `<div class="${cls}">${escapeHtml(opt)} ${tag}</div>`;
+          const rawWord = String(opt).replace(/^[A-D]\.\s*/, '');
+          const displayWord = formatOptionDisplayText(rawWord, q.options, q);
+          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}</div>`;
         }).join('');
       } else {
         optionsHtml = `<div style="color:#999;font-size:13px;padding:8px 0;">选项未保存（历史记录）</div>`;
