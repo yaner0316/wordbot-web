@@ -211,6 +211,25 @@ test('home page gates parent tools behind phone password access', () => {
     assert.match(app, /\/api\/admin\/userSettings/);
 });
 
+test('quiz page has a header-aligned return home action', () => {
+    const quizStart = html.indexOf('id="pageQuiz"');
+    const quizEnd = html.indexOf('id="pageResults"', quizStart);
+    assert.ok(quizStart >= 0 && quizEnd > quizStart, 'quiz page markup should exist');
+    const quizHtml = html.slice(quizStart, quizEnd);
+    assert.match(quizHtml, /class="quiz-header-row"/);
+    assert.match(quizHtml, /class="quiz-home-btn"/);
+    assert.match(quizHtml, /onclick="navigateTo\('home'\)"/);
+    assert.match(quizHtml, /\u8fd4\u56de\u9996\u9875/);
+    assert.match(styles, /\.quiz-header-row/);
+    assert.match(styles, /\.quiz-home-btn/);
+});
+
+test('parent auth explains child-scoped credentials on generic backend failure', () => {
+    assert.match(app, /function formatParentLoginError/);
+    assert.match(app, /formatParentLoginError\(error\)/);
+    assert.ok(app.includes('\u5f53\u524d\u5b69\u5b50'));
+    assert.ok(app.includes('\u7ed1\u5b9a\u7684\u5bb6\u957f\u7528\u6237\u540d\u6216\u5bc6\u7801\u4e0d\u5bf9'));
+});
 test('home load skips the unused all-users request for faster startup', () => {
     const loadHomeMatch = app.match(/async function loadHome\(\) \{[\s\S]*?\n\}/);
     assert.ok(loadHomeMatch, 'loadHome function should exist');
@@ -439,19 +458,31 @@ test('home shows the Xiaolong character image as a first-screen mascot', () => {
     assert.match(styles, /\.home-hero-strip/);
 });
 
-test('home quick actions show only study entries and continue only when a draft exists', () => {
+test('home quick actions expose the required four entry points', () => {
     const start = app.indexOf('function renderStudentTools()');
     const end = app.indexOf('function openStudentWordEntry()', start);
     assert.ok(start >= 0 && end > start, 'renderStudentTools function should exist');
     const renderStudentToolsSource = app.slice(start, end);
+
     assert.match(renderStudentToolsSource, /const hasDraft = hasActiveQuizDraft\(state\.user\)/);
-    assert.match(renderStudentToolsSource, /hasDraft \? `[\s\S]*quick-action-continue/);
-    assert.match(renderStudentToolsSource, /\.filter\(Boolean\)\.join\(''\)/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-grid/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-continue/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-bank/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-add/);
+    assert.match(renderStudentToolsSource, /home-v2-quick-history/);
+
+    assert.match(renderStudentToolsSource, /\u7ee7\u7eed\u4e0a\u6b21\u7ec3\u4e60/);
+    assert.match(renderStudentToolsSource, /hasDraft \? '\u56de\u5230\u672a\u5b8c\u6210\u7ec3\u4e60' : '\u6682\u65e0\u672a\u5b8c\u6210\u7ec3\u4e60'/);
+    assert.match(renderStudentToolsSource, /\u5df2\u5b58\u6e38\u620f\u65f6\u95f4/);
+    assert.match(renderStudentToolsSource, /getBankedGameMinutes\(state\.user\)/);
+    assert.match(renderStudentToolsSource, /startBankedGameNow\(\)/);
+    assert.match(renderStudentToolsSource, /\u5f55\u5165\u5355\u8bcd/);
     assert.match(renderStudentToolsSource, /openStudentWordEntry\(\)/);
+    assert.match(renderStudentToolsSource, /\u8003\u6838\u5386\u53f2/);
     assert.ok(renderStudentToolsSource.includes("navigateTo(\\'history\\')"));
-    assert.doesNotMatch(renderStudentToolsSource, /quick-action-disabled/);
+
+    assert.doesNotMatch(renderStudentToolsSource, /\u5c0f\u6e38\u620f\u4f53\u9a8c|\u6570\u636e\u6a21\u5f0f|\u6e05\u7406\u6d4b\u8bd5\u6a21\u5f0f\u8bb0\u5f55|\u6e05\u7406\u6d4b\u8bd5\u8bb0\u5f55/);
     assert.doesNotMatch(renderStudentToolsSource, /renderBankedGameTimeCard\(\)/);
-    assert.doesNotMatch(renderStudentToolsSource, /已存游戏时间|小游戏体验|数据模式|清理测试模式记录/);
     assert.match(app, /function handleContinueQuizEntry\(\)/);
     assert.match(app, /restoreQuizDraft\(\)/);
 });
@@ -558,7 +589,8 @@ test('parent word query and library editing are separate tools with Chinese stat
     assert.match(app, /openParentTool\('editWords'\)/);
     assert.match(app, /function loadParentWordLibrary/);
     assert.match(app, /function renderParentWordLibrary/);
-    assert.match(app, /function saveParentWordStatus/);
+    assert.match(app, /function openParentWordEditor/);
+    assert.match(app, /function saveParentWord/);
     assert.match(app, /\/api\/admin\/words\?userId=/);
     assert.match(app, /STATUS_LABELS/);
     assert.match(app, /待学习/);
@@ -569,6 +601,24 @@ test('parent word query and library editing are separate tools with Chinese stat
     const searchSource = app.slice(searchStart, searchEnd);
     assert.doesNotMatch(searchSource, /parent-word-editor/);
     assert.doesNotMatch(searchSource, /saveParentWord/);
+});
+
+test('parent word management opens a list first, then a clicked word editor with status filters', () => {
+    assert.match(app, /parentWordStatusFilter/);
+    assert.match(app, /function getParentWordStatusFilter/);
+    assert.match(app, /status=\$\{encodeURIComponent\(statusFilter\)\}/);
+    assert.match(app, /function openParentWordEditor/);
+    assert.match(app, /onclick="openParentWordEditor/);
+
+    const libraryStart = app.indexOf('function renderParentWordLibrary');
+    const editorStart = app.indexOf('function openParentWordEditor', libraryStart);
+    assert.ok(libraryStart >= 0 && editorStart > libraryStart, 'word list should render before editor function');
+    const listSource = app.slice(libraryStart, editorStart);
+    assert.match(listSource, /parent-word-status-select/);
+    assert.match(listSource, /onchange="saveParentWordStatusFromList/);
+    assert.match(listSource, /parentWordStatusOptions\(currentStatus\)/);
+    assert.match(listSource, /parent-word-list-item/);
+    assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
 });
 
 test('parent console omits word entry because students add words from home', () => {
@@ -589,10 +639,18 @@ test('parent console omits word entry because students add words from home', () 
     assert.ok(ensureSource.includes("openParentTool('editWords')"));
 });
 
-test('home quick actions exclude banked game time entry', () => {
-    assert.doesNotMatch(app, /function renderBankedGameTimeCard/);
-    assert.doesNotMatch(app, /function handleBankedGameTimeEntry/);
-    assert.doesNotMatch(app, /已存游戏时间/);
+test('home quick actions include banked game time without preview or debug controls', () => {
+    const start = app.indexOf('function renderStudentTools()');
+    const end = app.indexOf('function openStudentWordEntry()', start);
+    assert.ok(start >= 0 && end > start, 'renderStudentTools function should exist');
+    const renderStudentToolsSource = app.slice(start, end);
+
+    assert.match(renderStudentToolsSource, /\u5df2\u5b58\u6e38\u620f\u65f6\u95f4/);
+    assert.match(renderStudentToolsSource, /getBankedGameMinutes\(state\.user\)/);
+    assert.match(renderStudentToolsSource, /startBankedGameNow\(\)/);
+    assert.doesNotMatch(renderStudentToolsSource, /\u5c0f\u6e38\u620f\u4f53\u9a8c|\u6570\u636e\u6a21\u5f0f|\u6e05\u7406\u6d4b\u8bd5\u6a21\u5f0f\u8bb0\u5f55|\u6e05\u7406\u6d4b\u8bd5\u8bb0\u5f55/);
+    assert.doesNotMatch(renderStudentToolsSource, /renderBankedGameTimeCard\(\)/);
+    assert.doesNotMatch(renderStudentToolsSource, /handleBankedGameTimeEntry\(\)/);
     assert.match(app, /function getBankedGameMinutes/);
     assert.match(app, /function renderAnimalGardenGame/);
 });

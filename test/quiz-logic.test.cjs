@@ -162,6 +162,24 @@ test('fill-in analysis shows a sentence translation as the question explanation'
     assert.doesNotMatch(html, /\u9898\u5e72\u7ebf\u7d22/);
     assert.doesNotMatch(html, /\u7a7a\u683c\u5904\u9700\u8981/);
 });
+test('fill-in analysis shows the completed sentence in Chinese, not English', () => {
+    const html = buildQuestionExplanation(
+        {
+            type: 1,
+            context: 'She took a course to _____ her coding skills, and soon landed a better job.',
+            contextCN: '\u5979\u53c2\u52a0\u4e86\u4e00\u95e8\u8bfe\u6765\u63d0\u5347\u7f16\u7a0b\u6280\u80fd\uff0c\u5e76\u5f88\u5feb\u627e\u5230\u4e86\u66f4\u597d\u7684\u5de5\u4f5c\u3002',
+            answer: 'B',
+            options: ['A. restore', 'B. improve', 'C. maintain', 'D. assess'],
+        },
+        { your: 'B', correct: true },
+        escapeHtml
+    );
+
+    const completedSentenceLine = html.match(/\u5b8c\u6574\u53e5\u5b50\uff1a<\/strong>(.*?)<\/div>/)?.[1] || '';
+    assert.match(completedSentenceLine, /\u63d0\u5347\u7f16\u7a0b\u6280\u80fd/);
+    assert.doesNotMatch(completedSentenceLine, /She took a course/);
+});
+
 test('renders Chinese meaning review feedback without multiple-choice wording', () => {
     const html = buildMeaningReviewExplanation(
         { type: 4, answerMode: 'cn_meaning', word: 'kitten' },

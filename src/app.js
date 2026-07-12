@@ -21,7 +21,13 @@ const STATUS_LABELS = {
   Mastered: '已掌握',
 };
 const STATUS_OPTIONS = ['Pending', 'Recognized', 'Consolidating', 'Mastered'];
-
+const parentWordLibraryState = {
+  page: 1,
+  pageSize: 20,
+  total: 0,
+  totalPages: 1,
+  words: [],
+};
 function formatLearningLevel(level) {
   return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
 }
@@ -637,11 +643,15 @@ function renderGameTimePrompt() {
 }
 
 function startBankedGameNow() {
-  const host = $('animalGardenMount');
-  if (host) {
-    host.innerHTML = renderAnimalGardenGame();
-    mountCurrentRewardGardenArt();
+  if (getBankedGameMinutes() <= 0) {
+    showToast('暂无可用小游戏时间', 'info');
+    return;
   }
+  const host = $('animalGardenMount') || document.createElement('div');
+  host.id = 'animalGardenMount';
+  if (!host.parentNode) $('pageHome')?.appendChild(host);
+  host.innerHTML = renderAnimalGardenGame();
+  mountCurrentRewardGardenArt();
 }
 
 function keepBankedGameForLater() {
@@ -764,6 +774,13 @@ function normalizeApiError(error) {
     return new Error('请求超时，请稍后重试；如果后端刚部署，Render 可能正在冷启动。');
   }
   return error;
+}
+function formatParentLoginError(error) {
+  const message = normalizeApiError(error).message || '';
+  if (/parent username\/password error/i.test(message)) {
+    return `当前孩子 ${state.user || ''} 绑定的家长用户名或密码不对，请确认用的是这个孩子账号下设置的家长密码。`;
+  }
+  return message;
 }
 
 function navigateTo(page, options = {}) {
@@ -1136,8 +1153,49 @@ function updateLevelButtons() {
   });
 }
 
+function ensureHomeV2Hero() {
+  const hero = document.querySelector('#pageHome .dragon-hero-card');
+  if (!hero) return;
+  hero.classList.add('home-v2-hero-card');
+
+  const content = hero.querySelector('.dragon-hero-content');
+  if (content) {
+    content.classList.add('home-v2-hero-copy');
+    const titleWrap = content.querySelector('.dragon-hero-title-wrap');
+    if (titleWrap) {
+      titleWrap.innerHTML = '<h2>和小龙一起学单词</h2><p class="home-v2-hero-note">把新词慢慢变成朋友</p>';
+    }
+  }
+
+  const chips = hero.querySelector('.dragon-hero-chips');
+  if (chips) {
+    chips.classList.add('home-v2-hero-chips');
+    const parentChip = chips.querySelector('.hero-chip-parent');
+    if (parentChip) parentChip.classList.add('home-v2-parent-chip');
+  }
+
+  const dragon = hero.querySelector('.home-dragon');
+  if (dragon) {
+    dragon.src = 'assets/xiaolong-transparent.png';
+    dragon.removeAttribute('data-legacy-src');
+  }
+
+  const scene = hero.querySelector('.dragon-scene');
+  if (scene && !scene.querySelector('.home-v2-mountain')) {
+    scene.insertAdjacentHTML('afterbegin', [
+      '<span class="home-v2-cloud home-v2-cloud-one"></span>',
+      '<span class="home-v2-cloud home-v2-cloud-two"></span>',
+      '<span class="home-v2-mountain"></span>',
+      '<span class="home-v2-water"></span>',
+      '<span class="home-v2-grass home-v2-grass-one"></span>',
+      '<span class="home-v2-grass home-v2-grass-two"></span>',
+      '<span class="home-v2-grass home-v2-grass-three"></span>'
+    ].join(''));
+  }
+}
 // ========== Home ==========
 async function loadHome() {
+  ensureHomeV2Hero();
   if (!state.user) {
     showLoginPage();
     return;
@@ -1238,19 +1296,19 @@ function renderStudentTools() {
   if (!section) {
     section = document.createElement('section');
     section.id = 'studentTools';
-    section.className = 'quick-actions-card student-tools';
+    section.className = 'home-v2-quick-card student-tools';
     const stats = $('statsContent');
     stats?.insertAdjacentElement('afterend', section);
   }
+  section.className = 'home-v2-quick-card student-tools';
   const hasDraft = hasActiveQuizDraft(state.user);
-  const quickActions = [
-    hasDraft ? `<button class="quick-action-item quick-action-continue" type="button" onclick="handleContinueQuizEntry()" aria-disabled="false"><span class="quick-action-icon" aria-hidden="true">▶</span><span>继续上次答题</span><small>未完成考核</small></button>` : '',
-    '<button class="quick-action-item quick-action-add" type="button" onclick="openStudentWordEntry()"><span class="quick-action-icon" aria-hidden="true">＋</span><span>录入单词</span><small>添加新词</small></button>',
-    '<button class="quick-action-item quick-action-history" type="button" onclick="navigateTo(\'history\')"><span class="quick-action-icon" aria-hidden="true">◷</span><span>考核历史</span><small>查看过去题目</small></button>'
-  ].filter(Boolean).join('');
+  const bankedMinutes = getBankedGameMinutes(state.user);
   section.innerHTML = [
-    '<div class="quick-action-grid">',
-    quickActions,
+    '<div class="home-v2-quick-grid">',
+    '<button class="home-v2-quick-item home-v2-quick-continue" type="button" onclick="handleContinueQuizEntry()" aria-disabled="' + (!hasDraft) + '"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m8 5 10 7-10 7z"/></svg></span><span class="home-v2-quick-text"><strong>继续上次练习</strong><small>' + (hasDraft ? '回到未完成练习' : '暂无未完成练习') + '</small></span></button>',
+    '<button class="home-v2-quick-item home-v2-quick-bank" type="button" onclick="startBankedGameNow()"><span class="home-v2-quick-icon green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8h8v8H8z"/><path d="M9 4h6"/><path d="M9 20h6"/></svg></span><span class="home-v2-quick-text"><strong>已存游戏时间</strong><small>' + escapeHtml(bankedMinutes) + ' 分钟</small></span></button>',
+    '<button class="home-v2-quick-item home-v2-quick-add" type="button" onclick="openStudentWordEntry()"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><span class="home-v2-quick-text"><strong>录入单词</strong><small>添加新词</small></span></button>',
+    '<button class="home-v2-quick-item home-v2-quick-history" type="button" onclick="navigateTo(\'history\')"><span class="home-v2-quick-icon blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg></span><span class="home-v2-quick-text"><strong>考核历史</strong><small>查看记录</small></span></button>',
     '</div>',
     '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
   ].join('');
@@ -1410,7 +1468,7 @@ async function verifyParentPassword() {
     showParentTools();
     showToast('已进入家长控制台', 'success');
   } catch (error) {
-    showToast('验证失败: ' + normalizeApiError(error).message, 'error');
+    showToast('验证失败: ' + formatParentLoginError(error), 'error');
   } finally {
     hideLoading();
   }
@@ -1463,12 +1521,20 @@ function openParentTool(tool) {
         <strong>编辑词库</strong>
         <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
       </div>
+      <div class="parent-help">单词管理 → 单词列表 → 点击单词进入编辑。</div>
+      <label class="parent-field parent-word-filter">
+        <span>按状态筛选</span>
+        <select id="parentWordStatusFilter" onchange="loadParentWordLibrary(1)">
+          <option value="">全部状态</option>
+          ${STATUS_OPTIONS.map(status => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('')}
+        </select>
+      </label>
       <div id="parentWordLibrary" class="parent-result-empty">正在加载词库...</div>
+      <div id="parentWordEditor" class="parent-word-editor"></div>
     `;
     loadParentWordLibrary(1);
     return;
   }
-
   if (tool === 'learningSettings') {
     panel.innerHTML = `
       <div class="parent-panel-head">
@@ -1704,15 +1770,26 @@ function parentWordDomId(recordId) {
   return String(recordId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+function getParentWordStatusFilter() {
+  const status = $('parentWordStatusFilter')?.value || '';
+  return STATUS_OPTIONS.includes(status) ? status : '';
+}
+
+function parentWordStatusOptions(currentStatus) {
+  const selectedStatus = STATUS_OPTIONS.includes(currentStatus) ? currentStatus : 'Pending';
+  return STATUS_OPTIONS.map(status => `<option value="${status}" ${status === selectedStatus ? 'selected' : ''}>${escapeHtml(STATUS_LABELS[status])}</option>`).join('');
+}
+
 async function loadParentWordLibrary(page = 1) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
   libraryEl.textContent = '正在加载词库...';
+  const statusFilter = getParentWordStatusFilter();
   try {
     const pageSize = 20;
     const data = DEMO_MODE
       ? (() => {
-          const words = DEMO_WORDS.map((item, index) => ({
+          const allWords = DEMO_WORDS.map((item, index) => ({
             recordId: `demo-${index}`,
             word: item.word,
             cnMeaning: item.cn,
@@ -1721,19 +1798,21 @@ async function loadParentWordLibrary(page = 1) {
             context: item.context,
             status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
           }));
+          const words = statusFilter ? allWords.filter(item => item.status === statusFilter) : allWords;
           const total = words.length;
           const totalPages = Math.max(1, Math.ceil(total / pageSize));
           const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
           const start = (safePage - 1) * pageSize;
           return { words: words.slice(start, start + pageSize), page: safePage, pageSize, total, totalPages };
         })()
-      : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}`);
+      : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`);
     renderParentWordLibrary(data);
   } catch (error) {
     libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+    const editorEl = $('parentWordEditor');
+    if (editorEl) editorEl.innerHTML = '';
   }
 }
-
 function renderParentWordLibrary(data) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
@@ -1741,26 +1820,32 @@ function renderParentWordLibrary(data) {
   const page = Number(data?.page || 1);
   const totalPages = Number(data?.totalPages || 1);
   const total = Number(data?.total || words.length);
+  parentWordLibraryState.page = page;
+  parentWordLibraryState.pageSize = Number(data?.pageSize || 20);
+  parentWordLibraryState.total = total;
+  parentWordLibraryState.totalPages = totalPages;
+  parentWordLibraryState.words = words;
+  const editorEl = $('parentWordEditor');
+  if (editorEl) editorEl.innerHTML = '';
   if (!words.length) {
-    libraryEl.innerHTML = '<div class="parent-result-empty">当前孩子词库里还没有单词。</div>';
+    libraryEl.innerHTML = '<div class="parent-result-empty">当前筛选条件下没有单词。</div>';
     return;
   }
   const rows = words.map(item => {
     const recordId = item.recordId || item.id || item.record_id || '';
-    const domId = parentWordDomId(recordId || item.word);
     const currentStatus = item.status || item.Status || 'Pending';
-    const optionHtml = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${STATUS_LABELS[status]}</option>`).join('');
+    const word = item.word || item.Word || '';
     return `
-      <div class="parent-word-row">
-        <div class="parent-word-main">
-          <strong>${escapeHtml(item.word || item.Word || '')}</strong>
-          <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
-        </div>
-        <label class="parent-word-status-edit">
-          <span>状态</span>
-          <select class="parent-status-select" id="parentWordStatus-${escapeHtml(domId)}">${optionHtml}</select>
-        </label>
-        <button class="btn btn-secondary btn-small" type="button" onclick="saveParentWordStatus('${escapeHtml(recordId)}', '${escapeHtml(domId)}')">保存</button>
+      <div class="parent-word-list-item">
+        <button class="parent-word-list-main" type="button" onclick="openParentWordEditor('${escapeHtml(recordId)}', ${page})">
+          <div class="parent-word-main">
+            <strong>${escapeHtml(word)}</strong>
+            <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
+          </div>
+        </button>
+        <select class="parent-word-status-select" aria-label="修改 ${escapeHtml(word)} 状态" data-record-id="${escapeHtml(recordId)}" data-previous-status="${escapeHtml(currentStatus)}" onchange="saveParentWordStatusFromList(this)">
+          ${parentWordStatusOptions(currentStatus)}
+        </select>
       </div>
     `;
   }).join('');
@@ -1779,13 +1864,13 @@ function renderParentWordLibrary(data) {
   `;
 }
 
-async function saveParentWordStatus(recordId, domId) {
-  const status = $(`parentWordStatus-${domId}`)?.value;
-  if (!recordId || !status) {
-    showToast('缺少要保存的单词记录', 'warn');
-    return;
-  }
-  showLoading('正在保存状态...');
+
+async function saveParentWordStatusFromList(selectEl) {
+  const recordId = selectEl?.dataset?.recordId || '';
+  const status = STATUS_OPTIONS.includes(selectEl?.value) ? selectEl.value : '';
+  if (!recordId || !status) return;
+  const previousStatus = STATUS_OPTIONS.includes(selectEl?.dataset?.previousStatus) ? selectEl.dataset.previousStatus : '';
+  selectEl.disabled = true;
   try {
     if (!DEMO_MODE) {
       await api('/api/word', {
@@ -1793,15 +1878,89 @@ async function saveParentWordStatus(recordId, domId) {
         body: JSON.stringify({ userId: state.user, recordId, status })
       });
     }
-    showToast('单词状态已更新为' + formatWordStatus(status), 'success');
-    loadStats(state.user);
+    const item = parentWordLibraryState.words.find(wordItem => {
+      const itemRecordId = wordItem.recordId || wordItem.id || wordItem.record_id || '';
+      return itemRecordId === recordId;
+    });
+    if (item) {
+      item.status = status;
+      item.Status = status;
+    }
+    selectEl.dataset.previousStatus = status;
+    showToast(`状态已更新为${formatWordStatus(status)}`, 'success');
+    const activeFilter = getParentWordStatusFilter();
+    if (activeFilter && activeFilter !== status) {
+      await loadParentWordLibrary(parentWordLibraryState.page || 1);
+    } else {
+      loadStats(state.user);
+    }
   } catch (error) {
-    showToast('保存状态失败: ' + normalizeApiError(error).message, 'error');
+    if (previousStatus) selectEl.value = previousStatus;
+    showToast('状态保存失败: ' + normalizeApiError(error).message, 'error');
   } finally {
-    hideLoading();
+    selectEl.disabled = false;
   }
 }
 
+async function openParentWordEditor(recordId, page = parentWordLibraryState.page) {
+  const editorEl = $('parentWordEditor');
+  if (!editorEl) return;
+  const cached = parentWordLibraryState.words.find(item => {
+    const itemRecordId = item.recordId || item.id || item.record_id || '';
+    return itemRecordId === recordId;
+  });
+  let item = cached;
+  if (!item && recordId && !DEMO_MODE) {
+    editorEl.innerHTML = '<div class="parent-result-empty">正在加载单词详情...</div>';
+    item = await api(`/api/word?recordId=${encodeURIComponent(recordId)}`);
+  }
+  if (!item || item.exists === false) {
+    editorEl.innerHTML = '<div class="parent-result-empty">没有找到这条单词记录。</div>';
+    return;
+  }
+  parentWordLibraryState.page = Number(page) || parentWordLibraryState.page || 1;
+  const word = item.word || item.Word || '';
+  const meaning = item.meaning || item.Meaning || '';
+  const cnMeaning = item.cnMeaning || item.CN_Meaning || '';
+  const pos = item.pos || item.POS || '';
+  const context = item.context || item.Context || '';
+  const currentStatus = item.status || item.Status || 'Pending';
+  const statusOptions = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${STATUS_LABELS[status]}</option>`).join('');
+  editorEl.innerHTML = `
+    <div class="parent-word-editor-card">
+      <div class="parent-word-editor-head">
+        <strong>编辑单词：${escapeHtml(word)}</strong>
+        <button class="btn btn-secondary btn-small" type="button" onclick="$('parentWordEditor').innerHTML=''">返回列表</button>
+      </div>
+      <input id="parentEditRecordId" type="hidden" value="${escapeHtml(recordId)}" />
+      <label class="parent-field">
+        <span>单词</span>
+        <input id="parentEditWord" type="text" value="${escapeHtml(word)}" />
+      </label>
+      <label class="parent-field">
+        <span>状态</span>
+        <select id="parentEditStatus">${statusOptions}</select>
+      </label>
+      <label class="parent-field">
+        <span>中文释义</span>
+        <input id="parentEditCnMeaning" type="text" value="${escapeHtml(cnMeaning)}" />
+      </label>
+      <label class="parent-field">
+        <span>英文释义</span>
+        <input id="parentEditMeaning" type="text" value="${escapeHtml(meaning)}" />
+      </label>
+      <label class="parent-field">
+        <span>词性</span>
+        <input id="parentEditPos" type="text" value="${escapeHtml(pos)}" />
+      </label>
+      <label class="parent-field">
+        <span>例句</span>
+        <textarea id="parentEditContext" rows="3">${escapeHtml(context)}</textarea>
+      </label>
+      <button class="btn btn-primary btn-small" type="button" onclick="saveParentWord()">保存修改</button>
+    </div>
+  `;
+}
 async function saveParentWord() {
   const word = $('parentEditWord')?.value.trim();
   if (!word) {
@@ -1820,18 +1979,20 @@ async function saveParentWord() {
           meaning: $('parentEditMeaning')?.value || '',
           cnMeaning: $('parentEditCnMeaning')?.value || '',
           pos: $('parentEditPos')?.value || '',
-          context: $('parentEditContext')?.value || ''
+          context: $('parentEditContext')?.value || '',
+          status: $('parentEditStatus')?.value || undefined
         })
       });
     }
     showToast('已保存单词记录', 'success');
+    await loadParentWordLibrary(parentWordLibraryState.page || 1);
+    loadStats(state.user);
   } catch (error) {
     showToast('保存失败: ' + normalizeApiError(error).message, 'error');
   } finally {
     hideLoading();
   }
 }
-
 async function loadParentLearningSettings() {
   const content = $('parentSettingsContent');
   try {
@@ -1943,45 +2104,39 @@ async function loadStats(user) {
     const accuracyRate = data.accuracyRate || '0%';
     const lastTestTime = data.lastTestTime;
     const pct = totalWords > 0 ? Math.round(masteredWords / totalWords * 100) : 0;
-    const dash = 282.7 * pct / 100;
 
     $('statsContent').innerHTML = `
-      <section class="vocab-progress-card" aria-label="词汇进度">
-        <div class="section-title">词汇进度</div>
-        <div class="progress-ring-wrap">
-          <div class="progress-ring">
-            <svg width="132" height="132" viewBox="0 0 100 100" aria-hidden="true">
-              <circle class="bg" cx="50" cy="50" r="45"/>
-              <circle class="fg" cx="50" cy="50" r="45" style="stroke-dasharray:282.7;stroke-dashoffset:${282.7 - dash};"/>
-            </svg>
-            <div class="center">
-              <div class="pct">${pct}%</div>
-              <div class="pct-label">已掌握</div>
-            </div>
+      <section class="home-v2-progress-card" aria-label="词汇进度">
+        <div class="home-v2-section-head">
+          <span class="home-v2-section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 5.5h8.8a2.7 2.7 0 0 1 0 5.4H6.5z"/><path d="M6.5 10.9h10a2.8 2.8 0 0 1 0 5.6h-10z"/></svg></span>
+          <h2>词汇进度</h2>
+        </div>
+        <div class="home-v2-progress-body">
+          <div class="home-v2-donut" aria-label="已掌握 ${escapeHtml(pct)}%" style="--pct:${pct};">
+            <div class="home-v2-donut-core"><strong>${escapeHtml(pct)}%</strong><span>已掌握</span></div>
           </div>
-          <div class="ring-stats">
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--green);"></span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--orange);"></span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--blue);"></span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-muted);"></span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></div>
-            <div class="ring-stat-item"><span><span class="dot" style="background:var(--text-secondary);"></span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></div>
-          </div>
+          <ul class="home-v2-progress-list">
+            <li><span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></li>
+            <li><span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></li>
+            <li><span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></li>
+            <li><span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></li>
+            <li><span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></li>
+          </ul>
         </div>
       </section>
-      <div class="home-stat-grid">
-        <div class="home-stat-card home-stat-tests">
-          <div class="stat-icon stat-icon-star" aria-hidden="true">☆</div>
-          <div class="label">考核次数</div>
-          <div class="value">${escapeHtml(totalTests)}</div>
+      <section class="home-v2-stats-grid" aria-label="学习统计">
+        <div class="home-v2-stat-card">
+          <div class="home-v2-stat-top"><span class="home-v2-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5 14.3 9l5 .7-3.6 3.5.8 4.9L12 15.8l-4.5 2.3.8-4.9L4.7 9.7l5-.7z"/></svg></span><span>考核次数</span></div>
+          <strong class="home-v2-stat-value">${escapeHtml(totalTests)}</strong>
+          <span class="home-v2-stat-sub home-v2-stat-sub-placeholder" aria-hidden="true">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</span>
         </div>
-        <div class="home-stat-card home-stat-accuracy">
-          <div class="stat-icon stat-icon-check" aria-hidden="true">✓</div>
-          <div class="label">正确率</div>
-          <div class="value">${escapeHtml(accuracyRate)}</div>
-          <div class="sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</div>
+        <div class="home-v2-stat-card">
+          <div class="home-v2-stat-top"><span class="home-v2-stat-icon green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4L18.5 8"/></svg></span><span>正确率</span></div>
+          <strong class="home-v2-stat-value green">${escapeHtml(accuracyRate)}</strong>
+          <span class="home-v2-stat-sub">${escapeHtml(correctCount)}/${escapeHtml(totalQuestions)}</span>
         </div>
-      </div>
-      ${lastTestTime ? `<div class="recent-test-note"><span aria-hidden="true">◷</span> 上次考核：${escapeHtml(formatDate(lastTestTime))}</div>` : ''}
+      </section>
+      ${lastTestTime ? `<p class="home-v2-last-test"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg>上次考核：${escapeHtml(formatDate(lastTestTime))}</p>` : ''}
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');

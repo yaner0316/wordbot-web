@@ -92,10 +92,12 @@
     let reason = '';
     if (question.type === 1) {
       const completedSentence = question.context.replace(/_____/g, correctWord);
-      const questionExplanation = question.contextCN
-        ? question.contextCN
-        : `\u628a "${correctWord}" \u4ee3\u5165\u540e\uff0c\u6574\u53e5\u610f\u601d\u662f\uff1a${completedSentence}`;
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentence)}</div>
+      const completedSentenceCN = question.contextCN || '';
+      const completedSentenceDisplay = completedSentenceCN || question.correctMeaning || '中文翻译暂未生成';
+      const questionExplanation = completedSentenceCN
+        ? `把 "${correctWord}" 代入后，整句意思是：${completedSentenceCN}`
+        : `这道题考察 "${correctWord}" 的中文释义：${question.correctMeaning || '暂无中文释义'}`;
+      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentenceDisplay)}</div>
         <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
     } else if (question.type === 2) {
       const questionExplanation = question.correctMeaning || question.context;
