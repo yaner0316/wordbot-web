@@ -16,11 +16,17 @@ const DEFAULT_LEVEL = '中学';
 const LEVEL_LABELS = { '中学': '初中' };
 const STATUS_LABELS = {
   Pending: '待学习',
-  Recognized: '已认识',
+  Recognized: '已初识',
   Consolidating: '巩固中',
   Mastered: '已掌握',
 };
 const STATUS_OPTIONS = ['Pending', 'Recognized', 'Consolidating', 'Mastered'];
+const STATUS_DESCRIPTIONS = {
+  Pending: '新录入未考核，或最近一次答错后还没有重新答对。',
+  Recognized: '最近一次答错后真实考核答对 1 次，说明已经初步见过但还不稳定。',
+  Consolidating: '最近一次答错后真实考核答对 2 次以上，但还未满足已掌握的跨日或不确定累计标准。',
+  Mastered: '确定认识答对至少 2 次且在不同学习日，或猜的 / 不确定答对至少 3 次；答错会清空之前的掌握证据，多义词按每个释义单独累计。',
+};
 const PARENT_WORD_DELETE_VALUE = '__delete__';
 const parentWordLibraryState = {
   page: 1,
@@ -204,12 +210,41 @@ function showLoading(text) {
 }
 function hideLoading() { $('loadingOverlay').classList.remove('active'); }
 
+function setToastContent(msg) {
+  const t = $('toast');
+  const text = $('toastText');
+  if (text) text.textContent = msg;
+  else t.textContent = msg;
+}
+
+function hideToastConfirm() {
+  const confirmBtn = $('toastConfirmBtn');
+  if (confirmBtn) confirmBtn.style.display = 'none';
+}
+
 function showToast(msg, type) {
   const t = $('toast');
-  t.textContent = msg; t.className = 'toast ' + type + ' show';
+  setToastContent(msg);
+  hideToastConfirm();
+  t.className = 'toast ' + type + ' show';
   clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+function showPersistentToast(msg, type) {
+  const t = $('toast');
+  const confirmBtn = $('toastConfirmBtn');
+  setToastContent(msg);
+  t.className = 'toast ' + type + ' show toast-persistent';
+  if (confirmBtn) confirmBtn.style.display = 'inline-flex';
+  clearTimeout(t._timer);
+}
+
+function dismissPersistentToast() {
+  const t = $('toast');
+  hideToastConfirm();
+  clearTimeout(t._timer);
+  t.classList.remove('show', 'toast-persistent');
+}
 function getLocalAuthUsers() {
   try {
     const raw = localStorage.getItem(LOCAL_AUTH_USERS_KEY);
@@ -1370,11 +1405,6 @@ function ensureParentPage() {
   const grid = $('parentToolGrid');
   if (grid) {
     grid.innerHTML = `
-      <button class="parent-tool-card" type="button" onclick="openParentTool('queryWord')">
-        <span class="parent-tool-icon">⌕</span>
-        <span>查询单词</span>
-        <small>查看单词状态</small>
-      </button>
       <button class="parent-tool-card" type="button" onclick="openParentTool('editWords')">
         <span class="parent-tool-icon">✎</span>
         <span>编辑词库</span>
@@ -1501,41 +1531,46 @@ function openParentTool(tool) {
     return;
   }
 
-  if (tool === 'queryWord') {
-    panel.innerHTML = `
-      <div class="parent-panel-head">
-        <strong>查询单词</strong>
-        <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
-      </div>
-      <div class="parent-inline-form">
-        <input id="parentSearchWordInput" type="text" placeholder="输入英文单词" onkeydown="if(event.key==='Enter')searchParentWord()" />
-        <button class="btn btn-secondary btn-small" type="button" onclick="searchParentWord()">查询</button>
-      </div>
-      <div id="parentWordResult" class="parent-result-empty">输入一个单词，只查看它在当前孩子词库里的状态。</div>
-    `;
-    return;
-  }
-
   if (tool === 'editWords') {
     panel.innerHTML = `
       <div class="parent-panel-head">
         <strong>编辑词库</strong>
         <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
       </div>
-      <div class="parent-help">单词管理 → 单词列表 → 点击单词进入编辑。</div>
-      <label class="parent-field parent-word-filter">
-        <span>按状态筛选</span>
-        <select id="parentWordStatusFilter" onchange="loadParentWordLibrary(1)">
-          <option value="">全部状态</option>
-          ${STATUS_OPTIONS.map(status => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('')}
-        </select>
-      </label>
-      <div id="parentWordLibrary" class="parent-result-empty">正在加载词库...</div>
-      <div id="parentWordEditor" class="parent-word-editor"></div>
+      <div id="parentWordListView" class="parent-word-list-view">
+        <div class="parent-help">单词管理 → 单词列表 → 点击单词进入编辑。</div>
+        <div class="parent-word-status-guide" aria-label="单词状态定义">
+          ${STATUS_OPTIONS.map(status => `
+            <div class="parent-word-status-guide-item">
+              <strong>${STATUS_LABELS[status]}</strong>
+              <span>${STATUS_DESCRIPTIONS[status]}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="parent-word-controls">
+          <div class="parent-inline-form parent-word-search-form">
+            <input id="parentWordLibrarySearchInput" type="text" placeholder="输入单词查询" onkeydown="if(event.key==='Enter')searchParentWord()" />
+            <button class="btn btn-secondary btn-small" type="button" onclick="searchParentWord()">查询</button>
+            <button class="btn btn-secondary btn-small" type="button" onclick="clearParentWordSearch()">清空</button>
+          </div>
+          <label class="parent-field parent-word-filter">
+            <span>按状态筛选</span>
+            <select id="parentWordStatusFilter" onchange="loadParentWordLibrary(1)">
+              <option value="">全部状态</option>
+              ${STATUS_OPTIONS.map(status => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <div id="parentWordLibrary" class="parent-result-empty">正在加载词库...</div>
+      </div>
+      <div id="parentWordEditorView" class="parent-word-editor-view" style="display:none;">
+        <div id="parentWordEditor" class="parent-word-editor"></div>
+      </div>
     `;
     loadParentWordLibrary(1);
     return;
   }
+
   if (tool === 'learningSettings') {
     panel.innerHTML = `
       <div class="parent-panel-head">
@@ -1708,7 +1743,7 @@ async function submitParentWords(options = {}) {
           })
         });
     const skipped = result.skippedDuplicateWords?.length ? `，跳过重复 ${result.skippedDuplicateWords.length} 个` : '';
-    showToast('已提交 ' + (result.count ?? entries.length) + ' 个单词' + skipped, 'success');
+    showPersistentToast('录入成功：已加入词库 ' + (result.count ?? entries.length) + ' 个单词' + skipped + '。后台题库正在准备，请稍后开始考核。', 'success');
     if (input) input.value = '';
     clearDuplicateWordConfirmation();
     loadStats(state.user);
@@ -1727,46 +1762,25 @@ async function submitParentWords(options = {}) {
   }
 }
 
-async function searchParentWord() {
-  const word = $('parentSearchWordInput')?.value.trim();
-  const resultEl = $('parentWordResult');
-  if (!word) {
-    showToast('请输入要查询的单词', 'warn');
-    return;
-  }
-  if (!resultEl) return;
-  resultEl.textContent = '正在查询...';
-  try {
-    const data = DEMO_MODE
-      ? { exists: true, word, meaning: 'demo meaning', cnMeaning: '演示释义', pos: 'n.', context: `A demo sentence uses ${word}.`, status: 'Pending' }
-      : await api(`/api/word?userId=${encodeURIComponent(state.user)}&word=${encodeURIComponent(word)}`);
-    if (!data || data.exists === false) {
-      resultEl.innerHTML = `<div class="parent-result-empty">没有找到 ${escapeHtml(word)}，可以先在“录入单词”里添加。</div>`;
-      return;
-    }
-    const cnMeaning = data.cnMeaning || data.CN_Meaning || '暂无中文释义';
-    const meaning = data.meaning || data.Meaning || '暂无英文释义';
-    const pos = data.pos || data.POS || '';
-    const context = data.context || data.Context || '';
-    resultEl.innerHTML = `
-      <div class="parent-word-query-card">
-        <div class="parent-word-query-head">
-          <strong>${escapeHtml(data.word || word)}</strong>
-          <span class="parent-word-status">${escapeHtml(formatWordStatus(data.status || data.Status || 'Pending'))}</span>
-        </div>
-        <dl class="parent-word-detail-list">
-          <div><dt>中文释义</dt><dd>${escapeHtml(cnMeaning)}</dd></div>
-          <div><dt>英文释义</dt><dd>${escapeHtml(meaning)}</dd></div>
-          ${pos ? `<div><dt>词性</dt><dd>${escapeHtml(pos)}</dd></div>` : ''}
-          ${context ? `<div><dt>例句</dt><dd>${escapeHtml(context)}</dd></div>` : ''}
-        </dl>
-      </div>
-    `;
-  } catch (error) {
-    resultEl.innerHTML = `<div class="parent-result-empty">查询失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
-  }
+function getParentWordSearchQuery() {
+  return $('parentWordLibrarySearchInput')?.value.trim() || '';
 }
 
+function clearParentWordSearch() {
+  const input = $('parentWordLibrarySearchInput');
+  if (input) input.value = '';
+  loadParentWordLibrary(1);
+}
+
+async function searchParentWord() {
+  const word = getParentWordSearchQuery();
+  if (!word) {
+    showToast('请输入要查询的单词', 'warn');
+    loadParentWordLibrary(1);
+    return;
+  }
+  await loadParentWordLibrary(1);
+}
 function parentWordDomId(recordId) {
   return String(recordId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -1787,34 +1801,56 @@ async function loadParentWordLibrary(page = 1) {
   if (!libraryEl) return;
   libraryEl.textContent = '正在加载词库...';
   const statusFilter = getParentWordStatusFilter();
+  const searchQuery = getParentWordSearchQuery();
   try {
     const pageSize = 20;
-    const data = DEMO_MODE
-      ? (() => {
-          const allWords = DEMO_WORDS.map((item, index) => ({
-            recordId: `demo-${index}`,
-            word: item.word,
-            cnMeaning: item.cn,
-            meaning: item.meaning,
-            pos: item.pos,
-            context: item.context,
-            status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
-          }));
-          const words = statusFilter ? allWords.filter(item => item.status === statusFilter) : allWords;
-          const total = words.length;
-          const totalPages = Math.max(1, Math.ceil(total / pageSize));
-          const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
-          const start = (safePage - 1) * pageSize;
-          return { words: words.slice(start, start + pageSize), page: safePage, pageSize, total, totalPages };
-        })()
-      : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`);
+    let data;
+    if (DEMO_MODE) {
+      const allWords = DEMO_WORDS.map((item, index) => ({
+        recordId: `demo-${index}`,
+        word: item.word,
+        cnMeaning: item.cn,
+        meaning: item.meaning,
+        pos: item.pos,
+        context: item.context,
+        status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
+      }));
+      const filteredWords = allWords.filter(item => {
+        const matchesStatus = !statusFilter || item.status === statusFilter;
+        const matchesSearch = !searchQuery || item.word.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesStatus && matchesSearch;
+      });
+      const total = filteredWords.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+      const start = (safePage - 1) * pageSize;
+      data = { words: filteredWords.slice(start, start + pageSize), page: safePage, pageSize, total, totalPages, searchQuery };
+    } else if (searchQuery) {
+      const item = await api(`/api/word?userId=${encodeURIComponent(state.user)}&word=${encodeURIComponent(searchQuery)}`);
+      const found = item && item.exists !== false ? [item] : [];
+      const filteredWords = statusFilter
+        ? found.filter(wordItem => (wordItem.status || wordItem.Status || 'Pending') === statusFilter)
+        : found;
+      data = { words: filteredWords, page: 1, pageSize, total: filteredWords.length, totalPages: 1, searchQuery };
+    } else {
+      data = await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`);
+    }
     renderParentWordLibrary(data);
   } catch (error) {
     libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
     const editorEl = $('parentWordEditor');
     if (editorEl) editorEl.innerHTML = '';
   }
+}function renderParentWordPager(page, totalPages, position) {
+  return `
+    <div class="parent-word-pager parent-word-pager-${position}">
+      <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+      <span>第 ${escapeHtml(page)} / ${escapeHtml(totalPages)} 页</span>
+      <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
+    </div>
+  `;
 }
+
 function renderParentWordLibrary(data) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
@@ -1822,6 +1858,7 @@ function renderParentWordLibrary(data) {
   const page = Number(data?.page || 1);
   const totalPages = Number(data?.totalPages || 1);
   const total = Number(data?.total || words.length);
+  const searchQuery = data?.searchQuery || getParentWordSearchQuery();
   parentWordLibraryState.page = page;
   parentWordLibraryState.pageSize = Number(data?.pageSize || 20);
   parentWordLibraryState.total = total;
@@ -1829,8 +1866,19 @@ function renderParentWordLibrary(data) {
   parentWordLibraryState.words = words;
   const editorEl = $('parentWordEditor');
   if (editorEl) editorEl.innerHTML = '';
+  const summary = searchQuery
+    ? `查询“${escapeHtml(searchQuery)}”：共 ${escapeHtml(total)} 条`
+    : `共 ${escapeHtml(total)} 个单词`;
   if (!words.length) {
-    libraryEl.innerHTML = '<div class="parent-result-empty">当前筛选条件下没有单词。</div>';
+    libraryEl.innerHTML = `
+      <div class="parent-word-library">
+        <div class="parent-word-library-head">
+          <strong>${summary}</strong>
+          ${renderParentWordPager(page, totalPages, 'top')}
+        </div>
+        <div class="parent-result-empty">当前筛选条件下没有单词。</div>
+      </div>
+    `;
     return;
   }
   const rows = words.map(item => {
@@ -1854,18 +1902,16 @@ function renderParentWordLibrary(data) {
   libraryEl.innerHTML = `
     <div class="parent-word-library">
       <div class="parent-word-library-head">
-        <strong>共 ${escapeHtml(total)} 个单词</strong>
-        <span>第 ${escapeHtml(page)} / ${escapeHtml(totalPages)} 页</span>
+        <strong>${summary}</strong>
+        ${renderParentWordPager(page, totalPages, 'top')}
       </div>
-      ${rows}
-      <div class="parent-word-pager">
-        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
-        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
+      <div class="parent-word-list-scroll">
+        ${rows}
       </div>
+      ${renderParentWordPager(page, totalPages, 'bottom')}
     </div>
   `;
 }
-
 
 async function saveParentWordStatusFromList(selectEl) {
   const recordId = selectEl?.dataset?.recordId || '';
@@ -1932,9 +1978,22 @@ async function saveParentWordStatusFromList(selectEl) {
     selectEl.disabled = false;
   }
 }
+function showParentWordListView() {
+  const listView = $('parentWordListView');
+  const editorView = $('parentWordEditorView');
+  const editorEl = $('parentWordEditor');
+  if (listView) listView.style.display = 'block';
+  if (editorView) editorView.style.display = 'none';
+  if (editorEl) editorEl.innerHTML = '';
+}
+
 async function openParentWordEditor(recordId, page = parentWordLibraryState.page) {
   const editorEl = $('parentWordEditor');
-  if (!editorEl) return;
+  const listView = $('parentWordListView');
+  const editorView = $('parentWordEditorView');
+  if (!editorEl || !editorView) return;
+  if (listView) listView.style.display = 'none';
+  if (editorView) editorView.style.display = 'block';
   const cached = parentWordLibraryState.words.find(item => {
     const itemRecordId = item.recordId || item.id || item.record_id || '';
     return itemRecordId === recordId;
@@ -1945,7 +2004,13 @@ async function openParentWordEditor(recordId, page = parentWordLibraryState.page
     item = await api(`/api/word?recordId=${encodeURIComponent(recordId)}`);
   }
   if (!item || item.exists === false) {
-    editorEl.innerHTML = '<div class="parent-result-empty">没有找到这条单词记录。</div>';
+    editorEl.innerHTML = `
+      <div class="parent-panel-head">
+        <strong>单词详情</strong>
+        <button type="button" onclick="showParentWordListView()" aria-label="返回列表">×</button>
+      </div>
+      <div class="parent-result-empty">没有找到这条单词记录。</div>
+    `;
     return;
   }
   parentWordLibraryState.page = Number(page) || parentWordLibraryState.page || 1;
@@ -1960,7 +2025,7 @@ async function openParentWordEditor(recordId, page = parentWordLibraryState.page
     <div class="parent-word-editor-card">
       <div class="parent-word-editor-head">
         <strong>编辑单词：${escapeHtml(word)}</strong>
-        <button class="btn btn-secondary btn-small" type="button" onclick="$('parentWordEditor').innerHTML=''">返回列表</button>
+        <button class="btn btn-secondary btn-small" type="button" onclick="showParentWordListView()">返回列表</button>
       </div>
       <input id="parentEditRecordId" type="hidden" value="${escapeHtml(recordId)}" />
       <label class="parent-field">
@@ -1990,8 +2055,7 @@ async function openParentWordEditor(recordId, page = parentWordLibraryState.page
       <button class="btn btn-primary btn-small" type="button" onclick="saveParentWord()">保存修改</button>
     </div>
   `;
-}
-async function saveParentWord() {
+}async function saveParentWord() {
   const word = $('parentEditWord')?.value.trim();
   if (!word) {
     showToast('单词不能为空', 'warn');
@@ -2016,6 +2080,7 @@ async function saveParentWord() {
     }
     showToast('已保存单词记录', 'success');
     await loadParentWordLibrary(parentWordLibraryState.page || 1);
+    showParentWordListView();
     loadStats(state.user);
   } catch (error) {
     showToast('保存失败: ' + normalizeApiError(error).message, 'error');
@@ -2148,7 +2213,7 @@ async function loadStats(user) {
           <ul class="home-v2-progress-list">
             <li><span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></li>
             <li><span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></li>
-            <li><span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></li>
+            <li><span>已初识</span><strong>${escapeHtml(recognizedWords)}</strong></li>
             <li><span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></li>
             <li><span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></li>
           </ul>

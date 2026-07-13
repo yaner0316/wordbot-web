@@ -21,7 +21,10 @@
   </div>
 
   <!-- Toast -->
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast">
+    <span id="toastText"></span>
+    <button class="toast-confirm" id="toastConfirmBtn" type="button" onclick="dismissPersistentToast()">确定</button>
+  </div>
 
   <!-- History Detail Sheet -->
   <div class="hd-backdrop" id="hdBackdrop" onclick="closeHistoryDetail()"></div>
@@ -86,9 +89,6 @@
         <button class="header-btn" onclick="logout()" title="退出登录">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-7"/></svg>
         </button>
-        <button class="header-btn" onclick="navigateTo('history')" title="历史记录">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </button>
       </div>
     </div>
 
@@ -148,11 +148,6 @@
         <div class="parent-help" id="parentGateHint">请输入当前孩子绑定的家长用户名和家长密码。</div>
       </div>
       <div class="parent-tool-grid" id="parentToolGrid" style="display:none;">
-        <button class="parent-tool-card" type="button" onclick="openParentTool('queryWord')">
-          <span class="parent-tool-icon">⌕</span>
-          <span>查询单词</span>
-          <small>查看单词状态</small>
-        </button>
         <button class="parent-tool-card" type="button" onclick="openParentTool('editWords')">
           <span class="parent-tool-icon">✎</span>
           <span>编辑词库</span>

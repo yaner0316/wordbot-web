@@ -398,7 +398,9 @@ test('home stats and game prompts render clean Chinese text', () => {
     assert.ok(app.includes("const DEFAULT_LEVEL = '\u4e2d\u5b66'"));
     assert.ok(app.includes('\u5df2\u638c\u63e1'));
     assert.ok(app.includes('\u5de9\u56fa\u4e2d'));
-    assert.ok(app.includes('\u5df2\u8ba4\u8bc6'));
+    assert.ok(app.includes('已初识'));
+    assert.ok(!app.includes('<span>已认识</span>'));
+    assert.ok(!app.includes("Recognized: '已认识'"));
     assert.ok(app.includes('\u672a\u5f00\u59cb'));
     assert.ok(app.includes('\u603b\u8bcd\u6c47'));
     assert.ok(app.includes('\u8003\u6838\u6b21\u6570'));
@@ -458,6 +460,22 @@ test('home shows the Xiaolong character image as a first-screen mascot', () => {
     assert.match(styles, /\.home-hero-strip/);
 });
 
+test('home keeps history only in the lower quick actions, not the top-right header', () => {
+    const homeStart = html.indexOf('id="pageHome"');
+    const headerStart = html.indexOf('<div class="header">', homeStart);
+    const headerEnd = html.indexOf('<div class="user-selector"', headerStart);
+    assert.ok(headerStart >= 0 && headerEnd > headerStart, 'home header should exist');
+    const homeHeader = html.slice(headerStart, headerEnd);
+    assert.doesNotMatch(homeHeader, /navigateTo\('history'\)/);
+    assert.match(homeHeader, /onclick="logout\(\)"/);
+
+    const toolsStart = app.indexOf('function renderStudentTools()');
+    const toolsEnd = app.indexOf('function openStudentWordEntry()', toolsStart);
+    assert.ok(toolsStart >= 0 && toolsEnd > toolsStart, 'renderStudentTools function should exist');
+    const renderStudentToolsSource = app.slice(toolsStart, toolsEnd);
+    assert.match(renderStudentToolsSource, /home-v2-quick-history/);
+    assert.ok(renderStudentToolsSource.includes("navigateTo(\\'history\\')"));
+});
 test('home quick actions expose the required four entry points', () => {
     const start = app.indexOf('function renderStudentTools()');
     const end = app.indexOf('function openStudentWordEntry()', start);
@@ -584,44 +602,88 @@ test('word entry supports duplicate confirmation before adding same-word meaning
 });
 
 
-test('parent word query and library editing are separate tools with Chinese status labels', () => {
-    assert.match(app, /openParentTool\('queryWord'\)/);
+test('word entry success requires an explicit confirmation instead of auto-dismiss toast', () => {
+    assert.match(app, /function showPersistentToast/);
+    assert.match(app, /function dismissPersistentToast/);
+    assert.match(html, /id="toastConfirmBtn"/);
+    const submitStart = app.indexOf('async function submitParentWords');
+    const searchStart = app.indexOf('async function searchParentWord', submitStart);
+    assert.ok(submitStart >= 0 && searchStart > submitStart, 'submitParentWords source should be findable');
+    const submitSource = app.slice(submitStart, searchStart);
+    assert.match(submitSource, /showPersistentToast\('录入成功：已加入词库/);
+    assert.doesNotMatch(submitSource, /showToast\('已提交 /);
+});
+test('parent word search lives inside library management with Chinese status labels', () => {
+    assert.doesNotMatch(app, /openParentTool\('queryWord'\)/);
+    assert.doesNotMatch(html, /openParentTool\('queryWord'\)/);
     assert.match(app, /openParentTool\('editWords'\)/);
+    assert.match(app, /parentWordLibrarySearchInput/);
+    assert.match(app, /function getParentWordSearchQuery/);
+    assert.match(app, /function clearParentWordSearch/);
+    assert.match(app, /function searchParentWord/);
     assert.match(app, /function loadParentWordLibrary/);
     assert.match(app, /function renderParentWordLibrary/);
     assert.match(app, /function openParentWordEditor/);
     assert.match(app, /function saveParentWord/);
     assert.match(app, /\/api\/admin\/words\?userId=/);
+    assert.match(app, /\/api\/word\?userId=/);
     assert.match(app, /STATUS_LABELS/);
-    assert.match(app, /待学习/);
-    assert.match(app, /已掌握/);
-    const searchStart = app.indexOf('async function searchParentWord()');
-    const searchEnd = app.indexOf('async function loadParentWordLibrary', searchStart);
-    assert.ok(searchStart >= 0 && searchEnd > searchStart, 'searchParentWord should appear before library editor');
-    const searchSource = app.slice(searchStart, searchEnd);
-    assert.doesNotMatch(searchSource, /parent-word-editor/);
-    assert.doesNotMatch(searchSource, /saveParentWord/);
+    assert.match(app, /STATUS_DESCRIPTIONS/);
+    assert.match(app, /Recognized:\s*'已初识'/);
+    assert.match(app, /Mastered:\s*'已掌握'/);
+    assert.match(app, /新录入未考核/);
+    assert.match(app, /最近一次答错后还没有重新答对/);
+    assert.match(app, /最近一次答错后真实考核答对 1 次/);
+    assert.match(app, /最近一次答错后真实考核答对 2 次以上/);
+    assert.match(app, /确定认识.*至少 2 次.*不同学习日/);
+    assert.match(app, /猜的 \/ 不确定.*至少 3 次/);
+    assert.match(app, /答错会清空之前的掌握证据/);
+    assert.match(app, /多义词按每个释义单独累计/);
+    const editStart = app.indexOf("if (tool === 'editWords')");
+    const editEnd = app.indexOf("if (tool === 'learningSettings')", editStart);
+    assert.ok(editStart >= 0 && editEnd > editStart, 'editWords panel should exist');
+    const editSource = app.slice(editStart, editEnd);
+    assert.match(editSource, /parentWordLibrarySearchInput/);
+    assert.match(editSource, /parent-word-status-guide/);
+    assert.match(editSource, /STATUS_OPTIONS\.map\(status =>/);
+    assert.match(editSource, /STATUS_DESCRIPTIONS\[status\]/);
+    assert.match(editSource, /searchParentWord\(\)/);
 });
 
-test('parent word management opens a list first, then a clicked word editor with status filters', () => {
+test('parent word management opens a list first, then a separate clicked-word editor view', () => {
     assert.match(app, /parentWordStatusFilter/);
+    assert.match(app, /parentWordListView/);
+    assert.match(app, /parentWordEditorView/);
     assert.match(app, /function getParentWordStatusFilter/);
+    assert.match(app, /function showParentWordListView/);
     assert.match(app, /status=\$\{encodeURIComponent\(statusFilter\)\}/);
     assert.match(app, /function openParentWordEditor/);
     assert.match(app, /onclick="openParentWordEditor/);
 
     const libraryStart = app.indexOf('function renderParentWordLibrary');
-    const editorStart = app.indexOf('function openParentWordEditor', libraryStart);
+    const editorStart = app.indexOf('async function openParentWordEditor', libraryStart);
     assert.ok(libraryStart >= 0 && editorStart > libraryStart, 'word list should render before editor function');
     const listSource = app.slice(libraryStart, editorStart);
     assert.match(listSource, /parent-word-status-select/);
     assert.match(listSource, /onchange="saveParentWordStatusFromList/);
     assert.match(listSource, /parentWordStatusOptions\(currentStatus\)/);
+    assert.match(listSource, /parent-word-list-scroll/);
+    assert.match(listSource, /renderParentWordPager\(page, totalPages, 'top'\)/);
+    assert.match(listSource, /renderParentWordPager\(page, totalPages, 'bottom'\)/);
     assert.match(listSource, /parent-word-list-item/);
     assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
+
+    const editorSource = app.slice(editorStart, app.indexOf('async function saveParentWord', editorStart));
+    assert.match(editorSource, /listView\.style\.display\s*=\s*'none'/);
+    assert.match(editorSource, /editorView\.style\.display\s*=\s*'block'/);
+    assert.match(editorSource, /showParentWordListView\(\)/);
 });
 
 
+test('parent tool grid lays three tools in one row and four tools in two rows', () => {
+    assert.match(styles, /\.parent-tool-grid\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+    assert.match(styles, /\.parent-tool-grid:has\(\.parent-tool-card:nth-child\(4\)\)\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+});
 test('parent word status dropdown can delete the selected word row by record id', () => {
     assert.match(app, /const PARENT_WORD_DELETE_VALUE = '__delete__'/);
     assert.match(app, /<option value="\$\{PARENT_WORD_DELETE_VALUE\}">\u5220\u9664<\/option>/);
@@ -638,13 +700,13 @@ test('parent word status dropdown can delete the selected word row by record id'
     assert.doesNotMatch(saveSource, /body:\s*JSON\.stringify\(\{ userId: state\.user, recordId, status \}\)[\s\S]*PARENT_WORD_DELETE_VALUE/);
 });
 
-test('parent console omits word entry because students add words from home', () => {
+test('parent console omits word entry and standalone word query because students add words from home', () => {
     const htmlGridStart = html.indexOf('id="parentToolGrid"');
     const htmlGridEnd = html.indexOf('<div class="parent-tool-panel"', htmlGridStart);
     assert.ok(htmlGridStart >= 0 && htmlGridEnd > htmlGridStart, 'static parent tool grid should exist');
     const htmlGrid = html.slice(htmlGridStart, htmlGridEnd);
     assert.ok(!htmlGrid.includes("openParentTool('addWords')"));
-    assert.ok(htmlGrid.includes("openParentTool('queryWord')"));
+    assert.ok(!htmlGrid.includes("openParentTool('queryWord')"));
     assert.ok(htmlGrid.includes("openParentTool('editWords')"));
 
     const ensureStart = app.indexOf('function ensureParentPage()');
@@ -652,7 +714,7 @@ test('parent console omits word entry because students add words from home', () 
     assert.ok(ensureStart >= 0 && ensureEnd > ensureStart, 'dynamic parent page should exist');
     const ensureSource = app.slice(ensureStart, ensureEnd);
     assert.ok(!ensureSource.includes("openParentTool('addWords')"));
-    assert.ok(ensureSource.includes("openParentTool('queryWord')"));
+    assert.ok(!ensureSource.includes("openParentTool('queryWord')"));
     assert.ok(ensureSource.includes("openParentTool('editWords')"));
 });
 

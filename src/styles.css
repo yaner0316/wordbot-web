@@ -313,8 +313,11 @@
     }
     .parent-tool-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
+    }
+    .parent-tool-grid:has(.parent-tool-card:nth-child(4)) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .student-tool-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -444,6 +447,38 @@
       gap: 8px;
       align-items: center;
       margin-bottom: 10px;
+    }
+    .parent-word-search-form {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+    .parent-word-controls {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .parent-word-status-guide {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .parent-word-status-guide-item {
+      border: 1px solid #F0E4D8;
+      border-radius: 9px;
+      background: #FFFCF8;
+      padding: 8px 9px;
+      display: grid;
+      gap: 3px;
+    }
+    .parent-word-status-guide-item strong {
+      color: var(--orange-dark);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .parent-word-status-guide-item span {
+      color: var(--text-secondary);
+      font-size: 11px;
+      line-height: 1.45;
     }
     .parent-word-editor {
       margin-top: 10px;
@@ -941,14 +976,26 @@
     /* ===== Toast ===== */
     .toast {
       position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
-      padding: 12px 24px; border-radius: var(--radius-sm);
-      font-size: 14px; font-weight: 500; z-index: 200;
+      display: flex; align-items: center; gap: 10px;
+      max-width: min(420px, calc(100vw - 32px));
+      padding: 12px 18px; border-radius: var(--radius-sm);
+      font-size: 14px; font-weight: 500; line-height: 1.45; z-index: 200;
       opacity: 0; transition: all .3s; pointer-events: none;
+      box-shadow: var(--shadow-hover);
     }
     .toast.show { opacity: 1; }
+    .toast.toast-persistent { pointer-events: auto; }
     .toast.error { background: #FFEBEE; color: var(--red); }
     .toast.success { background: #E8F5E9; color: var(--green); }
     .toast.info { background: #E3F2FD; color: var(--blue); }
+    .toast-confirm {
+      display: none; align-items: center; justify-content: center;
+      min-width: 54px; min-height: 30px; padding: 0 12px;
+      border: none; border-radius: 8px; background: var(--green); color: #fff;
+      font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+      flex-shrink: 0;
+    }
+    .toast-confirm:hover { filter: brightness(.96); }
     /* ===== Confetti ===== */
     .confetti-container {
       position: fixed; inset: 0; pointer-events: none; z-index: 150;
