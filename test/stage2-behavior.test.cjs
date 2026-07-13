@@ -690,13 +690,17 @@ test('parent word status dropdown can delete the selected word row by record id'
     assert.match(app, /data-word="\$\{escapeHtml\(word\)\}"/);
 
     const saveStart = app.indexOf('async function saveParentWordStatusFromList');
+    const confirmStart = app.indexOf('async function confirmParentWordDelete');
     const editorStart = app.indexOf('async function openParentWordEditor', saveStart);
-    assert.ok(saveStart >= 0 && editorStart > saveStart, 'status save function should exist before editor');
+    assert.ok(saveStart >= 0 && confirmStart >= 0 && saveStart > confirmStart && editorStart > saveStart, 'delete confirmation should sit before list status save and editor');
     const saveSource = app.slice(saveStart, editorStart);
+    const confirmSource = app.slice(confirmStart, saveStart);
     assert.match(saveSource, /selectedValue\s*===\s*PARENT_WORD_DELETE_VALUE/);
-    assert.match(saveSource, /method:\s*'DELETE'/);
-    assert.match(saveSource, /\/api\/word\?recordId=\$\{encodeURIComponent\(recordId\)\}/);
-    assert.match(saveSource, /loadParentWordLibrary\(parentWordLibraryState\.page \|\| 1\)/);
+    assert.match(saveSource, /openParentWordDeleteConfirm/);
+    assert.match(confirmSource, /method:\s*'DELETE'/);
+    assert.match(confirmSource, /\/api\/word\?recordId=/);
+    assert.match(confirmSource, /loadParentWordLibrary\(currentPage\)/);
+    assert.match(confirmSource, /currentPage > 1/);
     assert.doesNotMatch(saveSource, /body:\s*JSON\.stringify\(\{ userId: state\.user, recordId, status \}\)[\s\S]*PARENT_WORD_DELETE_VALUE/);
 });
 

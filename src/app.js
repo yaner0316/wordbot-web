@@ -28,6 +28,7 @@ const STATUS_DESCRIPTIONS = {
   Mastered: '确定认识答对至少 2 次且在不同学习日，或猜的 / 不确定答对至少 3 次；答错会清空之前的掌握证据，多义词按每个释义单独累计。',
 };
 const PARENT_WORD_DELETE_VALUE = '__delete__';
+let parentWordDeleteState = null;
 const parentWordLibraryState = {
   page: 1,
   pageSize: 20,
@@ -1913,6 +1914,57 @@ function renderParentWordLibrary(data) {
   `;
 }
 
+function openParentWordDeleteConfirm(details) {
+  parentWordDeleteState = details;
+  const modal = $('parentWordDeleteModal');
+  const label = $('parentWordDeleteLabel');
+  if (label) label.textContent = details.word || '\u8fd9\u4e2a\u5355\u8bcd';
+  if (modal) {
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    $('parentWordDeleteConfirmBtn')?.focus();
+  }
+}
+function closeParentWordDeleteConfirm() {
+  const modal = $('parentWordDeleteModal');
+  const details = parentWordDeleteState;
+  parentWordDeleteState = null;
+  if (details?.previousStatus) details.selectEl.value = details.previousStatus;
+  if (modal) {
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+async function confirmParentWordDelete() {
+  const details = parentWordDeleteState;
+  if (!details) return;
+  const { selectEl, recordId, word, previousStatus } = details;
+  const label = word || '\u8fd9\u4e2a\u5355\u8bcd';
+  const confirmBtn = $('parentWordDeleteConfirmBtn');
+  if (confirmBtn) confirmBtn.disabled = true;
+  if (selectEl) selectEl.disabled = true;
+  try {
+    if (!DEMO_MODE) {
+      const deleteUrl = '/api/word?recordId=' + encodeURIComponent(recordId) + '&userId=' + encodeURIComponent(state.user) + '&word=' + encodeURIComponent(word);
+      await api(deleteUrl, { method: 'DELETE' });
+    }
+    closeParentWordDeleteConfirm();
+    const currentPage = parentWordLibraryState.page || 1;
+    await loadParentWordLibrary(currentPage);
+    if (currentPage > 1 && parentWordLibraryState.words.length === 0) {
+      await loadParentWordLibrary(currentPage - 1);
+    }
+    showToast('\u5df2\u5220\u9664\u5355\u8bcd\uff1a' + label, 'success');
+    loadStats(state.user);
+  } catch (error) {
+    if (previousStatus && selectEl) selectEl.value = previousStatus;
+    closeParentWordDeleteConfirm();
+    showToast('\u5220\u9664\u5931\u8d25: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    if (confirmBtn) confirmBtn.disabled = false;
+    if (selectEl) selectEl.disabled = false;
+  }
+}
 async function saveParentWordStatusFromList(selectEl) {
   const recordId = selectEl?.dataset?.recordId || '';
   const selectedValue = selectEl?.value || '';
@@ -1921,27 +1973,7 @@ async function saveParentWordStatusFromList(selectEl) {
   if (!recordId) return;
 
   if (selectedValue === PARENT_WORD_DELETE_VALUE) {
-    const label = word || '这个单词';
-    const confirmed = window.confirm ? window.confirm(`确定删除 ${label} 吗？`) : true;
-    if (!confirmed) {
-      if (previousStatus) selectEl.value = previousStatus;
-      return;
-    }
-    selectEl.disabled = true;
-    try {
-      if (!DEMO_MODE) {
-        const deleteUrl = `/api/word?recordId=${encodeURIComponent(recordId)}&userId=${encodeURIComponent(state.user)}&word=${encodeURIComponent(word)}`;
-        await api(deleteUrl, { method: 'DELETE' });
-      }
-      showToast(`已删除单词：${label}`, 'success');
-      await loadParentWordLibrary(parentWordLibraryState.page || 1);
-      loadStats(state.user);
-    } catch (error) {
-      if (previousStatus) selectEl.value = previousStatus;
-      showToast('删除失败: ' + normalizeApiError(error).message, 'error');
-    } finally {
-      selectEl.disabled = false;
-    }
+    openParentWordDeleteConfirm({ selectEl, recordId, word, previousStatus });
     return;
   }
 

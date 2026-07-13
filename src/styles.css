@@ -956,6 +956,23 @@
     .hd-q-result.fail { color: var(--red); font-weight: 700; }
     .history-empty svg { width: 64px; height: 64px; color: var(--text-muted); margin-bottom: 16px; }
     .history-empty p { font-size: 15px; }
+    .parent-delete-modal {
+      position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      padding: 20px; z-index: 260;
+    }
+    .parent-delete-modal.active { display: flex; }
+    .parent-delete-backdrop {
+      position: absolute; inset: 0; background: rgba(45,45,45,.38); backdrop-filter: blur(3px);
+    }
+    .parent-delete-dialog {
+      position: relative; width: min(360px, 100%); padding: 20px;
+      border-radius: var(--radius); background: var(--card); box-shadow: 0 14px 40px rgba(45,45,45,.2);
+    }
+    .parent-delete-dialog h2 { font-size: 18px; margin-bottom: 8px; }
+    .parent-delete-dialog p { color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+    .parent-delete-dialog p strong { color: var(--text); overflow-wrap: anywhere; }
+    .parent-delete-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .btn-danger { background: var(--red); color: #fff; border-color: var(--red); }
     /* ===== Loading ===== */
     .loading-overlay {
       position: fixed; inset: 0; background: rgba(255,248,240,0.85);

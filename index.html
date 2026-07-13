@@ -26,6 +26,17 @@
     <button class="toast-confirm" id="toastConfirmBtn" type="button" onclick="dismissPersistentToast()">确定</button>
   </div>
 
+  <div class="parent-delete-modal" id="parentWordDeleteModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="parentWordDeleteTitle">
+    <div class="parent-delete-backdrop" onclick="closeParentWordDeleteConfirm()"></div>
+    <div class="parent-delete-dialog">
+      <h2 id="parentWordDeleteTitle">&#x786e;&#x8ba4;&#x5220;&#x9664;&#x5355;&#x8bcd;&#xff1f</h2>
+      <p>&#x5220;&#x9664;&#x540e;&#x5c06;&#x65e0;&#x6cd5;&#x6062;&#x590d;&#xff1a<strong id="parentWordDeleteLabel"></strong></p>
+      <div class="parent-delete-actions">
+        <button class="btn btn-secondary" type="button" onclick="closeParentWordDeleteConfirm()">&#x53d6;&#x6d88;</button>
+        <button class="btn btn-danger" id="parentWordDeleteConfirmBtn" type="button" onclick="confirmParentWordDelete()">&#x786e;&#x8ba4;&#x5220;&#x9664;</button>
+      </div>
+    </div>
+  </div>
   <!-- History Detail Sheet -->
   <div class="hd-backdrop" id="hdBackdrop" onclick="closeHistoryDetail()"></div>
   <div class="hd-sheet" id="hdSheet">
