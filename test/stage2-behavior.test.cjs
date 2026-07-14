@@ -297,6 +297,17 @@ test('quiz cache-not-ready response triggers rebuild without serial preflight', 
     assert.doesNotMatch(startQuizMatch[0], /ensureLevelCacheReadyForQuiz\(state\.user/);
     assert.match(startQuizMatch[0], /data\.level\s*===\s*state\.level\s*&&\s*data\.difficultyApplied\s*===\s*false/);
 });
+test('quiz pool-exhausted response renders four recovery choices', () => {
+    const startQuizMatch = app.match(/async function startQuiz\(\) \{[\s\S]*?function isMeaningReviewQuestion/);
+    assert.ok(startQuizMatch, 'startQuiz function should exist');
+    assert.match(app, /function showQuestionPoolExhausted\(error\)/);
+    assert.match(startQuizMatch[0], /e\.code\s*===\s*'QUESTION_POOL_EXHAUSTED'/);
+    assert.match(startQuizMatch[0], /showQuestionPoolExhausted\(e\)/);
+    assert.match(app, /data-exhausted-action="rest"/);
+    assert.match(app, /data-exhausted-action="review"/);
+    assert.match(app, /data-exhausted-action="wait"/);
+    assert.match(app, /data-exhausted-action="add"/);
+});
 
 test('quiz results can show animal garden reward summary from submit response', () => {
     assert.match(app, /function buildAnimalGardenRewardHtml/);

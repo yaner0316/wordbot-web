@@ -2326,6 +2326,8 @@ async function startQuiz() {
       const ready = e.diagnostics?.readyCount ?? 0;
       const required = e.diagnostics?.requiredCount ?? 10;
       showToast(`${formatLearningLevel(state.level)}题库正在准备中（${ready}/${required}），请稍后再试`, 'info');
+    } else if (e.code === 'QUESTION_POOL_EXHAUSTED') {
+      showQuestionPoolExhausted(e);
     } else {
       showToast('生成题目失败: ' + normalizeApiError(e).message, 'error');
     }
@@ -2334,6 +2336,45 @@ async function startQuiz() {
   }
 }
 
+function showQuestionPoolExhausted(error) {
+  const diagnostics = error?.diagnostics || {};
+  const poolCount = diagnostics.cachePoolCount ?? diagnostics.readyCount ?? 0;
+  const required = diagnostics.requiredCount ?? 10;
+  state.quiz = null;
+  state.currentQuestion = 0;
+  state.answers = [];
+  state.confidences = [];
+  navigateTo('quiz');
+  const fill = $('quizProgressFill');
+  const progress = $('quizProgressText');
+  const total = $('quizTotalText');
+  if (fill) fill.style.width = '100%';
+  if (progress) progress.textContent = '0';
+  if (total) total.textContent = '0';
+  $('questionArea').innerHTML = `
+    <div class="question-card question-pool-exhausted-card">
+      <div class="question-type-badge">题库已完成一轮</div>
+      <div class="question-text">${escapeHtml(formatLearningLevel(state.level))}题库这一轮已经做完了</div>
+      <p class="question-hint">当前可用题已完成遍历（${escapeHtml(poolCount)}/${escapeHtml(required)}）。可以休息、复习错题，或等新题生成后再继续。</p>
+      <div class="review-action-panel question-pool-actions">
+        <button class="btn btn-secondary" type="button" data-exhausted-action="rest" onclick="navigateTo('home')">休息一下</button>
+        <button class="btn btn-primary" type="button" data-exhausted-action="review" onclick="startWrongAnswerReview()">去复习</button>
+        <button class="btn btn-secondary" type="button" data-exhausted-action="wait" onclick="handleQuestionPoolWait()">等新题生成</button>
+        <button class="btn btn-secondary" type="button" data-exhausted-action="add" onclick="handleQuestionPoolAddWords()">录入新词</button>
+      </div>
+    </div>`;
+}
+
+function handleQuestionPoolWait() {
+  requestQuestionCacheRebuild(state.user);
+  showToast('已请求准备新题，稍后再回来练习', 'info');
+  navigateTo('home');
+}
+
+function handleQuestionPoolAddWords() {
+  navigateTo('home');
+  openStudentWordEntry();
+}
 function isMeaningReviewQuestion(question) {
   return Number(question?.type) === 4 || question?.answerMode === 'cn_meaning';
 }
