@@ -565,6 +565,34 @@ test('quiz start relies on quiz diagnostics instead of serial cache preflight', 
     assert.doesNotMatch(startQuizSource, /await syncLearningSettingsFromServer\(state\.user/);
     assert.doesNotMatch(startQuizSource, /ensureLevelCacheReadyForQuiz\(state\.user/);
 });
+
+test('quiz exhausted pool shows four in-app choices instead of generic failure', () => {
+    const start = app.indexOf('async function startQuiz()');
+    const end = app.indexOf('function isMeaningReviewQuestion', start);
+    assert.ok(start >= 0 && end > start, 'startQuiz function should exist');
+    const startQuizSource = app.slice(start, end);
+
+    assert.match(startQuizSource, /e\.code === 'QUESTION_POOL_EXHAUSTED'/);
+    assert.match(startQuizSource, /showQuestionPoolExhaustedDialog\(\)/);
+    assert.match(app, /function showQuestionPoolExhaustedDialog\(\)/);
+    assert.match(app, /题目做完了/);
+    assert.match(app, /本级别的题目都做完啦，休息一下，或去复习\/录入新词～/);
+    assert.match(app, /data-action="home"/);
+    assert.match(app, /data-action="review"/);
+    assert.match(app, /data-action="wait"/);
+    assert.match(app, /data-action="entry"/);
+    assert.match(app, /navigateTo\('home'\)/);
+    assert.match(app, /if \(action === 'review'\) handleQuestionPoolReview\(\)/);
+    assert.match(app, /function handleQuestionPoolReview\(\)/);
+    assert.match(app, /restoreActiveReview\(state\.user\)/);
+    assert.match(app, /state\.session\?\.sourceTestId/);
+    assert.match(app, /暂无可复习错题/);
+    assert.doesNotMatch(app, /if \(action === 'review'\) startWrongAnswerReview\(\)/);
+    assert.match(app, /showToast\('新词录入后约18小时生成新题，请稍后再来', 'info'\)/);
+    assert.match(app, /openStudentWordEntry\(\)/);
+    assert.match(styles, /\.pool-exhausted-overlay/);
+    assert.match(styles, /\.pool-exhausted-actions/);
+});
 test('quiz submit automatically confirms the result once after a timeout', () => {
     assert.match(app, /async function submitQuizToBackend/);
     assert.match(app, /error\?\.name\s*===\s*'AbortError'/);

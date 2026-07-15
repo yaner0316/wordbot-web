@@ -209,6 +209,50 @@ function showToast(msg, type) {
   clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+function closeQuestionPoolExhaustedDialog() {
+  const dialog = $('questionPoolExhaustedDialog');
+  if (dialog) dialog.remove();
+}
+
+
+function handleQuestionPoolReview() {
+  if (restoreActiveReview(state.user)) return;
+  if (state.session?.sourceTestId && state.quiz?.questions?.length) {
+    startWrongAnswerReview();
+    return;
+  }
+  showToast('暂无可复习错题，请先录入新词或稍后再试', 'info');
+}
+function showQuestionPoolExhaustedDialog() {
+  closeQuestionPoolExhaustedDialog();
+  const dialog = document.createElement('div');
+  dialog.id = 'questionPoolExhaustedDialog';
+  dialog.className = 'pool-exhausted-overlay';
+  dialog.innerHTML = `
+    <div class="pool-exhausted-dialog" role="dialog" aria-modal="true" aria-labelledby="poolExhaustedTitle">
+      <h2 id="poolExhaustedTitle">题目做完了</h2>
+      <p>本级别的题目都做完啦，休息一下，或去复习/录入新词～</p>
+      <div class="pool-exhausted-actions">
+        <button class="btn btn-primary" type="button" data-action="home">休息一下</button>
+        <button class="btn btn-secondary" type="button" data-action="review">去复习</button>
+        <button class="btn btn-secondary" type="button" data-action="wait">等新题生成</button>
+        <button class="btn btn-secondary" type="button" data-action="entry">录入新词</button>
+      </div>
+    </div>
+  `;
+  dialog.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const action = button.dataset.action;
+    closeQuestionPoolExhaustedDialog();
+    if (action === 'home') navigateTo('home');
+    if (action === 'review') handleQuestionPoolReview();
+    if (action === 'wait') showToast('新词录入后约18小时生成新题，请稍后再来', 'info');
+    if (action === 'entry') openStudentWordEntry();
+  });
+  document.body.appendChild(dialog);
+}
+
 function getLocalAuthUsers() {
   try {
     const raw = localStorage.getItem(LOCAL_AUTH_USERS_KEY);
@@ -2199,6 +2243,8 @@ async function startQuiz() {
       const ready = e.diagnostics?.readyCount ?? 0;
       const required = e.diagnostics?.requiredCount ?? 10;
       showToast(`${formatLearningLevel(state.level)}题库正在准备中（${ready}/${required}），请稍后再试`, 'info');
+    } else if (e.code === 'QUESTION_POOL_EXHAUSTED') {
+      showQuestionPoolExhaustedDialog();
     } else {
       showToast('生成题目失败: ' + normalizeApiError(e).message, 'error');
     }
