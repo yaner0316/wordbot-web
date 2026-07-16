@@ -172,6 +172,20 @@ test('answer analysis lists Chinese meanings for all options before the reasonin
     );
 });
 
+test('quiz results show a single answer analysis entry point', () => {
+    const renderStart = app.indexOf('function renderResults(data)');
+    const toggleStart = app.indexOf('function toggleAnalysis()', renderStart);
+    const actionsStart = app.indexOf('function updateResultActions()', toggleStart);
+    const actionsEnd = app.indexOf('async function startWrongAnswerReview', actionsStart);
+    assert.ok(renderStart >= 0 && toggleStart > renderStart, 'result rendering source should exist');
+    assert.ok(actionsStart >= 0 && actionsEnd > actionsStart, 'result action source should exist');
+    const renderSource = app.slice(renderStart, toggleStart);
+    const actionsSource = app.slice(actionsStart, actionsEnd);
+    assert.match(renderSource, /resultActionPanel/);
+    assert.match(actionsSource, /查看答案解析|鏌ョ湅绛旀/);
+    assert.doesNotMatch(renderSource, /id="analysisBtn"/);
+    assert.doesNotMatch(renderSource, /答案分析|绛旀鍒嗘瀽/);
+});
 
 test('review result analysis uses Chinese meaning feedback instead of option analysis', () => {
     assert.match(app, /buildMeaningReviewExplanation\(q,\s*r,\s*escapeHtml\)/);
