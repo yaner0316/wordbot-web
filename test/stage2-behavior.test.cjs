@@ -272,6 +272,16 @@ test('frontend syncs learning level from server settings after login and user sw
     assert.match(app, /syncLearningSettingsFromServer\(user\)\.finally\(\(\) => \{ renderStudentTools\(\); loadStats\(user\); \}\)/);
 });
 
+test('parent cache status derives readiness from current level counts', () => {
+    const start = app.indexOf('async function loadParentLearningSettings()');
+    const end = app.indexOf('async function saveParentLearningSettings()', start);
+    assert.ok(start >= 0 && end > start, 'loadParentLearningSettings function should exist');
+    const source = app.slice(start, end);
+    assert.match(source, /getLevelCacheReadyCount\(cacheStatus, currentLevel\)/);
+    assert.match(source, /derivedCacheStatus/);
+    assert.match(source, /readyCountForCurrentLevel\s*>=\s*10/);
+    assert.match(source, /escapeHtml\(derivedCacheStatus\)/);
+});
 test('learning level changes are saved only from parent settings', () => {
     assert.doesNotMatch(html, /onclick="selectLevel/);
     assert.doesNotMatch(html, /data-level=/);
@@ -590,8 +600,8 @@ test('quiz start relies on quiz diagnostics instead of serial cache preflight', 
     assert.ok(start >= 0 && end > start, 'startQuiz function should exist');
     const startQuizSource = app.slice(start, end);
     assert.match(startQuizSource, /\/api\/quiz/);
+    assert.match(startQuizSource, /await syncLearningSettingsFromServer\(state\.user/);
     assert.match(startQuizSource, /state\.quizDiagnostics\s*=\s*buildQuizDiagnosticsSummary\(data\)/);
-    assert.doesNotMatch(startQuizSource, /await syncLearningSettingsFromServer\(state\.user/);
     assert.doesNotMatch(startQuizSource, /ensureLevelCacheReadyForQuiz\(state\.user/);
 });
 test('quiz submit automatically confirms the result once after a timeout', () => {

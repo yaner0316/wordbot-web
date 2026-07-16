@@ -2132,6 +2132,13 @@ async function loadParentLearningSettings() {
     const settings = settingsData.settings || {};
     const cacheStatus = cacheData.status || {};
     const currentLevel = settings.learningLevel || state.level || DEFAULT_LEVEL;
+    const levelCacheStatus = getLevelCacheStatus(cacheStatus, currentLevel);
+    const readyCountForCurrentLevel = getLevelCacheReadyCount(cacheStatus, currentLevel);
+    const totalCountForCurrentLevel = Number(levelCacheStatus.total || cacheStatus.totalQuestions || cacheStatus.total || 0);
+    const derivedCacheStatus = readyCountForCurrentLevel >= 10 ? 'ready' : (cacheStatus.status || settings.questionCacheStatus || 'unknown');
+    const cacheStatusDetail = totalCountForCurrentLevel
+      ? `${formatLearningLevel(currentLevel)}已可用 ${readyCountForCurrentLevel}/${totalCountForCurrentLevel} 题`
+      : '后端会按学习设置生成题目缓存';
     content.innerHTML = `
       <label class="parent-field">
         <span>题干语言难度</span>
@@ -2141,8 +2148,8 @@ async function loadParentLearningSettings() {
       </label>
       <div class="parent-cache-status">
         <span>题目缓存</span>
-        <strong>${escapeHtml(cacheStatus.status || settings.questionCacheStatus || 'unknown')}</strong>
-        <small>${cacheStatus.totalQuestions ? '已缓存 ' + escapeHtml(cacheStatus.totalQuestions) + ' 题' : '后端会按学习设置生成题目缓存'}</small>
+        <strong>${escapeHtml(derivedCacheStatus)}</strong>
+        <small>${escapeHtml(cacheStatusDetail)}</small>
       </div>
       ${renderQuizDiagnosticsPanel()}
       <div class="parent-actions-row">
@@ -2302,6 +2309,7 @@ async function startQuiz() {
       renderQuestion(0);
       return;
     }
+    await syncLearningSettingsFromServer(state.user);
     const data = await api('/api/quiz', {
       method: 'POST',
       timeoutMs: 70000,
