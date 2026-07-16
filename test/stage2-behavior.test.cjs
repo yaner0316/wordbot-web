@@ -146,17 +146,18 @@ test('result review option labels use the same display formatting as quiz option
     assert.match(renderResultsSource, /formatOptionDisplayText/);
     assert.doesNotMatch(renderResultsSource, /return `<div class="\$\{cls\}">\$\{escapeHtml\(opt\)\}/);
 });
-test('quiz answers default to sure confidence but can be changed to guess', () => {
-    assert.ok(app.includes('confidences: []'));
+test('quiz answers advance without confidence choice and submit a uniform confidence value', () => {
     assert.ok(app.includes('function selectOption(qIdx, optIdx)'));
-    assert.match(app, /if \(state\.confidences\[qIdx\] === null\)\s*\{\s*state\.confidences\[qIdx\] = 'sure';\s*\}/);
-    assert.ok(app.includes('function selectConfidence(qIdx, confidence)'));
-    assert.ok(app.includes('confidence: state.confidences[i]'));
-    assert.ok(app.includes('function canLeaveCurrentQuestion()'));
+    assert.doesNotMatch(app, /confidence-panel/);
+    assert.doesNotMatch(app, /function selectConfidence(qIdx, confidence)/);
+    assert.doesNotMatch(app, /确定认识，还是猜的/);
+    assert.doesNotMatch(app, /state\.confidences\[index\] === null/);
+    assert.doesNotMatch(app, /state\.confidences\[qIdx\]/);
+    assert.match(app, /const canContinue = state\.answers\[idx\] !== null;/);
+    assert.match(app, /confidence:\s*'sure'/);
     assert.ok(app.includes("$('nextBtn').disabled = !canContinue;"));
     assert.ok(app.includes("$('submitBtn').disabled = !canContinue;"));
 });
-
 test('answer analysis explains the concrete question and compares a wrong choice', () => {
     assert.match(quizLogic, /function buildQuestionExplanation/);
     assert.match(quizLogic, /replace\(\/_____\/g,\s*correctWord\)/);
@@ -652,13 +653,11 @@ test('parent word search lives inside library management with Chinese status lab
     assert.match(app, /STATUS_DESCRIPTIONS/);
     assert.match(app, /Recognized:\s*'已初识'/);
     assert.match(app, /Mastered:\s*'已掌握'/);
-    assert.match(app, /新录入未考核/);
-    assert.match(app, /最近一次答错后还没有重新答对/);
-    assert.match(app, /最近一次答错后真实考核答对 1 次/);
-    assert.match(app, /最近一次答错后真实考核答对 2 次以上/);
-    assert.match(app, /确定认识.*至少 2 次.*不同学习日/);
-    assert.match(app, /猜的 \/ 不确定.*至少 3 次/);
-    assert.match(app, /答错会清空之前的掌握证据/);
+    assert.match(app, /还没有出过正式题/);
+    assert.match(app, /出过正式题.*还没有重新做对/);
+    assert.match(app, /做对 1 次.*另一个学习日/);
+    assert.match(app, /不同学习日做对 2 次/);
+    assert.match(app, /答错会重新开始累计/);
     assert.match(app, /多义词按每个释义单独累计/);
     const editStart = app.indexOf("if (tool === 'editWords')");
     const editEnd = app.indexOf("if (tool === 'learningSettings')", editStart);
@@ -693,6 +692,8 @@ test('parent word management opens a list first, then a separate clicked-word ed
     assert.match(listSource, /renderParentWordPager\(page, totalPages, 'bottom'\)/);
     assert.match(listSource, /parent-word-list-item/);
     assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
+    assert.doesNotMatch(listSource, /<small>/);
+    assert.doesNotMatch(listSource, /item\\.cnMeaning|item\\.CN_Meaning|item\\.meaning|item\\.Meaning/);
 
     const editorSource = app.slice(editorStart, app.indexOf('async function saveParentWord', editorStart));
     assert.match(editorSource, /listView\.style\.display\s*=\s*'none'/);
