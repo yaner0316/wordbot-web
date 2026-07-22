@@ -5,6 +5,7 @@ const {
   buildQuestionExplanation,
   buildMeaningReviewExplanation,
   formatOptionDisplayText,
+  inspectQuizContentForBlockingIssue,
   normalizeArticleContext,
   optionWord,
 } = WordBotQuizLogic;
@@ -55,7 +56,6 @@ const state = {
   quiz: null,
   currentQuestion: 0,
   answers: [],
-  confidences: [],
   users: [],
   learningSettings: null,
   quizDiagnostics: null,
@@ -961,7 +961,6 @@ function logout() {
   state.user = null;
   state.quiz = null;
   state.answers = [];
-  state.confidences = [];
   state.parentAccess = false;
   state.parentAuth = null;
   resetParentConsole();
@@ -1110,7 +1109,6 @@ function saveQuizDraft() {
     quiz: state.quiz,
     currentQuestion: state.currentQuestion,
     answers: state.answers,
-    confidences: state.confidences,
     savedAt: Date.now(),
   }));
   renderStudentTools();
@@ -1131,7 +1129,6 @@ function restoreQuizDraft(user = state.user) {
     state.quiz = saved.quiz;
     state.currentQuestion = saved.currentQuestion || 0;
     state.answers = saved.answers || new Array(saved.quiz.questions.length).fill(null);
-    state.confidences = saved.confidences || new Array(saved.quiz.questions.length).fill(null);
     navigateTo('quiz');
     renderQuestion(state.currentQuestion);
     return true;
@@ -1156,7 +1153,6 @@ function saveActiveReview() {
     quiz: state.quiz,
     currentQuestion: state.currentQuestion,
     answers: state.answers,
-    confidences: state.confidences,
   }));
 }
 
@@ -1174,7 +1170,6 @@ function restoreActiveReview(user) {
     state.quiz = saved.quiz;
     state.currentQuestion = saved.currentQuestion || 0;
     state.answers = saved.answers || new Array(saved.quiz.questions.length).fill(null);
-    state.confidences = saved.confidences || new Array(saved.quiz.questions.length).fill(null);
     if (saved.quiz.result) {
       navigateTo('results');
       renderResults(saved.quiz.result);
@@ -2220,7 +2215,6 @@ async function startQuiz() {
       state.quiz = demo;
       state.currentQuestion = 0;
       state.answers = new Array(demo.questions.length).fill(null);
-      state.confidences = new Array(demo.questions.length).fill(null);
       saveQuizDraft();
       navigateTo('quiz');
       renderQuestion(0);
@@ -2237,11 +2231,17 @@ async function startQuiz() {
       return;
     }
     state.quizDiagnostics = buildQuizDiagnosticsSummary(data);
+    const quizContentIssue = inspectQuizContentForBlockingIssue(data);
+    if (quizContentIssue.blocked) {
+      state.quiz = null;
+      state.answers = [];
+      showToast(quizContentIssue.message || '题库正在修复，请稍后再试或换一套', 'info');
+      return;
+    }
     if (data.warning) showToast(data.warning, 'info');
     state.quiz = data;
     state.currentQuestion = 0;
     state.answers = new Array(data.questions.length).fill(null);
-    state.confidences = new Array(data.questions.length).fill(null);
     saveQuizDraft();
     navigateTo('quiz');
     renderQuestion(0);
@@ -2318,29 +2318,17 @@ function renderQuestion(idx) {
       <span>${escapeHtml(formatOptionDisplayText(opt.replace(/^[A-D]\.\s*/, ''), q.options, q))}</span>
     </button>`;
   }).join('');
-  const confidence = state.confidences[idx];
-  const confidenceHtml = state.answers[idx] === null ? '' : `
-    <div class="confidence-panel">
-      <div class="confidence-label">这道题你是确定认识，还是猜的 / 不确定？</div>
-      <div class="confidence-actions">
-        <button class="confidence-btn ${confidence === 'sure' ? 'selected' : ''}" onclick="selectConfidence(${idx}, 'sure')">确定认识</button>
-        <button class="confidence-btn ${confidence === 'guess' ? 'selected' : ''}" onclick="selectConfidence(${idx}, 'guess')">猜的 / 不确定</button>
-      </div>
-      <div class="confidence-hint">猜对仍计入本次得分，但不会作为“已掌握”的证据。</div>
-    </div>`;
 
   $('questionArea').innerHTML = `
     <div class="question-card">
       <div class="question-type-badge ${typeClasses[q.type]}">${typeIcons[q.type]} ${types[q.type]}</div>
       <div class="question-text">${questionDisplay}</div>
       <div class="options">${optsHtml}</div>
-      ${confidenceHtml}
     </div>
   `;
 
   const isLastQuestion = idx === total - 1;
-  const canContinue = state.answers[idx] !== null &&
-    state.confidences[idx] !== null;
+  const canContinue = state.answers[idx] !== null;
   $('prevBtn').style.visibility = idx === 0 ? 'hidden' : 'visible';
   $('nextBtn').style.display = isLastQuestion ? 'none' : 'flex';
   $('submitBtn').style.display = isLastQuestion ? 'flex' : 'none';
@@ -2357,15 +2345,6 @@ function setMeaningAnswer(qIdx, value) {
 }
 function selectOption(qIdx, optIdx) {
   state.answers[qIdx] = optIdx;
-  if (state.confidences[qIdx] === null) {
-    state.confidences[qIdx] = 'sure';
-  }
-  saveCurrentSessionProgress();
-  renderQuestion(state.currentQuestion);
-}
-
-function selectConfidence(qIdx, confidence) {
-  state.confidences[qIdx] = confidence;
   saveCurrentSessionProgress();
   renderQuestion(state.currentQuestion);
 }
@@ -2392,10 +2371,6 @@ function canLeaveCurrentQuestion() {
     showToast('请选择一个答案', 'info');
     return false;
   }
-  if (state.confidences[index] === null) {
-    showToast('请选择确定认识或猜的/不确定', 'info');
-    return false;
-  }
   return true;
 }
 
@@ -2408,10 +2383,6 @@ function nextQuestion() {
   }
 }
 
-function waitForMs(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 async function submitWithTimeoutConfirmation(path, payload) {
   const request = () => api(path, {
     method: 'POST',
@@ -2422,8 +2393,7 @@ async function submitWithTimeoutConfirmation(path, payload) {
   } catch (error) {
     if (error?.name === 'AbortError') {
       showLoading('提交时间较长，正在确认结果...');
-      await waitForMs(1200);
-      return await request();
+      throw error;
     }
     throw error;
   }
@@ -2445,13 +2415,6 @@ async function submitQuiz() {
     showToast(`还有第 ${unanswered + 1} 题未作答`, 'info');
     state.currentQuestion = unanswered;
     renderQuestion(unanswered);
-    return;
-  }
-  const unconfirmed = state.quiz.questions.findIndex((question, index) => !isMeaningReviewQuestion(question) && state.confidences[index] === null);
-  if (unconfirmed !== -1) {
-    showToast('请确认第 ' + (unconfirmed + 1) + ' 题是“确定认识”还是“猜的 / 不确定”', 'info');
-    state.currentQuestion = unconfirmed;
-    renderQuestion(unconfirmed);
     return;
   }
 
@@ -2482,8 +2445,7 @@ async function submitQuiz() {
             recordId: q.recordId || q.word,
             your: yourText,
             answer: expected,
-            correct: isCorrect,
-            confidence: ''
+            correct: isCorrect
           };
         }
         const yourIdx = answer;
@@ -2496,8 +2458,7 @@ async function submitQuiz() {
           recordId: q.recordId || q.word,
           your: yourLetter,
           answer: q.answer,
-          correct: isCorrect,
-          confidence: state.confidences[i]
+          correct: isCorrect
         };
       });
       const total = results.length;
@@ -2516,7 +2477,7 @@ async function submitQuiz() {
         user: state.user,
         answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
           ? { text: String(answer ?? '').trim() }
-          : { option: answer, confidence: state.confidences[i] })
+          : { option: answer })
       });
     } else {
       const payload = {
@@ -2524,7 +2485,7 @@ async function submitQuiz() {
         testId: state.quiz.testId,
         answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
           ? { text: String(answer ?? '').trim() }
-          : { option: answer, confidence: state.confidences[i] })
+          : { option: answer })
       };
       data = await submitQuizToBackend(payload);
     }
@@ -2616,7 +2577,7 @@ function renderResults(data) {
         <div class="game-reward-icon">🎮</div>
         <div>
           <div class="game-reward-title">获得小游戏时间 ${escapeHtml(reward.minutes)} 分钟</div>
-          <div class="game-reward-sub">${reward.tier === 'perfect' ? '10 题全对奖励' : '答对 9 题以上奖励'}，猜对也计入本次得分。</div>
+          <div class="game-reward-sub">${reward.tier === 'perfect' ? '10 题全对奖励' : '答对 9 题以上奖励'}。</div>
         </div>
       </div>`
     : '';
@@ -2681,7 +2642,7 @@ function renderResults(data) {
           </div>
           <div class="row" style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
             <span>${typeNames[q?.type] || ''} · 第 ${i+1} 题</span>
-            <span>${isMeaningReview ? '中文释义回忆' : (r.confidence === 'guess' ? '猜的 / 不确定：本题不计掌握证据' : '确定认识')}</span>
+            <span>${isMeaningReview ? '中文释义回忆' : '选择题作答'}</span>
           </div>
 
           <div class="ctx-box">
@@ -2825,7 +2786,6 @@ async function startWrongAnswerReview(parentReviewId = '') {
     };
     state.currentQuestion = 0;
     state.answers = new Array(data.questions.length).fill(null);
-    state.confidences = new Array(data.questions.length).fill(null);
     saveCurrentSessionProgress();
     navigateTo('quiz');
     renderQuestion(0);

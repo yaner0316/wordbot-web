@@ -67,6 +67,43 @@
     }
     return word;
   }
+
+  const quizContentBlockedMessage = '题库正在修复，请稍后再试或换一套';
+  const dirtyPlaceholderStem = 'the student wrote _____ in the sentence.';
+  const dirtyOptionWords = new Set(['genaine']);
+  const repeatedDistractorSmokeWords = new Set(['bomb', 'crowded', 'genaine']);
+
+  function inspectQuizContentForBlockingIssue(quiz) {
+    const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
+    const repeatedQuestionHits = new Map();
+
+    for (const question of questions) {
+      const stem = String(question?.context || question?.question || '').trim().toLowerCase();
+      if (stem === dirtyPlaceholderStem) {
+        return { blocked: true, message: quizContentBlockedMessage };
+      }
+
+      const suspiciousWordsInQuestion = new Set();
+      for (const option of question?.options || []) {
+        const word = cleanOptionDisplayWord(option).toLowerCase();
+        if (dirtyOptionWords.has(word)) {
+          return { blocked: true, message: quizContentBlockedMessage };
+        }
+        if (repeatedDistractorSmokeWords.has(word)) suspiciousWordsInQuestion.add(word);
+      }
+
+      for (const word of suspiciousWordsInQuestion) {
+        repeatedQuestionHits.set(word, (repeatedQuestionHits.get(word) || 0) + 1);
+      }
+    }
+
+    const repeatedDirtyWords = [...repeatedQuestionHits.values()].filter(count => count >= 2).length;
+    if (repeatedDirtyWords >= 2) {
+      return { blocked: true, message: quizContentBlockedMessage };
+    }
+
+    return { blocked: false, message: '' };
+  }
   function buildOptionMeaningsExplanation(question, escapeHtml) {
     if (!question?.options?.length) return '';
     const escape = escapeHtml || (value => String(value ?? ''));
@@ -128,6 +165,7 @@
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
+    inspectQuizContentForBlockingIssue,
     normalizeArticleContext,
     optionWord,
   };

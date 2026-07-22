@@ -146,12 +146,15 @@ test('result review option labels use the same display formatting as quiz option
     assert.match(renderResultsSource, /formatOptionDisplayText/);
     assert.doesNotMatch(renderResultsSource, /return `<div class="\$\{cls\}">\$\{escapeHtml\(opt\)\}/);
 });
-test('quiz answers default to sure confidence but can be changed to guess', () => {
-    assert.ok(app.includes('confidences: []'));
+test('quiz answers can continue after selecting an option', () => {
+    const removedState = ['confi', 'dences'].join('');
+    const removedHandler = ['select', 'Confi', 'dence'].join('');
+    const removedPayload = ['confi', 'dence:\\s*state\\.confi', 'dences\\[i\\]'].join('');
+
     assert.ok(app.includes('function selectOption(qIdx, optIdx)'));
-    assert.match(app, /if \(state\.confidences\[qIdx\] === null\)\s*\{\s*state\.confidences\[qIdx\] = 'sure';\s*\}/);
-    assert.ok(app.includes('function selectConfidence(qIdx, confidence)'));
-    assert.ok(app.includes('confidence: state.confidences[i]'));
+    assert.doesNotMatch(app, new RegExp(removedState));
+    assert.doesNotMatch(app, new RegExp(removedHandler));
+    assert.doesNotMatch(app, new RegExp(removedPayload));
     assert.ok(app.includes('function canLeaveCurrentQuestion()'));
     assert.ok(app.includes("$('nextBtn').disabled = !canContinue;"));
     assert.ok(app.includes("$('submitBtn').disabled = !canContinue;"));
@@ -293,6 +296,19 @@ test('learning level changes are saved only from parent settings', () => {
     assert.ok(saveSettingsSource.includes('/api/admin/userSettings'));
     assert.ok(saveSettingsSource.includes("method: 'PUT'"));
     assert.ok(saveSettingsSource.includes("questionCacheStatus === 'building'"));
+});
+
+test('quiz blocks known dirty cache content before entering the child quiz page', () => {
+    const start = app.indexOf('async function startQuiz()');
+    const end = app.indexOf('function isMeaningReviewQuestion', start);
+    assert.ok(start >= 0 && end > start, 'startQuiz function should exist');
+    const startQuizSource = app.slice(start, end);
+
+    assert.match(app, /inspectQuizContentForBlockingIssue/);
+    assert.match(startQuizSource, /inspectQuizContentForBlockingIssue\(data\)/);
+    assert.match(startQuizSource, /state\.quiz\s*=\s*null/);
+    assert.match(startQuizSource, /题库正在修复，请稍后再试或换一套/);
+    assert.ok(startQuizSource.indexOf('inspectQuizContentForBlockingIssue(data)') < startQuizSource.indexOf('state.quiz = data'));
 });
 
 test('quiz cache-not-ready response triggers rebuild without serial preflight', () => {
@@ -603,13 +619,22 @@ test('quiz exhausted pool shows four in-app choices instead of generic failure',
     assert.match(styles, /\.pool-exhausted-overlay/);
     assert.match(styles, /\.pool-exhausted-actions/);
 });
-test('quiz submit automatically confirms the result once after a timeout', () => {
+test('quiz submit keeps timeout recovery without automatic replay', () => {
     assert.match(app, /async function submitQuizToBackend/);
     assert.match(app, /error\?\.name\s*===\s*'AbortError'/);
     assert.match(app, /提交时间较长，正在确认结果/);
     const submitSource = app.slice(app.indexOf('async function submitQuiz()'), app.indexOf('// ========== Results =========='));
     assert.match(submitSource, /submitQuizToBackend\(payload\)/);
     assert.doesNotMatch(submitSource, /timeoutMs:\s*90000/);
+    const helperStart = app.indexOf('async function submitWithTimeoutConfirmation');
+    const helperEnd = app.indexOf('async function submitQuizToBackend', helperStart);
+    const helperSource = app.slice(helperStart, helperEnd);
+    const abortStart = helperSource.indexOf("if (error?.name === 'AbortError')");
+    const abortBranch = helperSource.slice(abortStart);
+
+    assert.doesNotMatch(abortBranch, /waitForMs/);
+    assert.doesNotMatch(abortBranch, /return await request\(\)/);
+    assert.match(abortBranch, /throw error;/);
 });
 test('word entry supports duplicate confirmation before adding same-word meanings', () => {
     assert.match(app, /function parseParentWordEntries/);

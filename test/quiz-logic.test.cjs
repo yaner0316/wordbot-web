@@ -17,6 +17,7 @@ const {
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
+    inspectQuizContentForBlockingIssue,
     normalizeArticleContext,
     optionWord,
 } = context.WordBotQuizLogic;
@@ -64,6 +65,45 @@ test('high-school demo fill-in contexts do not add meta explanation tails', () =
 test('finds the option word by answer letter', () => {
     const question = { options: ['A. abandon', 'B. resilient'] };
     assert.equal(optionWord(question, 'B'), 'resilient');
+});
+
+test('blocks a quiz set with known dirty placeholder content before rendering', () => {
+    const blocked = inspectQuizContentForBlockingIssue({
+        questions: [
+            {
+                type: 1,
+                context: 'The student wrote _____ in the sentence.',
+                options: ['A. genaine', 'B. resilient', 'C. bomb', 'D. crowded'],
+            },
+            {
+                type: 1,
+                context: 'The road ahead was _____ for miles.',
+                options: ['A. genaine', 'B. careful', 'C. bomb', 'D. crowded'],
+            },
+        ],
+    });
+
+    assert.equal(blocked.blocked, true);
+    assert.equal(blocked.message, '题库正在修复，请稍后再试或换一套');
+});
+
+test('allows ordinary quiz content through the frontend smoke guard', () => {
+    const result = inspectQuizContentForBlockingIssue({
+        questions: [
+            {
+                type: 1,
+                context: 'Children are remarkably _____ in the face of adversity.',
+                options: ['A. fragile', 'B. resilient', 'C. careful', 'D. noisy'],
+            },
+            {
+                type: 2,
+                context: 'real and sincere',
+                options: ['A. genuine', 'B. formal', 'C. distant', 'D. active'],
+            },
+        ],
+    });
+
+    assert.equal(result.blocked, false);
 });
 test('formats month options as proper nouns when the option set is calendar-based', () => {
     const options = ['A. march', 'B. january', 'C. october', 'D. september'];
