@@ -952,7 +952,10 @@ function loginAs(user) {
   applyEnvironmentControls();
   renderUsers(state.users);
   updateLevelButtons();
-  syncLearningSettingsFromServer(user).finally(() => loadHome());
+  Promise.all([
+    syncLearningSettingsFromServer(user),
+    loadHome(),
+  ]).then(() => renderStudentTools());
 }
 
 function logout() {
@@ -1015,7 +1018,11 @@ function selectUser(user) {
   resetParentConsole();
   updateLevelButtons();
   renderUsers(state.users);
-  syncLearningSettingsFromServer(user).finally(() => { renderStudentTools(); loadStats(user); });
+  renderStudentTools();
+  Promise.all([
+    syncLearningSettingsFromServer(user),
+    loadStats(user),
+  ]).then(() => renderStudentTools());
   restoreActiveReview(user);
 }
 
