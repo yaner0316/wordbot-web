@@ -271,8 +271,8 @@ test('frontend syncs learning level from server settings after login and user sw
     assert.match(app, /\/api\/admin\/userSettings\?userId=/);
     assert.match(app, /state\.learningSettings\s*=\s*settings/);
     assert.match(app, /state\.level\s*=\s*settings\.learningLevel/);
-    assert.match(app, /Promise\.all\(\[\s*syncLearningSettingsFromServer\(user\),\s*loadHome\(\),\s*\]\)/);
-    assert.match(app, /Promise\.all\(\[\s*syncLearningSettingsFromServer\(user\),\s*loadStats\(user\),\s*\]\)/);
+    assert.match(app, /Promise\.all\(\[\s*syncLearningSettingsFromServer\(user\),\s*syncGameStateFromServer\(user\),\s*loadHome\(\),\s*\]\)/);
+    assert.match(app, /Promise\.all\(\[\s*syncLearningSettingsFromServer\(user\),\s*syncGameStateFromServer\(user\),\s*loadStats\(user\),\s*\]\)/);
 });
 
 test('parent cache status derives readiness from current level counts', () => {

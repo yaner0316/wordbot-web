@@ -318,6 +318,52 @@ function markGameRewardClaimed(claimId, user = state.user) {
   localStorage.setItem(gameTimeRewardClaimKey(user), JSON.stringify([...claimed]));
 }
 
+let gameStateSyncPromise = Promise.resolve();
+
+function gameStatePayload(user = state.user) {
+  return {
+    minutes: getBankedGameMinutes(user),
+    claimIds: [...getClaimedGameRewardIds(user)],
+    garden: getAnimalGardenState(user),
+  };
+}
+
+async function persistGameState(user = state.user) {
+  if (!user || DEMO_MODE) return null;
+  try {
+    const data = await api('/api/game/state/' + encodeURIComponent(user), {
+      method: 'PUT',
+      body: JSON.stringify(gameStatePayload(user)),
+    });
+    return data.state || null;
+  } catch {
+    return null;
+  }
+}
+
+async function syncGameStateFromServer(user) {
+  if (!user || DEMO_MODE) return null;
+  try {
+    const data = await api('/api/game/state/' + encodeURIComponent(user));
+    const remote = data.state || {};
+    const localMinutes = getBankedGameMinutes(user);
+    const remoteMinutes = Math.max(0, Math.floor(Number(remote.minutes) || 0));
+    const mergedMinutes = Math.max(localMinutes, remoteMinutes);
+    const mergedClaims = [...new Set([
+      ...getClaimedGameRewardIds(user),
+      ...(Array.isArray(remote.claimIds) ? remote.claimIds : []),
+    ])];
+    if (mergedMinutes !== localMinutes) setBankedGameMinutes(mergedMinutes, user);
+    localStorage.setItem(gameTimeRewardClaimKey(user), JSON.stringify(mergedClaims));
+    if (remote.garden && typeof remote.garden === 'object' && Object.keys(remote.garden).length) {
+      setAnimalGardenState(remote.garden, user);
+    }
+    await persistGameState(user);
+    return remote;
+  } catch {
+    return null;
+  }
+}
 function buildQuizDiagnosticsSummary(quizData) {
   const diagnostics = quizData?.diagnostics || null;
   if (!diagnostics) return null;
@@ -367,6 +413,7 @@ function addGameRewardToBank(reward, user = state.user, claimId = '') {
   }
   const minutes = setBankedGameMinutes(getBankedGameMinutes(user) + Number(reward.minutes), user);
   markGameRewardClaimed(normalizedClaimId, user);
+  void persistGameState(user);
   return minutes;
 }
 
@@ -642,6 +689,7 @@ function playAnimalGardenAction(action) {
   };
   setAnimalGardenState(next);
   setBankedGameMinutes(minutes - 1);
+  void persistGameState();
   const host = $('animalGardenMount');
   if (host) {
     host.innerHTML = renderAnimalGardenGame();
@@ -954,6 +1002,7 @@ function loginAs(user) {
   updateLevelButtons();
   Promise.all([
     syncLearningSettingsFromServer(user),
+    syncGameStateFromServer(user),
     loadHome(),
   ]).then(() => renderStudentTools());
 }
@@ -1021,6 +1070,7 @@ function selectUser(user) {
   renderStudentTools();
   Promise.all([
     syncLearningSettingsFromServer(user),
+    syncGameStateFromServer(user),
     loadStats(user),
   ]).then(() => renderStudentTools());
   restoreActiveReview(user);
