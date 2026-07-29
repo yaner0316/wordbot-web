@@ -43,6 +43,8 @@ const GAME_TIME_REWARD_CLAIM_KEY_PREFIX = 'wordbot:game-time-reward-claims:';
 const ANIMAL_GARDEN_STATE_KEY_PREFIX = 'wordbot:animal-garden:';
 const REWARD_GAME_ASSET_MANIFEST = 'assets/reward-game/v1/manifest.json';
 const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
+let remoteQuizSession = null;
+
 const state = {
   user: null,
   authMode: 'login',
@@ -1072,7 +1074,10 @@ function selectUser(user) {
     syncLearningSettingsFromServer(user),
     syncGameStateFromServer(user),
     loadStats(user),
-  ]).then(() => renderStudentTools());
+  ]).then(async () => {
+    await loadRemoteQuizSession(user);
+    renderStudentTools();
+  });
   restoreActiveReview(user);
 }
 
@@ -1153,7 +1158,7 @@ function hasActiveQuizDraft(user) {
   if (!user) return false;
   try {
     const saved = JSON.parse(localStorage.getItem(activeQuizKey(user)) || 'null');
-    return Boolean(saved?.quiz?.questions?.length && !saved.quiz.result);
+    return Boolean(saved?.quiz?.questions?.length && !saved.quiz.result) || Boolean(remoteQuizSession?.questions?.length);
   } catch {
     return false;
   }
@@ -1195,9 +1200,28 @@ function restoreQuizDraft(user = state.user) {
   }
 }
 
+let remoteProgressSaveToken = 0;
+
+function saveQuizProgressToServer() {
+  if (DEMO_MODE || !state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || !state.quiz?.testId) return;
+  const token = ++remoteProgressSaveToken;
+  api('/api/quiz/session/progress', {
+    method: 'POST',
+    body: JSON.stringify({
+      user: state.user,
+      testId: state.quiz.testId,
+      currentQuestion: state.currentQuestion,
+      answers: state.answers,
+    }),
+  }).then(() => {
+    if (token === remoteProgressSaveToken) remoteQuizSession = null;
+  }).catch(() => {});
+}
+
 function saveCurrentSessionProgress() {
   saveActiveReview();
   saveQuizDraft();
+  saveQuizProgressToServer();
 }
 function activeReviewKey(user) {
   return `wordbot:active-review:${user}`;
@@ -1311,6 +1335,7 @@ async function loadHome() {
     renderUsers(state.users);
     renderStudentTools();
     await loadStats(state.user);
+    await loadRemoteQuizSession(state.user);
   } catch(e) {
     showToast('加载用户失败: ' + e.message, 'error');
     $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">后端连接异常，当前仅可查看登录后的本地预览</div>';
@@ -1379,9 +1404,38 @@ function manualSelectUser() {
   selectUser(name);
 }
 
-function handleContinueQuizEntry() {
+async function loadRemoteQuizSession(user = state.user) {
+  if (DEMO_MODE || !user) return null;
+  try {
+    const data = await api('/api/quiz/session?user=' + encodeURIComponent(user));
+    remoteQuizSession = data?.active ? data : null;
+    renderStudentTools();
+    return remoteQuizSession;
+  } catch {
+    return null;
+  }
+}
+
+function restoreRemoteQuizSession() {
+  const saved = remoteQuizSession;
+  if (!saved?.questions?.length || !saved.testId) return false;
+  const progress = saved.progress || { currentQuestion: 0, answers: [] };
+  state.session = { kind: 'quiz', sourceTestId: null, reviewId: null, parentReviewId: null, round: 0, firstResult: null, reviewRounds: [], remainingRecordIds: [], deferredRecordIds: [], analysisViewed: false };
+  state.quiz = { testId: saved.testId, mode: 'real', level: state.level, questions: saved.questions };
+  state.answers = Array.from({ length: saved.questions.length }, (_, index) => progress.answers?.[index] ?? null);
+  state.currentQuestion = Math.min(Math.max(0, Number(progress.currentQuestion) || 0), saved.questions.length - 1);
+  remoteQuizSession = null;
+  saveQuizDraft();
+  navigateTo('quiz');
+  renderQuestion(state.currentQuestion);
+  return true;
+}
+
+async function handleContinueQuizEntry() {
   if (restoreQuizDraft()) return true;
-  showToast('暂无未完成考核', 'info');
+  if (!remoteQuizSession) await loadRemoteQuizSession();
+  if (restoreRemoteQuizSession()) return true;
+  showToast('鏆傛棤鏈畢鎴愯€冩牳', 'info');
   renderStudentTools();
   return false;
 }
