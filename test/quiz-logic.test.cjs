@@ -171,8 +171,8 @@ test('definition analysis uses the target meaning instead of an unrelated senten
         escapeHtml
     );
 
-    assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
-    assert.match(html, new RegExp(correctMeaning));
+    assert.doesNotMatch(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.doesNotMatch(html, /\u5728\u672c\u9898\u4e2d\u7684\u610f\u601d/);
     assert.doesNotMatch(html, new RegExp(unrelatedContextCN));
 });
 test('translation-choice analysis explains which English word matches the Chinese meaning', () => {
@@ -188,7 +188,7 @@ test('translation-choice analysis explains which English word matches the Chines
     );
 
     assert.match(html, /resilient/);
-    assert.match(html, /\u5bf9\u5e94\u82f1\u6587\u5355\u8bcd/);
+    assert.doesNotMatch(html, /\u9898\u5e72\u89e3\u91ca/);
 });
 test('fill-in analysis shows a sentence translation as the question explanation', () => {
     const html = buildQuestionExplanation(
@@ -203,7 +203,8 @@ test('fill-in analysis shows a sentence translation as the question explanation'
         escapeHtml
     );
 
-    assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.doesNotMatch(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.doesNotMatch(html, /\u5728\u672c\u9898\u4e2d\u7684\u610f\u601d/);
     assert.match(html, /\u6211\u7528\u660e\u4eae\u7684\u8721\u7b14\u753b\u4e86\u4e00\u4e2a\u5f00\u5fc3\u7684\u592a\u9633/);
     assert.doesNotMatch(html, /\u9898\u5e72\u7ebf\u7d22/);
     assert.doesNotMatch(html, /\u7a7a\u683c\u5904\u9700\u8981/);
@@ -243,7 +244,7 @@ test('fill-in analysis does not repeat the translated sentence as the question e
     );
 
     assert.equal(html.split(sentenceCN).length - 1, 1);
-    assert.match(html, /\u9898\u5e72\u89e3\u91ca/);
+    assert.doesNotMatch(html, /\u9898\u5e72\u89e3\u91ca/);
     assert.match(html, new RegExp(meaningCN));
 });
 test('renders Chinese meaning review feedback without multiple-choice wording', () => {

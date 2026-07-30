@@ -139,20 +139,13 @@
 
     let reason = '';
     if (question.type === 1) {
-      const completedSentence = question.context.replace(/_____/g, correctWord);
       const completedSentenceCN = question.contextCN || '';
-      const completedSentenceDisplay = completedSentenceCN || question.correctMeaning || '中文翻译暂未生成';
-      const meaningExplanation = question.correctMeaning
-        ? `"${correctWord}" 在本题中的意思是：${question.correctMeaning}`
-        : `这道题考察 "${correctWord}" 的中文释义，暂无更具体的中文释义。`;
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentenceDisplay)}</div>
-        <div class="detail-line" style="margin-top:4px;color:#666;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(meaningExplanation)}</div>`;
-    } else if (question.type === 2) {
-      const questionExplanation = question.correctMeaning || question.context;
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
-    } else if (question.type === 3) {
-      const questionExplanation = `\u8fd9\u4e2a\u4e2d\u6587\u91ca\u4e49\u5bf9\u5e94\u82f1\u6587\u5355\u8bcd "${correctWord}"\u3002`;
-      reason = `<div class="detail-line" style="margin-top:4px;"><strong>\u9898\u5e72\u89e3\u91ca\uff1a</strong>${escape(questionExplanation)}</div>`;
+      const completedSentenceDisplay = completedSentenceCN;
+      reason = completedSentenceDisplay
+        ? `<div class="detail-line" style="margin-top:4px;"><strong>\u5b8c\u6574\u53e5\u5b50\uff1a</strong>${escape(completedSentenceDisplay)}</div>`
+        : '';
+
+
     }
 
     return correctLine + reason + comparison;
