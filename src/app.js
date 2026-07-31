@@ -2363,7 +2363,14 @@ async function startQuiz() {
       const required = e.diagnostics?.requiredCount ?? 10;
       showToast(`${formatLearningLevel(state.level)}题库正在准备中（${ready}/${required}），请稍后再试`, 'info');
     } else if (e.code === 'QUESTION_POOL_EXHAUSTED') {
-      showQuestionPoolExhaustedDialog();
+      const ready = e.diagnostics?.readyCount ?? e.diagnostics?.readyCacheCount ?? 0;
+      const required = e.diagnostics?.requiredCount ?? 10;
+      if (ready < required) {
+        requestQuestionCacheRebuild(state.user);
+        showToast(`${formatLearningLevel(state.level)}题库正在准备中（${ready}/${required}），请稍后再试`, 'info');
+      } else {
+        showQuestionPoolExhaustedDialog();
+      }
     } else {
       showToast('生成题目失败: ' + normalizeApiError(e).message, 'error');
     }
