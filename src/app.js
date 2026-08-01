@@ -1463,9 +1463,13 @@ function renderStudentTools() {
     '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
   ].join('');
 }
-function openStudentWordEntry() {
+function openStudentWordEntry() {`r`n  const attempt = Number(arguments[0] || 0);
   const panel = $('studentToolPanel');
-  if (!panel) return;
+  if (!panel) {
+    if (attempt === 0) navigateTo('home');
+    if (attempt < 20) setTimeout(() => openStudentWordEntry(attempt + 1), 100);
+    return;
+  }
   panel.style.display = 'block';
   panel.innerHTML = `
     <div class="parent-panel-head">
