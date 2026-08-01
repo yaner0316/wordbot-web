@@ -162,7 +162,9 @@ test('quiz answers can continue after selecting an option', () => {
 
 test('answer analysis explains the concrete question and compares a wrong choice', () => {
     assert.match(quizLogic, /function buildQuestionExplanation/);
-    assert.match(quizLogic, /replace\(\/_____\/g,\s*correctWord\)/);
+    assert.match(quizLogic, /const correctWord = optionWord\(question, question\.answer\)/);
+    assert.match(quizLogic, /const selectedWord = optionWord\(question, result\.your\)/);
+    assert.match(quizLogic, /与本题给出的语境或释义不匹配/);
 });
 
 test('answer analysis lists Chinese meanings for all options before the reasoning', () => {
@@ -684,22 +686,23 @@ test('parent word management opens a list first, then a clicked word editor with
     assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
 });
 
-test('parent console omits word entry because students add words from home', () => {
-    const htmlGridStart = html.indexOf('id="parentToolGrid"');
-    const htmlGridEnd = html.indexOf('<div class="parent-tool-panel"', htmlGridStart);
-    assert.ok(htmlGridStart >= 0 && htmlGridEnd > htmlGridStart, 'static parent tool grid should exist');
-    const htmlGrid = html.slice(htmlGridStart, htmlGridEnd);
-    assert.ok(!htmlGrid.includes("openParentTool('addWords')"));
-    assert.ok(htmlGrid.includes("openParentTool('queryWord')"));
-    assert.ok(htmlGrid.includes("openParentTool('editWords')"));
+test('parent console keeps word management behind parent access', () => {
+    assert.match(html, /id="parentGatePanel"/);
+    assert.match(html, /id="parentToolGrid"/);
+
+    const parentEntryCount = (html.match(/openParentConsole\(\)/g) || []).length;
+    assert.equal(parentEntryCount, 1, 'home should expose one clear parent management entry');
 
     const ensureStart = app.indexOf('function ensureParentPage()');
     const ensureEnd = app.indexOf('function getParentToolPanel()', ensureStart);
     assert.ok(ensureStart >= 0 && ensureEnd > ensureStart, 'dynamic parent page should exist');
     const ensureSource = app.slice(ensureStart, ensureEnd);
-    assert.ok(!ensureSource.includes("openParentTool('addWords')"));
-    assert.ok(ensureSource.includes("openParentTool('queryWord')"));
-    assert.ok(ensureSource.includes("openParentTool('editWords')"));
+    assert.match(ensureSource, /parentPageMount/);
+    assert.doesNotMatch(ensureSource, /openParentTool\('addWords'\)/);
+    assert.match(ensureSource, /openParentTool\('queryWord'\)/);
+    assert.match(ensureSource, /openParentTool\('editWords'\)/);
+    assert.match(ensureSource, /openParentTool\('learningSettings'\)/);
+    assert.match(ensureSource, /openParentTool\('resetChildPassword'\)/);
 });
 
 test('home quick actions include banked game time without preview or debug controls', () => {
