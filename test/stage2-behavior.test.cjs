@@ -684,22 +684,32 @@ test('parent word management opens a list first, then a clicked word editor with
     assert.doesNotMatch(listSource, /<button class="parent-word-list-item"/);
 });
 
-test('parent console omits word entry because students add words from home', () => {
-    const htmlGridStart = html.indexOf('id="parentToolGrid"');
-    const htmlGridEnd = html.indexOf('<div class="parent-tool-panel"', htmlGridStart);
-    assert.ok(htmlGridStart >= 0 && htmlGridEnd > htmlGridStart, 'static parent tool grid should exist');
-    const htmlGrid = html.slice(htmlGridStart, htmlGridEnd);
-    assert.ok(!htmlGrid.includes("openParentTool('addWords')"));
-    assert.ok(htmlGrid.includes("openParentTool('queryWord')"));
-    assert.ok(htmlGrid.includes("openParentTool('editWords')"));
+test('parent dashboard keeps management tools behind parent access', () => {
+    assert.match(html, /id="parentGatePanel"/);
+    assert.match(html, /id="parentToolGrid"[\s\S]*style="display:none/);
+
+    const parentEntryCount = (html.match(/openParentConsole\(\)/g) || []).length;
+    assert.equal(parentEntryCount, 1, 'home should expose one clear parent management entry');
 
     const ensureStart = app.indexOf('function ensureParentPage()');
     const ensureEnd = app.indexOf('function getParentToolPanel()', ensureStart);
     assert.ok(ensureStart >= 0 && ensureEnd > ensureStart, 'dynamic parent page should exist');
     const ensureSource = app.slice(ensureStart, ensureEnd);
-    assert.ok(!ensureSource.includes("openParentTool('addWords')"));
-    assert.ok(ensureSource.includes("openParentTool('queryWord')"));
-    assert.ok(ensureSource.includes("openParentTool('editWords')"));
+    assert.match(ensureSource, /parentDashboardMount/);
+    assert.match(ensureSource, /parentPageMount/);
+
+    const dashboardStart = app.indexOf('function renderParentDashboardShell');
+    const dashboardEnd = app.indexOf('async function renderParentDashboard()', dashboardStart);
+    assert.ok(dashboardStart >= 0 && dashboardEnd > dashboardStart, 'parent dashboard renderer should exist');
+    const dashboardSource = app.slice(dashboardStart, dashboardEnd);
+    assert.match(dashboardSource, /家长看板/);
+    assert.match(dashboardSource, /待接真实今日统计/);
+    assert.match(dashboardSource, /openParentTool\('addWords'\)/);
+    assert.match(dashboardSource, /openParentTool\('queryWord'\)/);
+    assert.match(dashboardSource, /openParentTool\('editWords'\)/);
+    assert.match(dashboardSource, /openParentTool\('learningSettings'\)/);
+    assert.match(dashboardSource, /openParentTool\('resetChildPassword'\)/);
+    assert.match(dashboardSource, /navigateTo\('history'\)/);
 });
 
 test('home quick actions include banked game time without preview or debug controls', () => {
