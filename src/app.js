@@ -1347,8 +1347,8 @@ function ensureParentPage() {
   page.innerHTML = `
     <div class="header">
       <div class="header-title">
-        <div class="logo">⚙</div>
-        家长控制台
+        <div class="logo">家</div>
+        家长看板
       </div>
       <div class="header-actions">
         <button class="header-btn" onclick="navigateTo('home')" title="返回首页">
@@ -1356,12 +1356,17 @@ function ensureParentPage() {
         </button>
       </div>
     </div>
-    <section class="parent-console parent-console-page" aria-label="家长控制台">
+    <section class="parent-console parent-console-page" aria-label="家长看板">
       <div id="parentPageMount"></div>
     </section>
   `;
   $('app')?.appendChild(page);
   const mount = $('parentPageMount');
+  if (mount && !$('parentDashboardMount')) {
+    const dashboard = document.createElement('div');
+    dashboard.id = 'parentDashboardMount';
+    mount.appendChild(dashboard);
+  }
   for (const id of ['parentGatePanel', 'parentToolGrid', 'parentToolPanel']) {
     const node = $(id);
     if (node && mount) mount.appendChild(node);
@@ -1402,18 +1407,248 @@ function resetParentConsole() {
   const grid = $('parentToolGrid');
   const panel = $('parentToolPanel');
   if (gate) gate.style.display = 'none';
+  const dashboard = $('parentDashboardMount');
   if (grid) grid.style.display = 'none';
+  if (dashboard) {
+    dashboard.style.display = 'none';
+    dashboard.innerHTML = '';
+  }
   if (panel) {
     panel.style.display = 'none';
     panel.innerHTML = '';
   }
 }
 
+function getParentReviewCount(model) {
+  return Number(model.consolidatingWords || 0) + Number(model.recognizedWords || 0);
+}
+
+function parseAccuracyPercent(value) {
+  const match = String(value || '').match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+
+function buildParentDashboardModel(statsData = {}, settingsData = {}, cacheData = {}) {
+  const totalWords = Number(statsData.totalWords || 0);
+  const masteredWords = Number(statsData.masteredWords || 0);
+  const consolidatingWords = Number(statsData.consolidatingWords || 0);
+  const recognizedWords = Number(statsData.recognizedWords || 0);
+  const unseenWords = statsData.unseenWords === undefined
+    ? Math.max(0, totalWords - masteredWords - consolidatingWords - recognizedWords)
+    : Number(statsData.unseenWords || 0);
+  const accuracyRate = statsData.accuracyRate || '0%';
+  const settings = settingsData.settings || {};
+  const cacheStatus = cacheData.status || {};
+  const level = settings.learningLevel || state.level || DEFAULT_LEVEL;
+  const model = {
+    childName: state.user || '当前孩子',
+    level,
+    totalWords,
+    masteredWords,
+    consolidatingWords,
+    recognizedWords,
+    unseenWords,
+    totalTests: Number(statsData.totalTests || 0),
+    totalQuestions: Number(statsData.totalQuestions || 0),
+    correctCount: Number(statsData.correctCount || 0),
+    accuracyRate,
+    accuracyPercent: parseAccuracyPercent(accuracyRate),
+    lastTestTime: statsData.lastTestTime,
+    hasDraft: hasActiveQuizDraft(state.user),
+    cacheStatus: cacheStatus.status || settings.questionCacheStatus || 'unknown',
+    cacheTotalQuestions: Number(cacheStatus.totalQuestions || 0),
+    todayFallback: true,
+  };
+  model.reviewCount = getParentReviewCount(model);
+  model.masteredPct = totalWords > 0 ? Math.round(masteredWords / totalWords * 100) : 0;
+  return model;
+}
+
+async function loadParentDashboardData() {
+  const statsPromise = DEMO_MODE
+    ? Promise.resolve(generateDemoStats(state.user))
+    : api('/api/stats/' + encodeURIComponent(state.user));
+  const settingsPromise = DEMO_MODE
+    ? Promise.resolve({ settings: { learningLevel: state.level, questionCacheStatus: 'ready' } })
+    : api(`/api/admin/userSettings?userId=${encodeURIComponent(state.user)}`).catch(() => ({ settings: {} }));
+  const cachePromise = DEMO_MODE
+    ? Promise.resolve({ status: { status: 'ready', totalQuestions: 30 } })
+    : api(`/api/admin/questionCache/status?userId=${encodeURIComponent(state.user)}`).catch(() => ({ status: {} }));
+  const [statsData, settingsData, cacheData] = await Promise.all([statsPromise, settingsPromise, cachePromise]);
+  return buildParentDashboardModel(statsData, settingsData, cacheData);
+}
+
+function renderParentDashboardLoading() {
+  const mount = $('parentDashboardMount');
+  if (!mount) return;
+  mount.innerHTML = `
+    <div class="parent-dashboard-card parent-dashboard-loading">
+      <strong>正在整理学习状态...</strong>
+      <span>家长看板会保留现有数据来源，不影响孩子答题和奖励逻辑。</span>
+    </div>
+  `;
+}
+
+function renderParentDashboardError(error) {
+  const mount = $('parentDashboardMount');
+  if (!mount) return;
+  mount.innerHTML = `
+    <div class="parent-dashboard-card parent-dashboard-loading">
+      <strong>家长看板暂时加载失败</strong>
+      <span>${escapeHtml(normalizeApiError(error).message)}</span>
+      <button class="parent-dashboard-link" type="button" onclick="renderParentDashboard()">重新加载</button>
+    </div>
+  `;
+}
+
+function renderParentDashboardShell(model) {
+  const mount = $('parentDashboardMount');
+  if (!mount) return;
+  const reviewCount = model.reviewCount;
+  const needsNewWords = model.totalWords < 10;
+  const reminders = [
+    {
+      tone: reviewCount > 0 ? 'orange' : 'green',
+      title: reviewCount > 0 ? `${reviewCount} 个词需要复习` : '复习压力很轻',
+      text: reviewCount > 0 ? '建议先做一轮小复习，再开始新挑战。' : '今天可以轻松进入新一轮练习。'
+    },
+    {
+      tone: model.hasDraft ? 'blue' : 'green',
+      title: model.hasDraft ? '有未完成练习' : '没有未完成练习',
+      text: model.hasDraft ? '孩子可以从首页继续上次进度。' : '开始新挑战时会重新生成题目。'
+    },
+    {
+      tone: needsNewWords ? 'orange' : 'blue',
+      title: needsNewWords ? '词库还可以再丰富一点' : '词库数量稳定',
+      text: needsNewWords ? '可以录入课堂或阅读中遇到的新词。' : `当前共有 ${model.totalWords} 个词。`
+    }
+  ];
+  const progressSegments = [
+    { className: 'mastered', label: '已掌握', value: model.masteredWords },
+    { className: 'consolidating', label: '巩固中', value: model.consolidatingWords },
+    { className: 'recognized', label: '已认识', value: model.recognizedWords },
+    { className: 'unseen', label: '未开始', value: model.unseenWords },
+  ];
+  mount.innerHTML = `
+    <div class="parent-dashboard-v2">
+      <section class="parent-dashboard-hero" aria-label="孩子学习状态">
+        <div>
+          <p class="parent-dashboard-kicker">家长看板</p>
+          <h1>查看孩子今天的学习状态</h1>
+          <div class="parent-dashboard-meta">
+            <span>${escapeHtml(model.childName)}</span>
+            <span>${escapeHtml(formatLearningLevel(model.level))}</span>
+          </div>
+        </div>
+        <button class="parent-dashboard-close" type="button" onclick="navigateTo('home')" aria-label="返回首页">返回首页</button>
+      </section>
+
+      <section class="parent-dashboard-overview" aria-label="今日概览">
+        <article class="parent-overview-card">
+          <span>今日答题数</span>
+          <strong>${escapeHtml(model.totalQuestions)}</strong>
+          <small>待接真实今日统计</small>
+        </article>
+        <article class="parent-overview-card green">
+          <span>今日正确率</span>
+          <strong>${escapeHtml(model.accuracyRate)}</strong>
+          <small>${escapeHtml(model.correctCount)}/${escapeHtml(model.totalQuestions)}</small>
+        </article>
+        <article class="parent-overview-card blue">
+          <span>待复习词数</span>
+          <strong>${escapeHtml(reviewCount)}</strong>
+          <small>基于当前词汇状态</small>
+        </article>
+        <article class="parent-overview-card pale">
+          <span>已掌握词数</span>
+          <strong>${escapeHtml(model.masteredWords)}</strong>
+          <small>${escapeHtml(model.masteredPct)}% 已掌握</small>
+        </article>
+      </section>
+
+      <section class="parent-dashboard-card parent-progress-card" aria-label="词汇进度">
+        <div class="parent-section-head">
+          <span class="parent-section-icon">词</span>
+          <div>
+            <h2>词汇进度</h2>
+            <p>总词汇 ${escapeHtml(model.totalWords)} 个</p>
+          </div>
+        </div>
+        <div class="parent-progress-bar" aria-label="词汇状态分布">
+          ${progressSegments.map(item => {
+            const width = model.totalWords > 0 ? Math.max(6, Math.round(item.value / model.totalWords * 100)) : 25;
+            return `<span class="${item.className}" style="width:${width}%"></span>`;
+          }).join('')}
+        </div>
+        <div class="parent-progress-list">
+          ${progressSegments.map(item => `
+            <div><span class="dot ${item.className}"></span>${escapeHtml(item.label)}<strong>${escapeHtml(item.value)}</strong></div>
+          `).join('')}
+        </div>
+      </section>
+
+      <section class="parent-dashboard-card parent-reminder-card" aria-label="学习提醒">
+        <div class="parent-section-head compact">
+          <span class="parent-section-icon">提</span>
+          <div><h2>学习提醒</h2><p>优先处理最需要家长关注的事</p></div>
+        </div>
+        <div class="parent-reminder-list">
+          ${reminders.map(item => `
+            <div class="parent-reminder-item ${item.tone}">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.text)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </section>
+
+      <section class="parent-dashboard-card parent-management-card" aria-label="快捷管理入口">
+        <div class="parent-section-head compact">
+          <span class="parent-section-icon">管</span>
+          <div><h2>快捷管理</h2><p>保留现有家长工具，不绕过验证</p></div>
+        </div>
+        <div class="parent-management-grid">
+          <button type="button" onclick="openParentTool('addWords')"><strong>录入单词</strong><span>添加课堂新词</span></button>
+          <button type="button" onclick="openParentTool('queryWord')"><strong>查询单词</strong><span>查看单词状态</span></button>
+          <button type="button" onclick="openParentTool('editWords')"><strong>词库管理</strong><span>编辑状态与释义</span></button>
+          <button type="button" onclick="openParentTool('learningSettings')"><strong>学习设置</strong><span>调整难度与缓存</span></button>
+          <button type="button" onclick="navigateTo('history')"><strong>考核历史</strong><span>查看练习记录</span></button>
+          <button type="button" onclick="openParentTool('resetChildPassword')"><strong>孩子密码</strong><span>重置登录密码</span></button>
+        </div>
+      </section>
+
+      <section class="parent-dashboard-card parent-trend-card" aria-label="学习趋势">
+        <div>
+          <h2>学习趋势</h2>
+          <p>最近 7 天答题趋势、正确率趋势和新掌握词数，待接真实统计数据。</p>
+        </div>
+        <div class="parent-trend-placeholder" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+async function renderParentDashboard() {
+  const mount = $('parentDashboardMount');
+  if (!mount) return;
+  renderParentDashboardLoading();
+  try {
+    const model = await loadParentDashboardData();
+    renderParentDashboardShell(model);
+  } catch (error) {
+    renderParentDashboardError(error);
+  }
+}
 function showParentTools() {
   const gate = $('parentGatePanel');
   const grid = $('parentToolGrid');
+  const dashboard = $('parentDashboardMount');
   if (gate) gate.style.display = 'none';
-  if (grid) grid.style.display = 'grid';
+  if (grid) grid.style.display = 'none';
+  if (dashboard) dashboard.style.display = 'block';
+  renderParentDashboard();
 }
 
 function openParentConsole() {
@@ -1429,7 +1664,9 @@ function openParentConsole() {
   }
   const gate = $('parentGatePanel');
   const grid = $('parentToolGrid');
+  const dashboard = $('parentDashboardMount');
   if (grid) grid.style.display = 'none';
+  if (dashboard) dashboard.style.display = 'none';
   if (gate) gate.style.display = 'block';
 }
 
