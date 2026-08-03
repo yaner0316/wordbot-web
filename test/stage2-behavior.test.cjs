@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
@@ -30,6 +31,30 @@ const rewardPlaceholderCharacter = fs.existsSync(rewardPlaceholderCharacterPath)
 const rewardPlaceholderHabitat = fs.existsSync(rewardPlaceholderHabitatPath)
     ? fs.readFileSync(rewardPlaceholderHabitatPath, 'utf8')
     : '';
+
+function extractNamedFunction(source, name) {
+    const start = source.indexOf(`function ${name}(`);
+    assert.ok(start >= 0, `${name} function should exist`);
+    const bodyStart = source.indexOf('{', start);
+    let depth = 0;
+    for (let index = bodyStart; index < source.length; index += 1) {
+        if (source[index] === '{') depth += 1;
+        if (source[index] === '}') depth -= 1;
+        if (depth === 0) return source.slice(start, index + 1);
+    }
+    throw new Error(`Could not extract ${name}`);
+}
+
+function loadQuizReadinessHelpers() {
+    const context = { state: { level: '\u4e2d\u5b66' } };
+    vm.createContext(context);
+    vm.runInContext([
+        extractNamedFunction(app, 'getLevelCacheStatus'),
+        extractNamedFunction(app, 'getLevelCacheReadyCount'),
+        extractNamedFunction(app, 'getQuizCacheReadiness'),
+    ].join('\n'), context);
+    return context;
+}
 
 test('frontend assets are loaded from focused external files', () => {
     assert.match(html, /<link rel="stylesheet" href="src\/styles\.css"\s*\/?>/);
@@ -719,4 +744,96 @@ test('home quick actions include banked game time without preview or debug contr
     assert.doesNotMatch(renderStudentToolsSource, /handleBankedGameTimeEntry\(\)/);
     assert.match(app, /function getBankedGameMinutes/);
     assert.match(app, /function renderAnimalGardenGame/);
+});
+test('quiz readiness trusts eligible backend meanings and enables at ten', () => {
+    const { getLevelCacheReadyCount, getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const structuredStatus = {
+        configured: true,
+        byLevel: {
+            '\u4e2d\u5b66': { ready: 0, total: 10, eligibleReadyMeanings: 10 },
+        },
+        generation: { pending: true },
+    };
+    const legacyStatus = {
+        configured: true,
+        byLevel: {
+            '\u4e2d\u5b66': { ready: 10, total: 10 },
+        },
+    };
+
+    assert.equal(getLevelCacheReadyCount(structuredStatus, '\u4e2d\u5b66'), 10);
+    assert.equal(getQuizCacheReadiness(structuredStatus, '\u4e2d\u5b66').disabled, false);
+    assert.equal(getQuizCacheReadiness(structuredStatus, '\u4e2d\u5b66').buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
+    assert.equal(getLevelCacheReadyCount(legacyStatus, '\u4e2d\u5b66'), 10);
+});
+
+test('quiz readiness keeps building and partial caches inline and disabled', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const readiness = getQuizCacheReadiness({
+        configured: true,
+        status: 'building',
+        byLevel: {
+            '\u4e2d\u5b66': { ready: 4, total: 10, eligibleReadyMeanings: 4 },
+        },
+        generation: { pending: true },
+    }, '\u4e2d\u5b66');
+
+    assert.equal(readiness.disabled, true);
+    assert.equal(readiness.buttonLabel, '\u9898\u5e93\u51c6\u5907\u4e2d');
+    assert.match(readiness.detail, /\u5f53\u524d\u53ef\u6d4b\u8bd5 4 \u9898/);
+    assert.match(readiness.detail, /\u6b63\u5728\u751f\u6210/);
+});
+
+test('quiz readiness exposes retrying and manual-review failures', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const retrying = getQuizCacheReadiness({
+        byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 6 } },
+        generation: { retrying: true },
+    }, '\u4e2d\u5b66');
+    const failed = getQuizCacheReadiness({
+        byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 6 } },
+        generation: {
+            needsManualReview: true,
+            lastError: '\u751f\u6210\u5185\u5bb9\u9700\u8981\u4eba\u5de5\u786e\u8ba4',
+        },
+    }, '\u4e2d\u5b66');
+
+    assert.equal(retrying.disabled, true);
+    assert.match(retrying.detail, /\u6b63\u5728\u91cd\u8bd5/);
+    assert.equal(failed.disabled, true);
+    assert.equal(failed.canRetry, true);
+    assert.match(failed.detail, /\u9700\u8981\u4eba\u5de5\u68c0\u67e5/);
+    assert.match(failed.detail, /\u751f\u6210\u5185\u5bb9\u9700\u8981\u4eba\u5de5\u786e\u8ba4/);
+});
+
+test('home renders cache readiness beside the start button without fixed toast gating', () => {
+    const renderSource = extractNamedFunction(app, 'renderQuizCacheReadiness');
+    const loadSource = extractNamedFunction(app, 'loadQuizCacheReadiness');
+    const startQuizSource = app.slice(
+        app.indexOf('async function startQuiz()'),
+        app.indexOf('function isMeaningReviewQuestion')
+    );
+
+    assert.match(renderSource, /home-primary-cta/);
+    assert.match(renderSource, /quiz-readiness-inline/);
+    assert.match(renderSource, /button\.disabled\s*=\s*readiness\.disabled/);
+    assert.match(renderSource, /retryQuestionCachePreparation/);
+    assert.match(loadSource, /questionCache\/status/);
+    assert.doesNotMatch(loadSource, /showToast/);
+    assert.match(startQuizSource, /renderQuizCacheReadiness/);
+    assert.doesNotMatch(
+        startQuizSource.match(/if \(e\.code === 'QUESTION_CACHE_NOT_READY'\)[\s\S]*?} else if/)?.[0] || '',
+        /showToast/
+    );
+    assert.match(styles, /\.quiz-readiness-inline/);
+    assert.match(styles, /\.home-primary-cta:disabled/);
+});
+
+test('frontend quiz readiness does not deduplicate words by spelling', () => {
+    const source = [
+        extractNamedFunction(app, 'getLevelCacheReadyCount'),
+        extractNamedFunction(app, 'getQuizCacheReadiness'),
+    ].join('\n');
+
+    assert.doesNotMatch(source, /\bSet\b|word_id|spelling/);
 });

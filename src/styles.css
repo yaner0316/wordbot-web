@@ -2646,6 +2646,38 @@ button.hero-chip:active { transform: scale(.98); }
 }
 #pageHome .home-primary-cta::before,
 #pageHome .home-primary-cta::after { content: none; }
+#pageHome .home-primary-cta:disabled {
+  cursor: not-allowed;
+  background: linear-gradient(135deg, #B8ADA4, #9C9188);
+  box-shadow: none;
+  opacity: 0.82;
+}
+#pageHome .quiz-readiness-inline {
+  min-height: 24px;
+  margin: 9px 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--home-v2-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+#pageHome .quiz-readiness-inline.ready { color: var(--home-v2-green); }
+#pageHome .quiz-readiness-inline.error { color: var(--red); }
+#pageHome .quiz-readiness-inline button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #fff;
+  background: var(--red);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
 #pageHome .parent-console-home-shell,
 #pageHome #recentStatus { display: none !important; }
 @media (max-width: 390px) {
