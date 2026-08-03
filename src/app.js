@@ -836,6 +836,7 @@ async function api(path, opts = {}) {
   try {
     const response = await fetch(API_BASE + path, {
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // 包含 session cookie
       ...fetchOptions,
       signal: signal || controller.signal
     });
