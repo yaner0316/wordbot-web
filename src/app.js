@@ -6,6 +6,7 @@ const {
   buildMeaningReviewExplanation,
   formatOptionDisplayText,
   inspectQuizContentForBlockingIssue,
+  inspectFormalQuizResponse,
   normalizeArticleContext,
   optionWord,
 } = WordBotQuizLogic;
@@ -1121,8 +1122,11 @@ function getLevelCacheStatus(status, level = state.level) {
 }
 
 function getLevelCacheReadyCount(status, level = state.level) {
-  const levelStatus = getLevelCacheStatus(status, level);
-  const backendReadyCount = levelStatus.eligibleReadyMeanings ?? levelStatus.ready ?? 0;
+  const countsByLevel = status?.eligibleReadyMeaningsByLevel;
+  const hasLevelCounts = countsByLevel && typeof countsByLevel === 'object';
+  const backendReadyCount = hasLevelCounts
+    ? (countsByLevel[level] ?? 0)
+    : (status?.eligibleReadyMeanings ?? 0);
   const readyCount = Number(backendReadyCount);
   return Number.isFinite(readyCount) ? Math.max(0, Math.floor(readyCount)) : 0;
 }
@@ -1134,12 +1138,46 @@ function isLevelCacheReady(status, level = state.level, requiredCount = 10) {
 function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) {
   const readyCount = getLevelCacheReadyCount(status, level);
   const generation = status?.generation || {};
+  const counts = generation.counts || {};
+  const failures = Array.isArray(generation.failures) ? generation.failures : [];
   const rawStatus = String(getLevelCacheStatus(status, level).status || status?.status || '').toLowerCase();
-  const lastError = String(generation.lastError || '').trim();
-  const needsManualReview = Boolean(generation.needsManualReview);
-  const retrying = Boolean(generation.retrying);
-  const pending = Boolean(generation.pending) || ['building', 'pending'].includes(rawStatus);
+  const failureText = failures
+    .map(failure => failure?.lastErrorCode || failure?.status || '')
+    .filter(Boolean)
+    .join(', ');
+  const lastError = String(generation.lastError || failureText || '').trim();
+  const needsManualReview = Boolean(generation.needsManualReview)
+    || Math.max(0, Number(counts.manualReview) || 0) > 0
+    || failures.length > 0;
+  const retrying = Boolean(generation.retrying) || Math.max(0, Number(counts.retrying) || 0) > 0;
+  const pending = Boolean(generation.pending)
+    || Math.max(0, Number(counts.pending) || 0) > 0
+    || ['building', 'pending'].includes(rawStatus);
   const countText = `\u5f53\u524d\u53ef\u6d4b\u8bd5 ${readyCount} \u9898`;
+
+  if (status?.operation === 'rebuilding') {
+    return {
+      readyCount,
+      disabled: true,
+      buttonLabel: '\u9898\u5e93\u6062\u590d\u4e2d',
+      detail: `${countText} \u00b7 \u6b63\u5728\u91cd\u5efa\u9898\u5e93`,
+      state: 'rebuilding',
+      action: null,
+      canRetry: false,
+    };
+  }
+
+  if (status?.queryError) {
+    return {
+      readyCount,
+      disabled: true,
+      buttonLabel: '\u91cd\u65b0\u67e5\u8be2\u9898\u5e93',
+      detail: `${countText} \u00b7 \u9898\u5e93\u72b6\u6001\u67e5\u8be2\u5931\u8d25\uff1a${status.queryError}`,
+      state: 'query-error',
+      action: 'query',
+      canRetry: true,
+    };
+  }
 
   if (readyCount >= requiredCount) {
     return {
@@ -1148,6 +1186,7 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
       buttonLabel: '\u5f00\u59cb\u6d4b\u8bd5',
       detail: countText,
       state: 'ready',
+      action: null,
       canRetry: false,
     };
   }
@@ -1163,7 +1202,8 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
       disabled: true,
       buttonLabel: '\u9898\u5e93\u51c6\u5907\u5931\u8d25',
       detail: detailParts.join(' \u00b7 '),
-      state: 'error',
+      state: 'manual-review',
+      action: 'rebuild',
       canRetry: true,
     };
   }
@@ -1176,7 +1216,8 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
     disabled: true,
     buttonLabel: '\u9898\u5e93\u51c6\u5907\u4e2d',
     detail: `${countText} \u00b7 ${generationText}`,
-    state: retrying ? 'retrying' : 'building',
+    state: retrying ? 'retrying' : (readyCount > 0 ? 'partial' : 'building'),
+    action: null,
     canRetry: false,
   };
 }
@@ -1209,9 +1250,11 @@ function renderQuizCacheReadiness(status, level = state.level) {
   inlineStatus.className = `quiz-readiness-inline ${readiness.state}`;
   inlineStatus.innerHTML = `
     <span>${escapeHtml(readiness.detail)}</span>
-    ${readiness.canRetry
-      ? '<button type="button" onclick="retryQuestionCachePreparation()">\u91cd\u8bd5\u51c6\u5907</button>'
-      : ''}
+    ${readiness.action === 'query'
+      ? '<button type="button" onclick="retryQuestionCacheStatusQuery()">\u91cd\u65b0\u67e5\u8be2</button>'
+      : (readiness.action === 'rebuild'
+        ? '<button type="button" onclick="rebuildQuestionCachePreparation()">\u7ba1\u7406\u5458\u91cd\u5efa\u9898\u5e93</button>'
+        : '')}
   `;
   return readiness;
 }
@@ -1224,16 +1267,15 @@ function renderQuizCacheReadinessFromDiagnostics(diagnostics = {}) {
   const generation = diagnostics.generation || {};
   const status = {
     configured: true,
-    byLevel: {
-      [state.level]: {
-        eligibleReadyMeanings: readyCount,
-        total: diagnostics.total ?? diagnostics.requiredCount ?? 10,
-      },
-    },
+    eligibleReadyMeanings: readyCount,
     generation: {
-      pending: generation.pending ?? true,
-      retrying: generation.retrying ?? diagnostics.retrying ?? false,
-      needsManualReview: generation.needsManualReview ?? diagnostics.needsManualReview ?? false,
+      counts: generation.counts || {
+        pending: (generation.pending ?? true) ? 1 : 0,
+        retrying: (generation.retrying ?? diagnostics.retrying ?? false) ? 1 : 0,
+        manualReview: (generation.needsManualReview ?? diagnostics.needsManualReview ?? false) ? 1 : 0,
+        ready: 0,
+      },
+      failures: Array.isArray(generation.failures) ? generation.failures : [],
       lastError: generation.lastError ?? diagnostics.lastError ?? '',
     },
   };
@@ -1245,15 +1287,18 @@ async function loadQuizCacheReadiness(user = state.user) {
   if (!user) return null;
   if (DEMO_MODE) {
     const demoStatus = {
-      byLevel: { [state.level]: { eligibleReadyMeanings: 10, total: 10 } },
+      eligibleReadyMeanings: 10,
     };
     state.questionCacheStatus = demoStatus;
     return renderQuizCacheReadiness(demoStatus, state.level);
   }
 
   renderQuizCacheReadiness({
-    byLevel: { [state.level]: { eligibleReadyMeanings: 0 } },
-    generation: { pending: true },
+    eligibleReadyMeanings: 0,
+    generation: {
+      counts: { pending: 1, retrying: 0, manualReview: 0, ready: 0 },
+      failures: [],
+    },
   }, state.level);
   try {
     const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
@@ -1261,42 +1306,57 @@ async function loadQuizCacheReadiness(user = state.user) {
     return renderQuizCacheReadiness(state.questionCacheStatus, state.level);
   } catch (error) {
     const failedStatus = {
-      byLevel: { [state.level]: { eligibleReadyMeanings: 0 } },
-      generation: {
-        needsManualReview: true,
-        lastError: `\u9898\u5e93\u72b6\u6001\u52a0\u8f7d\u5931\u8d25\uff1a${normalizeApiError(error).message}`,
-      },
+      eligibleReadyMeanings: 0,
+      queryError: normalizeApiError(error).message,
     };
     state.questionCacheStatus = failedStatus;
     return renderQuizCacheReadiness(failedStatus, state.level);
   }
 }
 
-async function retryQuestionCachePreparation() {
-  if (!state.user || DEMO_MODE) return loadQuizCacheReadiness(state.user);
+async function retryQuestionCacheStatusQuery() {
+  return await loadQuizCacheReadiness(state.user);
+}
+
+async function rebuildQuestionCachePreparation() {
+  if (!state.user || DEMO_MODE) return await loadQuizCacheReadiness(state.user);
   const currentStatus = state.questionCacheStatus || {};
   renderQuizCacheReadiness({
     ...currentStatus,
-    generation: { ...(currentStatus.generation || {}), pending: true, needsManualReview: false, lastError: '' },
+    operation: 'rebuilding',
   }, state.level);
-  await requestQuestionCacheRebuild(state.user);
-  return loadQuizCacheReadiness(state.user);
+  try {
+    await requestQuestionCacheRebuild(state.user);
+  } catch (error) {
+    showToast('\u9898\u5e93\u91cd\u5efa\u5931\u8d25\uff1a' + normalizeApiError(error).message, 'error');
+    throw error;
+  } finally {
+    await loadQuizCacheReadiness(state.user);
+  }
 }
 
 async function requestQuestionCacheRebuild(user) {
   if (DEMO_MODE || !user) return null;
-  try {
-    return await api('/api/admin/questionCache/rebuild', {
-      method: 'POST',
-      timeoutMs: 90000,
-      body: JSON.stringify({ userId: user })
-    });
-  } catch (error) {
-    console.warn('question cache rebuild trigger failed', error);
-    return null;
-  }
+  return await api('/api/admin/questionCache/rebuild', {
+    method: 'POST',
+    timeoutMs: 90000,
+    body: JSON.stringify({ userId: user })
+  });
 }
 
+async function recoverQuestionCacheAfterQuizFailure(diagnostics) {
+  renderQuizCacheReadinessFromDiagnostics(diagnostics);
+  try {
+    await requestQuestionCacheRebuild(state.user);
+  } catch (error) {
+    showToast(
+      '题库恢复失败：' + normalizeApiError(error).message + '。请稍后重试，或请家长在设置中重建题库。',
+      'error'
+    );
+  } finally {
+    await loadQuizCacheReadiness(state.user);
+  }
+}
 async function ensureLevelCacheReadyForQuiz(user, level) {
   if (DEMO_MODE) return true;
   const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
@@ -1340,23 +1400,74 @@ function clearQuizDraft() {
   renderStudentTools();
 }
 
-function restoreQuizDraft(user = state.user) {
+async function recoverFromFormalQuizBlock(issue) {
+  state.quiz = null;
+  state.answers = [];
+  const currentStatus = state.questionCacheStatus || {};
+  renderQuizCacheReadiness({
+    ...currentStatus,
+    operation: 'rebuilding',
+  }, state.level);
+  showToast(issue.message || '正式题库尚未准备好，请稍后重试', 'error');
+  try {
+    await requestQuestionCacheRebuild(state.user);
+  } catch (error) {
+    showToast('题库恢复失败：' + normalizeApiError(error).message, 'error');
+  } finally {
+    await loadQuizCacheReadiness(state.user);
+  }
+}
+
+async function enterFormalQuiz(quiz, options) {
+  options = options || {};
+  const {
+    session = state.session,
+    currentQuestion = 0,
+    answers = null,
+  } = options;
+  const formalQuizIssue = inspectFormalQuizResponse(quiz);
+  if (formalQuizIssue.blocked) {
+    await recoverFromFormalQuizBlock(formalQuizIssue);
+    return false;
+  }
+  const quizContentIssue = inspectQuizContentForBlockingIssue(quiz);
+  if (quizContentIssue.blocked) {
+    state.quiz = null;
+    state.answers = [];
+    showToast(quizContentIssue.message || '题库正在修复，请稍后再试或换一套', 'info');
+    return false;
+  }
+  state.session = session || { kind: 'quiz' };
+  state.quiz = quiz;
+  state.currentQuestion = Math.min(
+    Math.max(0, Number(currentQuestion) || 0),
+    quiz.questions.length - 1
+  );
+  state.answers = Array.isArray(answers)
+    ? Array.from({ length: quiz.questions.length }, (_, index) => answers[index] ?? null)
+    : new Array(quiz.questions.length).fill(null);
+  saveQuizDraft();
+  navigateTo('quiz');
+  renderQuestion(state.currentQuestion);
+  return true;
+}
+
+async function restoreQuizDraft(user = state.user) {
   const raw = localStorage.getItem(activeQuizKey(user));
   if (!raw) return false;
+  let saved;
   try {
-    const saved = JSON.parse(raw);
-    if (!saved?.quiz?.questions?.length || saved.quiz.result) return false;
-    state.session = saved.session || { kind: 'quiz' };
-    state.quiz = saved.quiz;
-    state.currentQuestion = saved.currentQuestion || 0;
-    state.answers = saved.answers || new Array(saved.quiz.questions.length).fill(null);
-    navigateTo('quiz');
-    renderQuestion(state.currentQuestion);
-    return true;
+    saved = JSON.parse(raw);
   } catch {
     localStorage.removeItem(activeQuizKey(user));
     return false;
   }
+  if (!saved?.quiz?.questions?.length || saved.quiz.result) return false;
+  return await enterFormalQuiz(saved.quiz, {
+    session: saved.session || { kind: 'quiz' },
+    currentQuestion: saved.currentQuestion,
+    answers: saved.answers,
+  });
 }
 
 let remoteProgressSaveToken = 0;
@@ -1571,35 +1682,45 @@ function manualSelectUser() {
 
 async function loadRemoteQuizSession(user = state.user) {
   if (DEMO_MODE || !user) return null;
-  try {
-    const data = await api('/api/quiz/session?user=' + encodeURIComponent(user));
-    remoteQuizSession = data?.active ? data : null;
-    renderStudentTools();
-    return remoteQuizSession;
-  } catch {
-    return null;
-  }
+  const data = await api('/api/quiz/session?user=' + encodeURIComponent(user));
+  remoteQuizSession = data?.active ? data : null;
+  renderStudentTools();
+  return remoteQuizSession;
 }
 
-function restoreRemoteQuizSession() {
+async function restoreRemoteQuizSession() {
   const saved = remoteQuizSession;
   if (!saved?.questions?.length || !saved.testId) return false;
   const progress = saved.progress || { currentQuestion: 0, answers: [] };
-  state.session = { kind: 'quiz', sourceTestId: null, reviewId: null, parentReviewId: null, round: 0, firstResult: null, reviewRounds: [], remainingRecordIds: [], deferredRecordIds: [], analysisViewed: false };
-  state.quiz = { testId: saved.testId, mode: 'real', level: state.level, questions: saved.questions };
-  state.answers = Array.from({ length: saved.questions.length }, (_, index) => progress.answers?.[index] ?? null);
-  state.currentQuestion = Math.min(Math.max(0, Number(progress.currentQuestion) || 0), saved.questions.length - 1);
+  const session = { kind: 'quiz', sourceTestId: null, reviewId: null, parentReviewId: null, round: 0, firstResult: null, reviewRounds: [], remainingRecordIds: [], deferredRecordIds: [], analysisViewed: false };
+  const quiz = {
+    testId: saved.testId,
+    mode: saved.mode || 'real',
+    level: saved.level || state.level,
+    source: saved.source,
+    diagnostics: saved.diagnostics,
+    questions: saved.questions,
+  };
   remoteQuizSession = null;
-  saveQuizDraft();
-  navigateTo('quiz');
-  renderQuestion(state.currentQuestion);
-  return true;
+  return await enterFormalQuiz(quiz, {
+    session,
+    currentQuestion: progress.currentQuestion,
+    answers: progress.answers,
+  });
 }
 
 async function handleContinueQuizEntry() {
-  if (restoreQuizDraft()) return true;
-  if (!remoteQuizSession) await loadRemoteQuizSession();
-  if (restoreRemoteQuizSession()) return true;
+  if (await restoreQuizDraft()) return true;
+  if (!remoteQuizSession) {
+    try {
+      await loadRemoteQuizSession();
+    } catch (error) {
+      showToast('\u672a\u80fd\u67e5\u8be2\u4e0a\u6b21\u6d4b\u8bd5\uff1a' + normalizeApiError(error).message, 'error');
+      renderStudentTools();
+      return false;
+    }
+  }
+  if (await restoreRemoteQuizSession()) return true;
   showToast('鏆傛棤鏈畢鎴愯€冩牳', 'info');
   renderStudentTools();
   return false;
@@ -2371,23 +2492,30 @@ async function saveParentLearningSettings() {
         method: 'PUT',
         body: JSON.stringify({ userId: state.user, learningLevel })
       });
-      if (data?.settings?.questionCacheStatus === 'building') {
-        requestQuestionCacheRebuild(state.user);
-        showToast('\u5b66\u4e60\u96be\u5ea6\u5df2\u4fdd\u5b58\uff0c\u65b0\u96be\u5ea6\u9898\u5e93\u6b63\u5728\u81ea\u52a8\u51c6\u5907\u4e2d\u2026', 'success');
-      } else {
-        showToast('\u5b66\u4e60\u8bbe\u7f6e\u5df2\u4fdd\u5b58', 'success');
-      }
-    } else {
-      showToast('\u5b66\u4e60\u8bbe\u7f6e\u5df2\u4fdd\u5b58', 'success');
     }
+
     state.learningSettings = data?.settings || state.learningSettings;
     state.level = state.learningSettings?.learningLevel || learningLevel;
     saveUserDifficulty(state.user, state.level);
     updateLevelButtons();
-    loadParentLearningSettings();
+
+    if (!DEMO_MODE && data?.settings?.questionCacheStatus === 'building') {
+      try {
+        await requestQuestionCacheRebuild(state.user);
+        showToast('\u5b66\u4e60\u96be\u5ea6\u5df2\u4fdd\u5b58\uff0c\u65b0\u96be\u5ea6\u9898\u5e93\u6b63\u5728\u81ea\u52a8\u51c6\u5907\u4e2d\u2026', 'success');
+      } catch (rebuildError) {
+        showToast('\u8bbe\u7f6e\u5df2\u4fdd\u5b58\uff0c\u4f46\u9898\u5e93\u81ea\u52a8\u91cd\u5efa\u5931\u8d25: ' + normalizeApiError(rebuildError).message, 'error');
+      }
+    } else {
+      showToast('\u5b66\u4e60\u8bbe\u7f6e\u5df2\u4fdd\u5b58', 'success');
+    }
   } catch (error) {
     showToast('\u4fdd\u5b58\u5931\u8d25: ' + normalizeApiError(error).message, 'error');
   } finally {
+    await Promise.allSettled([
+      loadQuizCacheReadiness(state.user),
+      loadParentLearningSettings(),
+    ]);
     hideLoading();
   }
 }
@@ -2396,17 +2524,15 @@ async function rebuildParentQuestionCache() {
   showLoading('正在重建题目缓存...');
   try {
     if (!DEMO_MODE) {
-      await api('/api/admin/questionCache/rebuild', {
-        method: 'POST',
-        timeoutMs: 90000,
-        body: JSON.stringify({ userId: state.user })
-      });
+      await requestQuestionCacheRebuild(state.user);
     }
     showToast('缓存重建已提交', 'success');
-    loadParentLearningSettings();
   } catch (error) {
     showToast('重建失败: ' + normalizeApiError(error).message, 'error');
+    throw error;
   } finally {
+    await loadQuizCacheReadiness(state.user);
+    await loadParentLearningSettings();
     hideLoading();
   }
 }
@@ -2508,35 +2634,20 @@ async function startQuiz() {
       body: JSON.stringify({ user: state.user, level: state.level, mode: state.mode })
     });
     if (data.level === state.level && data.difficultyApplied === false) {
-      requestQuestionCacheRebuild(state.user);
-      renderQuizCacheReadinessFromDiagnostics(data.diagnostics);
+      await recoverQuestionCacheAfterQuizFailure(data.diagnostics);
       return;
     }
     state.quizDiagnostics = buildQuizDiagnosticsSummary(data);
-    const quizContentIssue = inspectQuizContentForBlockingIssue(data);
-    if (quizContentIssue.blocked) {
-      state.quiz = null;
-      state.answers = [];
-      showToast(quizContentIssue.message || '题库正在修复，请稍后再试或换一套', 'info');
-      return;
-    }
     if (data.warning) showToast(data.warning, 'info');
-    state.quiz = data;
-    state.currentQuestion = 0;
-    state.answers = new Array(data.questions.length).fill(null);
-    saveQuizDraft();
-    navigateTo('quiz');
-    renderQuestion(0);
+    await enterFormalQuiz(data);
   } catch(e) {
     if (e.code === 'QUESTION_CACHE_NOT_READY') {
-      requestQuestionCacheRebuild(state.user);
-      renderQuizCacheReadinessFromDiagnostics(e.diagnostics);
+      await recoverQuestionCacheAfterQuizFailure(e.diagnostics);
     } else if (e.code === 'QUESTION_POOL_EXHAUSTED') {
       const ready = e.diagnostics?.readyCount ?? e.diagnostics?.readyCacheCount ?? 0;
       const required = e.diagnostics?.requiredCount ?? 10;
       if (ready < required) {
-        requestQuestionCacheRebuild(state.user);
-        renderQuizCacheReadinessFromDiagnostics(e.diagnostics);
+        await recoverQuestionCacheAfterQuizFailure(e.diagnostics);
       } else {
         showQuestionPoolExhaustedDialog();
       }

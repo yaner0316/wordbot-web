@@ -18,11 +18,31 @@ const {
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
     inspectQuizContentForBlockingIssue,
+    inspectFormalQuizResponse,
     normalizeArticleContext,
     optionWord,
 } = context.WordBotQuizLogic;
 
 const escapeHtml = value => String(value);
+
+function makeFormalQuiz(overrides = {}) {
+    const questions = Array.from({ length: 10 }, (_, index) => ({
+        type: 1,
+        word: index < 2 ? 'bank' : `word-${index}`,
+        context: `Question ${index + 1} uses _____.`,
+        options: ['A. answer', 'B. option', 'C. choice', 'D. other'],
+        answer: 'A',
+        ...(index % 2 === 0
+            ? { wordId: `word-id-${index}` }
+            : { sourceRecordId: `record-id-${index}` }),
+    }));
+    return {
+        source: 'question_cache',
+        diagnostics: { fallbackUsed: false },
+        questions,
+        ...overrides,
+    };
+}
 
 test('normalizes a or an before a fill-in blank', () => {
     assert.equal(
@@ -104,6 +124,125 @@ test('allows ordinary quiz content through the frontend smoke guard', () => {
     });
 
     assert.equal(result.blocked, false);
+});
+
+test('allows exactly ten cache questions with meaning-level identifiers', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz());
+
+    assert.equal(result.blocked, false);
+});
+
+test('allows the current record_id API alias without deduplicating equal spellings', () => {
+    const questions = Array.from({ length: 10 }, (_, index) => ({
+        word: 'bank',
+        record_id: `bank-meaning-${index}`,
+    }));
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
+
+    assert.equal(result.blocked, false);
+});
+
+test('allows sourceRecordId as the formal meaning identity', () => {
+    const questions = Array.from({ length: 10 }, (_, index) => ({
+        word: 'bank',
+        sourceRecordId: `bank-meaning-${index}`,
+    }));
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
+
+    assert.equal(result.blocked, false);
+});
+
+test('accepts the real active-session DTO and wordRecordId meaning identity', () => {
+    const questions = Array.from({ length: 10 }, (_, index) => ({
+        type: 1,
+        word: index < 2 ? 'bank' : `word-${index}`,
+        wordRecordId: `meaning-${index}`,
+        cacheRecordId: `cache-${index}`,
+    }));
+    const activeSessionDto = {
+        active: true,
+        testId: 'real-student',
+        source: 'question_cache',
+        mode: 'real',
+        diagnostics: {
+            fallbackUsed: false,
+            resumed: true,
+            requiredCount: 10,
+            readyCount: questions.length,
+        },
+        questions,
+        progress: { currentQuestion: 3, answers: ['A'] },
+    };
+
+    const result = inspectFormalQuizResponse(activeSessionDto);
+    assert.equal(result.blocked, false);
+    assert.equal(result.code, '');
+    assert.equal(result.message, '');
+});
+test('rejects unsupported meaning identity aliases in a formal quiz', () => {
+    const questions = Array.from({ length: 10 }, (_, index) => ({
+        word: `word-${index}`,
+        sourceWordRecordId: `legacy-meaning-${index}`,
+    }));
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_MEANING_ID_REQUIRED');
+});
+
+test('blocks duplicate meaning ids even when the formal quiz has ten questions', () => {
+    const quiz = makeFormalQuiz();
+    quiz.questions[9].sourceRecordId = quiz.questions[0].wordId;
+    const result = inspectFormalQuizResponse(quiz);
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_MEANING_IDS_MUST_BE_UNIQUE');
+    assert.match(result.message, /\u8bcd\u4e49/);
+});
+
+test('blocks live fallback formal quiz responses with actionable recovery', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ source: 'live_fallback' }));
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_CACHE_REQUIRED');
+    assert.match(result.message, /\u8fd4\u56de\u9996\u9875/);
+    assert.match(result.message, /\u5bb6\u957f/);
+});
+
+test('blocks diagnostics-marked fallback even when the top-level source says cache', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ diagnostics: { fallbackUsed: true } }));
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_CACHE_REQUIRED');
+});
+
+test('blocks a formal cache response when diagnostics are missing', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ diagnostics: undefined }));
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_CACHE_REQUIRED');
+});
+
+test('blocks a nine-question formal set with actionable recovery', () => {
+    const quiz = makeFormalQuiz();
+    quiz.questions = quiz.questions.slice(0, 9);
+    const result = inspectFormalQuizResponse(quiz);
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_REQUIRES_TEN');
+    assert.match(result.message, /10/);
+    assert.match(result.message, /\u7a0d\u540e\u91cd\u8bd5/);
+});
+
+test('blocks a formal set when any question lacks meaning identity metadata', () => {
+    const quiz = makeFormalQuiz();
+    delete quiz.questions[4].wordId;
+    const result = inspectFormalQuizResponse(quiz);
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_MEANING_ID_REQUIRED');
+    assert.match(result.message, /\u8bcd\u4e49\u6807\u8bc6/);
+    assert.match(result.message, /\u91cd\u5efa\u9898\u5e93/);
 });
 test('formats month options as proper nouns when the option set is calendar-based', () => {
     const options = ['A. march', 'B. january', 'C. october', 'D. september'];

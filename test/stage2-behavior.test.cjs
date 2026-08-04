@@ -330,12 +330,15 @@ test('quiz blocks known dirty cache content before entering the child quiz page'
     const end = app.indexOf('function isMeaningReviewQuestion', start);
     assert.ok(start >= 0 && end > start, 'startQuiz function should exist');
     const startQuizSource = app.slice(start, end);
+    const gateSource = extractNamedFunction(app, 'enterFormalQuiz');
 
     assert.match(app, /inspectQuizContentForBlockingIssue/);
-    assert.match(startQuizSource, /inspectQuizContentForBlockingIssue\(data\)/);
-    assert.match(startQuizSource, /state\.quiz\s*=\s*null/);
-    assert.match(startQuizSource, /题库正在修复，请稍后再试或换一套/);
-    assert.ok(startQuizSource.indexOf('inspectQuizContentForBlockingIssue(data)') < startQuizSource.indexOf('state.quiz = data'));
+    assert.match(gateSource, /inspectQuizContentForBlockingIssue\(quiz\)/);
+    assert.match(gateSource, /state\.quiz\s*=\s*null/);
+    assert.match(gateSource, /题库正在修复，请稍后再试或换一套/);
+    assert.ok(gateSource.indexOf('inspectFormalQuizResponse(quiz)') < gateSource.indexOf('inspectQuizContentForBlockingIssue(quiz)'));
+    assert.ok(gateSource.indexOf('inspectQuizContentForBlockingIssue(quiz)') < gateSource.indexOf('state.quiz = quiz'));
+    assert.doesNotMatch(startQuizSource, /inspectQuizContentForBlockingIssue\(data\)/);
 });
 
 test('quiz cache-not-ready response triggers rebuild without serial preflight', () => {
@@ -345,7 +348,7 @@ test('quiz cache-not-ready response triggers rebuild without serial preflight', 
     assert.match(app, /questionCache\/rebuild/);
     assert.match(app, /error\.diagnostics\s*=\s*data\.diagnostics/);
     assert.match(startQuizMatch[0], /e\.code\s*===\s*'QUESTION_CACHE_NOT_READY'/);
-    assert.match(startQuizMatch[0], /requestQuestionCacheRebuild\(state\.user\)/);
+    assert.match(startQuizMatch[0], /await recoverQuestionCacheAfterQuizFailure\(e\.diagnostics\)/);
     assert.match(startQuizMatch[0], /readyCount/);
     assert.doesNotMatch(startQuizMatch[0], /ensureLevelCacheReadyForQuiz\(state\.user/);
     assert.match(startQuizMatch[0], /data\.level\s*===\s*state\.level\s*&&\s*data\.difficultyApplied\s*===\s*false/);
@@ -749,13 +752,18 @@ test('quiz readiness trusts eligible backend meanings and enables at ten', () =>
     const { getLevelCacheReadyCount, getQuizCacheReadiness } = loadQuizReadinessHelpers();
     const structuredStatus = {
         configured: true,
+        eligibleReadyMeanings: 10,
         byLevel: {
             '\u4e2d\u5b66': { ready: 0, total: 10, eligibleReadyMeanings: 10 },
         },
-        generation: { pending: true },
+        generation: {
+            counts: { pending: 2, retrying: 0, manualReview: 0, ready: 20 },
+            failures: [],
+        },
     };
     const legacyStatus = {
         configured: true,
+        eligibleReadyMeanings: 10,
         byLevel: {
             '\u4e2d\u5b66': { ready: 10, total: 10 },
         },
@@ -772,13 +780,18 @@ test('quiz readiness keeps building and partial caches inline and disabled', () 
     const readiness = getQuizCacheReadiness({
         configured: true,
         status: 'building',
+        eligibleReadyMeanings: 4,
         byLevel: {
             '\u4e2d\u5b66': { ready: 4, total: 10, eligibleReadyMeanings: 4 },
         },
-        generation: { pending: true },
+        generation: {
+            counts: { pending: 6, retrying: 0, manualReview: 0, ready: 8 },
+            failures: [],
+        },
     }, '\u4e2d\u5b66');
 
     assert.equal(readiness.disabled, true);
+    assert.equal(readiness.state, 'partial');
     assert.equal(readiness.buttonLabel, '\u9898\u5e93\u51c6\u5907\u4e2d');
     assert.match(readiness.detail, /\u5f53\u524d\u53ef\u6d4b\u8bd5 4 \u9898/);
     assert.match(readiness.detail, /\u6b63\u5728\u751f\u6210/);
@@ -787,28 +800,171 @@ test('quiz readiness keeps building and partial caches inline and disabled', () 
 test('quiz readiness exposes retrying and manual-review failures', () => {
     const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
     const retrying = getQuizCacheReadiness({
+        eligibleReadyMeanings: 6,
         byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 6 } },
-        generation: { retrying: true },
+        generation: {
+            retrying: true,
+            counts: { pending: 0, retrying: 4, manualReview: 0, ready: 12 },
+            failures: [],
+        },
     }, '\u4e2d\u5b66');
     const failed = getQuizCacheReadiness({
+        eligibleReadyMeanings: 6,
         byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 6 } },
         generation: {
             needsManualReview: true,
+            counts: { pending: 0, retrying: 0, manualReview: 1, ready: 12 },
+            failures: [{ wordId: 'meaning-7', lastErrorCode: 'QUALITY_REJECTED' }],
             lastError: '\u751f\u6210\u5185\u5bb9\u9700\u8981\u4eba\u5de5\u786e\u8ba4',
         },
     }, '\u4e2d\u5b66');
 
     assert.equal(retrying.disabled, true);
+    assert.equal(retrying.state, 'retrying');
     assert.match(retrying.detail, /\u6b63\u5728\u91cd\u8bd5/);
     assert.equal(failed.disabled, true);
     assert.equal(failed.canRetry, true);
+    assert.equal(failed.state, 'manual-review');
+    assert.equal(failed.action, 'rebuild');
     assert.match(failed.detail, /\u9700\u8981\u4eba\u5de5\u68c0\u67e5/);
     assert.match(failed.detail, /\u751f\u6210\u5185\u5bb9\u9700\u8981\u4eba\u5de5\u786e\u8ba4/);
+});
+
+test('ready cache rows and ready generation jobs do not count as eligible meanings', () => {
+    const { getLevelCacheReadyCount, getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const level = String.fromCharCode(0x4e2d, 0x5b66);
+    const status = {
+        configured: true,
+        eligibleReadyMeanings: 4,
+        byLevel: { [level]: { ready: 99, total: 99 } },
+        generation: {
+            counts: { pending: 0, retrying: 0, manualReview: 0, ready: 40 },
+            failures: [],
+        },
+    };
+
+    assert.equal(getLevelCacheReadyCount(status, level), 4);
+    assert.equal(getQuizCacheReadiness(status, level).disabled, true);
+});
+
+test('quiz readiness distinguishes query errors and in-progress rebuilds from manual review', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const level = String.fromCharCode(0x4e2d, 0x5b66);
+    const queryError = getQuizCacheReadiness({
+        eligibleReadyMeanings: 10,
+        queryError: 'network timeout',
+    }, level);
+    const rebuilding = getQuizCacheReadiness({
+        eligibleReadyMeanings: 10,
+        operation: 'rebuilding',
+    }, level);
+
+    assert.equal(queryError.disabled, true);
+    assert.equal(queryError.state, 'query-error');
+    assert.equal(queryError.action, 'query');
+    assert.match(queryError.detail, /network timeout/);
+    assert.equal(rebuilding.disabled, true);
+    assert.equal(rebuilding.state, 'rebuilding');
+});
+
+test('query retry and administrator rebuild render distinct actionable CTAs', () => {
+    const renderSource = extractNamedFunction(app, 'renderQuizCacheReadiness');
+    const queryRetrySource = extractNamedFunction(app, 'retryQuestionCacheStatusQuery');
+    const rebuildSource = extractNamedFunction(app, 'rebuildQuestionCachePreparation');
+
+    assert.match(renderSource, /readiness\.action\s*===\s*'query'/);
+    assert.match(renderSource, /retryQuestionCacheStatusQuery/);
+    assert.match(renderSource, /readiness\.action\s*===\s*'rebuild'/);
+    assert.match(renderSource, /rebuildQuestionCachePreparation/);
+    assert.match(queryRetrySource, /return await loadQuizCacheReadiness/);
+    assert.doesNotMatch(queryRetrySource, /requestQuestionCacheRebuild|questionCache\/rebuild/);
+    assert.match(rebuildSource, /await requestQuestionCacheRebuild/);
+    assert.match(rebuildSource, /finally\s*{/);
+    assert.match(rebuildSource, /await loadQuizCacheReadiness/);
+    assert.match(rebuildSource, /throw error/);
+});
+
+test('status query failures are query errors rather than manual-review failures', () => {
+    const loadSource = extractNamedFunction(app, 'loadQuizCacheReadiness');
+
+    assert.match(loadSource, /queryError:/);
+    assert.doesNotMatch(loadSource, /needsManualReview:\s*true/);
+});
+
+test('remote session query errors reject instead of becoming no active session', async () => {
+    const expected = new Error('session lookup failed');
+    const context = {
+        DEMO_MODE: false,
+        state: { user: 'student' },
+        api: async () => { throw expected; },
+        encodeURIComponent,
+        remoteQuizSession: { active: true, testId: 'existing' },
+        renderStudentTools() {},
+    };
+    vm.createContext(context);
+    vm.runInContext('async ' + extractNamedFunction(app, 'loadRemoteQuizSession'), context);
+
+    await assert.rejects(context.loadRemoteQuizSession('student'), /session lookup failed/);
+    assert.equal(context.remoteQuizSession.testId, 'existing');
+});
+
+test('administrator rebuild refreshes readiness after success and failure without swallowing errors', async () => {
+    const calls = [];
+    const context = {
+        DEMO_MODE: false,
+        state: {
+            user: 'student',
+            level: 'middle',
+            questionCacheStatus: { eligibleReadyMeanings: 3 },
+        },
+        renderQuizCacheReadiness(status) { calls.push(['render', status.operation]); },
+        requestQuestionCacheRebuild: async () => { calls.push(['rebuild']); },
+        loadQuizCacheReadiness: async () => { calls.push(['load']); },
+        showToast() {},
+        normalizeApiError(error) { return error; },
+    };
+    vm.createContext(context);
+    vm.runInContext('async ' + extractNamedFunction(app, 'rebuildQuestionCachePreparation'), context);
+
+    await context.rebuildQuestionCachePreparation();
+    assert.deepEqual(calls, [['render', 'rebuilding'], ['rebuild'], ['load']]);
+
+    const failure = new Error('rebuild failed');
+    calls.length = 0;
+    context.requestQuestionCacheRebuild = async () => { calls.push(['rebuild']); throw failure; };
+    await assert.rejects(context.rebuildQuestionCachePreparation(), /rebuild failed/);
+    assert.deepEqual(calls, [['render', 'rebuilding'], ['rebuild'], ['load']]);
+});
+
+test('parent rebuild refreshes parent and home readiness after success and failure', async () => {
+    const calls = [];
+    const context = {
+        DEMO_MODE: false,
+        state: { user: 'student' },
+        showLoading() {},
+        hideLoading() { calls.push('hide'); },
+        showToast() {},
+        normalizeApiError(error) { return error; },
+        requestQuestionCacheRebuild: async () => { calls.push('rebuild'); },
+        loadQuizCacheReadiness: async () => { calls.push('home-readiness'); },
+        loadParentLearningSettings: async () => { calls.push('parent-readiness'); },
+    };
+    vm.createContext(context);
+    vm.runInContext('async ' + extractNamedFunction(app, 'rebuildParentQuestionCache'), context);
+
+    await context.rebuildParentQuestionCache();
+    assert.deepEqual(calls, ['rebuild', 'home-readiness', 'parent-readiness', 'hide']);
+
+    calls.length = 0;
+    context.requestQuestionCacheRebuild = async () => { calls.push('rebuild'); throw new Error('parent rebuild failed'); };
+    await assert.rejects(context.rebuildParentQuestionCache(), /parent rebuild failed/);
+    assert.deepEqual(calls, ['rebuild', 'home-readiness', 'parent-readiness', 'hide']);
 });
 
 test('home renders cache readiness beside the start button without fixed toast gating', () => {
     const renderSource = extractNamedFunction(app, 'renderQuizCacheReadiness');
     const loadSource = extractNamedFunction(app, 'loadQuizCacheReadiness');
+    const recoverySource = extractNamedFunction(app, 'recoverQuestionCacheAfterQuizFailure');
     const startQuizSource = app.slice(
         app.indexOf('async function startQuiz()'),
         app.indexOf('function isMeaningReviewQuestion')
@@ -817,10 +973,11 @@ test('home renders cache readiness beside the start button without fixed toast g
     assert.match(renderSource, /home-primary-cta/);
     assert.match(renderSource, /quiz-readiness-inline/);
     assert.match(renderSource, /button\.disabled\s*=\s*readiness\.disabled/);
-    assert.match(renderSource, /retryQuestionCachePreparation/);
+    assert.match(renderSource, /retryQuestionCacheStatusQuery/);
+    assert.match(renderSource, /rebuildQuestionCachePreparation/);
     assert.match(loadSource, /questionCache\/status/);
     assert.doesNotMatch(loadSource, /showToast/);
-    assert.match(startQuizSource, /renderQuizCacheReadiness/);
+    assert.match(recoverySource, /renderQuizCacheReadinessFromDiagnostics/);
     assert.doesNotMatch(
         startQuizSource.match(/if \(e\.code === 'QUESTION_CACHE_NOT_READY'\)[\s\S]*?} else if/)?.[0] || '',
         /showToast/
@@ -829,6 +986,105 @@ test('home renders cache readiness beside the start button without fixed toast g
     assert.match(styles, /\.home-primary-cta:disabled/);
 });
 
+test('formal quiz contract is checked before entering the answer flow', () => {
+    const startQuizSource = app.slice(
+        app.indexOf('async function startQuiz()'),
+        app.indexOf('function isMeaningReviewQuestion')
+    );
+    const gateSource = extractNamedFunction(app, 'enterFormalQuiz');
+    const guardIndex = gateSource.indexOf('inspectFormalQuizResponse(quiz)');
+    const assignmentIndex = gateSource.indexOf('state.quiz = quiz');
+    const navigationIndex = gateSource.indexOf('navigateTo', guardIndex);
+
+    assert.ok(guardIndex >= 0, 'formal quiz response guard should run');
+    assert.ok(guardIndex < assignmentIndex, 'guard should run before quiz state assignment');
+    assert.ok(guardIndex < navigationIndex, 'guard should run before quiz navigation');
+    assert.match(gateSource, /if \(formalQuizIssue\.blocked\)/);
+    assert.match(gateSource, /await recoverFromFormalQuizBlock/);
+    assert.match(gateSource, /return false/);
+    assert.match(startQuizSource, /await enterFormalQuiz\(data/);
+});
+
+test('formal quiz identity validation never uses English spelling deduplication', () => {
+    const formalGuardSource = extractNamedFunction(quizLogic, 'inspectFormalQuizResponse');
+    const identitySource = extractNamedFunction(quizLogic, 'getQuestionMeaningId');
+
+    assert.match(identitySource, /wordId/);
+    assert.match(identitySource, /sourceRecordId/);
+    assert.match(identitySource, /wordRecordId/);
+    assert.doesNotMatch(identitySource, /sourceWordRecordId|word_id|source_word_record_id/);
+    assert.doesNotMatch(formalGuardSource + identitySource, /question\?\.word\b|\.spelling\b|new Set/);
+});
+
+test('new, local-draft, and remote formal quiz entries share one async gate', () => {
+    const gateSource = extractNamedFunction(app, 'enterFormalQuiz');
+    const startSource = extractNamedFunction(app, 'startQuiz');
+    const localRestoreSource = extractNamedFunction(app, 'restoreQuizDraft');
+    const remoteRestoreSource = extractNamedFunction(app, 'restoreRemoteQuizSession');
+
+    assert.match(gateSource, /inspectFormalQuizResponse\(quiz\)/);
+    assert.match(gateSource, /await recoverFromFormalQuizBlock/);
+    assert.match(startSource, /await enterFormalQuiz\(data/);
+    assert.match(localRestoreSource, /return await enterFormalQuiz\(saved\.quiz/);
+    assert.match(remoteRestoreSource, /return await enterFormalQuiz\(quiz/);
+});
+
+test('remote formal quiz restoration preserves source and diagnostics for the shared gate', () => {
+    const remoteRestoreSource = extractNamedFunction(app, 'restoreRemoteQuizSession');
+
+    assert.match(remoteRestoreSource, /source:\s*saved\.source/);
+    assert.match(remoteRestoreSource, /diagnostics:\s*saved\.diagnostics/);
+    assert.ok(
+        remoteRestoreSource.indexOf('source: saved.source') < remoteRestoreSource.indexOf('enterFormalQuiz(quiz'),
+        'remote metadata must be retained before the shared gate runs'
+    );
+});
+
+test('formal guard recovery is awaited, observable, and refreshes readiness after rebuild settles', () => {
+    const recoverySource = extractNamedFunction(app, 'recoverFromFormalQuizBlock');
+
+    assert.match(recoverySource, /renderQuizCacheReadiness/);
+    assert.match(recoverySource, /operation:\s*'rebuilding'/);
+    assert.match(recoverySource, /await requestQuestionCacheRebuild/);
+    assert.match(recoverySource, /finally\s*{/);
+    assert.match(recoverySource, /await loadQuizCacheReadiness/);
+});
+
+test('quiz-generation recovery paths await one observable rebuild helper', async () => {
+    const helperSource = extractNamedFunction(app, 'recoverQuestionCacheAfterQuizFailure');
+    const startQuizSource = extractNamedFunction(app, 'startQuiz');
+    const calls = [];
+    const context = {
+        state: { user: 'student' },
+        renderQuizCacheReadinessFromDiagnostics(diagnostics) { calls.push(['render', diagnostics]); },
+        requestQuestionCacheRebuild: async () => { calls.push(['rebuild']); },
+        loadQuizCacheReadiness: async () => { calls.push(['readiness']); },
+        showToast(message, type) { calls.push(['toast', message, type]); },
+        normalizeApiError(error) { return error; },
+    };
+    vm.createContext(context);
+    vm.runInContext('async ' + helperSource, context);
+
+    await context.recoverQuestionCacheAfterQuizFailure({ readyCount: 2 });
+    assert.deepEqual(calls, [
+        ['render', { readyCount: 2 }],
+        ['rebuild'],
+        ['readiness'],
+    ]);
+
+    calls.length = 0;
+    context.requestQuestionCacheRebuild = async () => { calls.push(['rebuild']); throw new Error('worker unavailable'); };
+    await context.recoverQuestionCacheAfterQuizFailure({ readyCount: 2 });
+    assert.deepEqual(calls, [
+        ['render', { readyCount: 2 }],
+        ['rebuild'],
+        ['toast', '题库恢复失败：worker unavailable。请稍后重试，或请家长在设置中重建题库。', 'error'],
+        ['readiness'],
+    ]);
+
+    assert.equal((startQuizSource.match(/await recoverQuestionCacheAfterQuizFailure\(/g) || []).length, 3);
+    assert.doesNotMatch(startQuizSource, /(?<!await )requestQuestionCacheRebuild\(state\.user\)/);
+});
 test('frontend quiz readiness does not deduplicate words by spelling', () => {
     const source = [
         extractNamedFunction(app, 'getLevelCacheReadyCount'),
@@ -836,4 +1092,32 @@ test('frontend quiz readiness does not deduplicate words by spelling', () => {
     ].join('\n');
 
     assert.doesNotMatch(source, /\bSet\b|word_id|spelling/);
+});
+
+
+test('selected-level readiness cannot be enabled by another level or the scalar fallback', () => {
+    const { getLevelCacheReadyCount, getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const middle = String.fromCharCode(0x4e2d, 0x5b66);
+    const high = String.fromCharCode(0x9ad8, 0x4e2d);
+    const status = {
+        configured: true,
+        eligibleReadyMeanings: 99,
+        eligibleReadyMeaningsByLevel: {
+            [middle]: 0,
+            [high]: 12,
+        },
+    };
+
+    assert.equal(getLevelCacheReadyCount(status, middle), 0);
+    assert.equal(getQuizCacheReadiness(status, middle).disabled, true);
+    assert.equal(getLevelCacheReadyCount(status, high), 12);
+});
+
+test('learning-level save awaits rebuild and refreshes home and parent readiness in finally', () => {
+    const source = extractNamedFunction(app, 'saveParentLearningSettings');
+
+    assert.match(source, /await requestQuestionCacheRebuild\(state\.user\)/);
+    assert.match(source, /catch\s*\(rebuildError\)/);
+    assert.match(source, /finally\s*\{[\s\S]*loadQuizCacheReadiness\(state\.user\)/);
+    assert.match(source, /finally\s*\{[\s\S]*loadParentLearningSettings\(\)/);
 });

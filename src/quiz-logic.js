@@ -83,6 +83,59 @@
   const dirtyPlaceholderStem = 'the student wrote _____ in the sentence.';
   const dirtyOptionWords = new Set(['genaine']);
   const repeatedDistractorSmokeWords = new Set(['bomb', 'crowded', 'genaine']);
+  const formalQuizQuestionCount = 10;
+
+  function getQuestionMeaningId(question) {
+    return String(
+      question?.wordId ||
+      question?.wordRecordId ||
+      question?.sourceRecordId ||
+      question?.record_id ||
+      ''
+    ).trim();
+  }
+
+  function inspectFormalQuizResponse(quiz) {
+    if (quiz?.source !== 'question_cache' || quiz?.diagnostics?.fallbackUsed !== false) {
+      return {
+        blocked: true,
+        code: 'FORMAL_QUIZ_CACHE_REQUIRED',
+        message: '\u8fd9\u5957\u6b63\u5f0f\u9898\u4e0d\u662f\u5b8c\u6574\u7684\u9884\u751f\u6210\u9898\u5e93\u5185\u5bb9\uff0c\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\uff1b\u82e5\u6301\u7eed\u51fa\u73b0\uff0c\u8bf7\u8ba9\u5bb6\u957f\u91cd\u5efa\u9898\u5e93\u3002',
+      };
+    }
+
+    const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
+    if (questions.length !== formalQuizQuestionCount) {
+      return {
+        blocked: true,
+        code: 'FORMAL_QUIZ_REQUIRES_TEN',
+        message: `\u6b63\u5f0f\u6d4b\u8bd5\u9700\u8981\u5b8c\u6574 ${formalQuizQuestionCount} \u9898\uff0c\u5f53\u524d\u9898\u5e93\u5c1a\u672a\u51c6\u5907\u597d\u3002\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\uff1b\u82e5\u6301\u7eed\u51fa\u73b0\uff0c\u8bf7\u8ba9\u5bb6\u957f\u91cd\u5efa\u9898\u5e93\u3002`,
+      };
+    }
+
+    const meaningIds = questions.map(getQuestionMeaningId);
+    if (meaningIds.some(meaningId => !meaningId)) {
+      return {
+        blocked: true,
+        code: 'FORMAL_QUIZ_MEANING_ID_REQUIRED',
+        message: '\u9898\u76ee\u7f3a\u5c11\u8bcd\u4e49\u6807\u8bc6\uff0c\u6682\u4e0d\u80fd\u5f00\u59cb\u6b63\u5f0f\u6d4b\u8bd5\u3002\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\uff1b\u82e5\u6301\u7eed\u51fa\u73b0\uff0c\u8bf7\u8ba9\u5bb6\u957f\u91cd\u5efa\u9898\u5e93\u3002',
+      };
+    }
+
+    const seenMeaningIds = new Map();
+    for (const meaningId of meaningIds) {
+      if (seenMeaningIds.has(meaningId)) {
+        return {
+          blocked: true,
+          code: 'FORMAL_QUIZ_MEANING_IDS_MUST_BE_UNIQUE',
+          message: '这套正式测试含有重复词义，暂不能开始。请返回首页稍后重试；若持续出现，请让家长重建题库。',
+        };
+      }
+      seenMeaningIds.set(meaningId, true);
+    }
+
+    return { blocked: false, code: '', message: '' };
+  }
 
   function inspectQuizContentForBlockingIssue(quiz) {
     const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
@@ -169,7 +222,9 @@
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
+    getQuestionMeaningId,
     inspectQuizContentForBlockingIssue,
+    inspectFormalQuizResponse,
     normalizeArticleContext,
     optionWord,
   };

@@ -10,7 +10,25 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run Web tests
+        run: node --test test/submission-guard.test.cjs test/stage2-behavior.test.cjs test/review-flow.test.cjs test/quiz-logic.test.cjs
+
+      - name: Check Web JavaScript syntax
+        run: node --check src/app.js && node --check src/quiz-logic.js
+
       - name: Trigger Render deploy hook
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
