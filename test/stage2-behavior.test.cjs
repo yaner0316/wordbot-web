@@ -264,7 +264,28 @@ test('home load skips the unused all-users request for faster startup', () => {
     const loadHomeMatch = app.match(/async function loadHome\(\) \{[\s\S]*?\n\}/);
     assert.ok(loadHomeMatch, 'loadHome function should exist');
     assert.doesNotMatch(loadHomeMatch[0], /\/api\/admin\/users/);
-    assert.match(loadHomeMatch[0], /loadStats\(state\.user\)/);
+    assert.match(loadHomeMatch[0], /loadStats\(state\.user,\s*\{\s*showOverlay:\s*false\s*\}\)/);
+});
+
+test('login home becomes interactive before stats, cache, and session finish loading', () => {
+    const loginSource = extractNamedFunction(app, 'loginAs');
+    const homeSource = extractNamedFunction(app, 'loadHome');
+
+    assert.doesNotMatch(homeSource, /showLoading\(/);
+    assert.match(homeSource, /loadStats\(state\.user,\s*\{\s*showOverlay:\s*false\s*\}\)/);
+    assert.match(homeSource, /loadQuizCacheReadiness\(state\.user\)/);
+    assert.match(homeSource, /loadRemoteQuizSession\(state\.user\)/);
+    assert.match(loginSource, /showAppPage\(\);[\s\S]*loadHome\(\)/);
+    assert.doesNotMatch(loginSource, /await\s+loadHome\(/);
+});
+
+test('loadStats keeps the full-screen loading overlay by default', () => {
+    const statsStart = app.indexOf('async function loadStats');
+    const statsSource = app.slice(statsStart, app.indexOf('// ========== Quiz', statsStart));
+
+    assert.match(statsSource, /function loadStats\(user,\s*\{\s*showOverlay\s*=\s*true\s*\}\s*=\s*\{\}\)/);
+    assert.match(statsSource, /if\s*\(showOverlay\)\s*showLoading\(/);
+    assert.match(statsSource, /if\s*\(showOverlay\)\s*hideLoading\(/);
 });
 
 test('learning settings save asks the backend to keep rebuilding automatically', () => {

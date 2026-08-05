@@ -1590,35 +1590,24 @@ async function loadHome() {
     showLoginPage();
     return;
   }
-  showLoading('加载用户数据...');
+  state.users = [state.user];
+  renderUsers(state.users);
+  renderStudentTools();
   try {
-    if (DEMO_MODE) {
-      state.users = [state.user];
-      renderUsers(state.users);
-      renderStudentTools();
-      await Promise.all([
-        loadStats(state.user),
-        loadQuizCacheReadiness(state.user),
-      ]);
-      showToast('当前为演示模式，数据不会写入服务器', 'info');
-      hideLoading();
-      return;
-    }
-    state.users = [state.user];
-    renderUsers(state.users);
-    renderStudentTools();
     await Promise.all([
-      loadStats(state.user),
+      loadStats(state.user, { showOverlay: false }),
       loadQuizCacheReadiness(state.user),
     ]);
+    if (DEMO_MODE) {
+      showToast('当前为演示模式，数据不会写入服务器', 'info');
+      return;
+    }
     await loadRemoteQuizSession(state.user);
   } catch(e) {
     showToast('加载用户失败: ' + e.message, 'error');
     $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">后端连接异常，当前仅可查看登录后的本地预览</div>';
   }
-  hideLoading();
 }
-
 // 清理测试数据确认
 function showCleanupConfirm() {
   const user = state.user;
@@ -2537,9 +2526,9 @@ async function rebuildParentQuestionCache() {
   }
 }
 
-async function loadStats(user) {
+async function loadStats(user, { showOverlay = true } = {}) {
   if (!user) return;
-  showLoading('加载统计...');
+  if (showOverlay) showLoading('加载统计...');
   try {
     const data = DEMO_MODE
       ? generateDemoStats(user)
@@ -2593,8 +2582,9 @@ async function loadStats(user) {
     `;
   } catch(e) {
     showToast('加载统计失败: ' + e.message, 'error');
+  } finally {
+    if (showOverlay) hideLoading();
   }
-  hideLoading();
 }
 // ========== Quiz ==========
 async function startQuiz() {
