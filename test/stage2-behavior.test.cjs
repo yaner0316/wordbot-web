@@ -799,7 +799,7 @@ test('quiz readiness trusts eligible backend meanings and enables at ten', () =>
     assert.equal(getLevelCacheReadyCount(legacyStatus, '\u4e2d\u5b66'), 10);
 });
 
-test('quiz readiness keeps building and partial caches inline and disabled', () => {
+test('quiz readiness allows a partial cache to start while it is still building', () => {
     const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
     const readiness = getQuizCacheReadiness({
         configured: true,
@@ -814,9 +814,9 @@ test('quiz readiness keeps building and partial caches inline and disabled', () 
         },
     }, '\u4e2d\u5b66');
 
-    assert.equal(readiness.disabled, true);
-    assert.equal(readiness.state, 'partial');
-    assert.equal(readiness.buttonLabel, '\u9898\u5e93\u51c6\u5907\u4e2d');
+    assert.equal(readiness.disabled, false);
+    assert.equal(readiness.state, 'ready');
+    assert.equal(readiness.buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
     assert.match(readiness.detail, /\u5f53\u524d\u53ef\u6d4b\u8bd5 4 \u9898/);
     assert.match(readiness.detail, /\u6b63\u5728\u751f\u6210/);
 });
@@ -832,9 +832,14 @@ test('quiz readiness exposes retrying and manual-review failures', () => {
             failures: [],
         },
     }, '\u4e2d\u5b66');
+    assert.equal(retrying.disabled, false);
+    assert.equal(retrying.state, 'ready');
+    assert.equal(retrying.buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
+    assert.match(retrying.detail, /\u6b63\u5728\u91cd\u8bd5/);
+
     const failed = getQuizCacheReadiness({
-        eligibleReadyMeanings: 6,
-        byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 6 } },
+        eligibleReadyMeanings: 0,
+        byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 0 } },
         generation: {
             needsManualReview: true,
             counts: { pending: 0, retrying: 0, manualReview: 1, ready: 12 },
@@ -843,9 +848,6 @@ test('quiz readiness exposes retrying and manual-review failures', () => {
         },
     }, '\u4e2d\u5b66');
 
-    assert.equal(retrying.disabled, true);
-    assert.equal(retrying.state, 'retrying');
-    assert.match(retrying.detail, /\u6b63\u5728\u91cd\u8bd5/);
     assert.equal(failed.disabled, true);
     assert.equal(failed.canRetry, true);
     assert.equal(failed.state, 'manual-review');
@@ -868,18 +870,18 @@ test('ready cache rows and ready generation jobs do not count as eligible meanin
     };
 
     assert.equal(getLevelCacheReadyCount(status, level), 4);
-    assert.equal(getQuizCacheReadiness(status, level).disabled, true);
+    assert.equal(getQuizCacheReadiness(status, level).disabled, false);
 });
 
 test('quiz readiness distinguishes query errors and in-progress rebuilds from manual review', () => {
     const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
     const level = String.fromCharCode(0x4e2d, 0x5b66);
     const queryError = getQuizCacheReadiness({
-        eligibleReadyMeanings: 10,
+        eligibleReadyMeanings: 0,
         queryError: 'network timeout',
     }, level);
     const rebuilding = getQuizCacheReadiness({
-        eligibleReadyMeanings: 10,
+        eligibleReadyMeanings: 0,
         operation: 'rebuilding',
     }, level);
 
@@ -889,6 +891,17 @@ test('quiz readiness distinguishes query errors and in-progress rebuilds from ma
     assert.match(queryError.detail, /network timeout/);
     assert.equal(rebuilding.disabled, true);
     assert.equal(rebuilding.state, 'rebuilding');
+});
+
+test('partial quiz results use the actual total and do not show ten-question reward promises', () => {
+    const start = app.indexOf('function renderResults(data)');
+    const end = app.indexOf('function toggleAnalysis()', start);
+    assert.ok(start >= 0 && end > start, 'renderResults function should exist');
+    const renderResultsSource = app.slice(start, end);
+
+    assert.match(renderResultsSource, /const \{ correct, total, accuracy, masteredWords \} = data;/);
+    assert.match(renderResultsSource, /data\.results\.forEach\(\(r, i\) =>/);
+    assert.match(renderResultsSource, /reward\?\.eligible && total >= 10 && state\.session\.kind === 'quiz'/);
 });
 
 test('query retry and administrator rebuild render distinct actionable CTAs', () => {

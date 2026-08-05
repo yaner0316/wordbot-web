@@ -1180,12 +1180,13 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
     };
   }
 
-  if (readyCount >= requiredCount) {
+  if (readyCount > 0) {
+    const progressText = retrying ? '\u6b63\u5728\u91cd\u8bd5' : (pending ? '\u6b63\u5728\u751f\u6210' : '');
     return {
       readyCount,
       disabled: false,
       buttonLabel: '\u5f00\u59cb\u6d4b\u8bd5',
-      detail: countText,
+      detail: progressText ? `${countText} \u00b7 ${progressText}` : countText,
       state: 'ready',
       action: null,
       canRetry: false,
@@ -2961,7 +2962,7 @@ function renderResults(data) {
   state.session.analysisViewed = _showAnalysis;
   const reward = data.gameReward;
   const animalGardenHtml = buildAnimalGardenRewardHtml(data.rewardSummary);
-  const rewardHtml = reward?.eligible && state.session.kind === 'quiz'
+  const rewardHtml = reward?.eligible && total >= 10 && state.session.kind === 'quiz'
     ? `<div class="game-reward-card">
         <div class="game-reward-icon">🎮</div>
         <div>

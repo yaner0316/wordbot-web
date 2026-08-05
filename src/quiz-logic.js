@@ -105,7 +105,7 @@
     }
 
     const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
-    if (questions.length !== formalQuizQuestionCount) {
+    if (questions.length < 1 || questions.length > formalQuizQuestionCount || (questions.length !== formalQuizQuestionCount && quiz?.partialFormalChallenge !== true)) {
       return {
         blocked: true,
         code: 'FORMAL_QUIZ_REQUIRES_TEN',

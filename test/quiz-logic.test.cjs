@@ -132,6 +132,34 @@ test('allows exactly ten cache questions with meaning-level identifiers', () => 
     assert.equal(result.blocked, false);
 });
 
+test('allows an explicitly marked partial cache challenge with one to nine questions', () => {
+    for (const questionCount of [1, 9]) {
+        const quiz = makeFormalQuiz({
+            partialFormalChallenge: true,
+            diagnostics: {
+                fallbackUsed: false,
+                readyCount: questionCount,
+                requiredCount: 10,
+            },
+        });
+        quiz.questions = quiz.questions.slice(0, questionCount);
+
+        const result = inspectFormalQuizResponse(quiz);
+
+        assert.equal(result.blocked, false, 'expected ' + questionCount + ' questions to be allowed');
+    }
+});
+
+test('still rejects an empty explicitly marked partial cache challenge', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz({
+        partialFormalChallenge: true,
+        questions: [],
+    }));
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_REQUIRES_TEN');
+});
+
 test('allows the current record_id API alias without deduplicating equal spellings', () => {
     const questions = Array.from({ length: 10 }, (_, index) => ({
         word: 'bank',
