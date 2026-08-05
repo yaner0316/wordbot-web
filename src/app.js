@@ -1690,6 +1690,7 @@ async function restoreRemoteQuizSession() {
     level: saved.level || state.level,
     source: saved.source,
     diagnostics: saved.diagnostics,
+    partialFormalChallenge: saved.partialFormalChallenge,
     questions: saved.questions,
   };
   remoteQuizSession = null;

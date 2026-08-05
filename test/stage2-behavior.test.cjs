@@ -1066,11 +1066,12 @@ test('new, local-draft, and remote formal quiz entries share one async gate', ()
     assert.match(remoteRestoreSource, /return await enterFormalQuiz\(quiz/);
 });
 
-test('remote formal quiz restoration preserves source and diagnostics for the shared gate', () => {
+test('remote formal quiz restoration preserves cache contract metadata for the shared gate', () => {
     const remoteRestoreSource = extractNamedFunction(app, 'restoreRemoteQuizSession');
 
     assert.match(remoteRestoreSource, /source:\s*saved\.source/);
     assert.match(remoteRestoreSource, /diagnostics:\s*saved\.diagnostics/);
+    assert.match(remoteRestoreSource, /partialFormalChallenge:\s*saved\.partialFormalChallenge/);
     assert.ok(
         remoteRestoreSource.indexOf('source: saved.source') < remoteRestoreSource.indexOf('enterFormalQuiz(quiz'),
         'remote metadata must be retained before the shared gate runs'
