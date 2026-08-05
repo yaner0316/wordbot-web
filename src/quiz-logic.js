@@ -168,6 +168,13 @@
 
     return { blocked: false, message: '' };
   }
+
+  function buildContextTranslationHtml(question, escapeHtml) {
+    const contextCN = String(question?.contextCN || '').trim();
+    if (!contextCN) return '';
+    const escape = escapeHtml || (value => String(value ?? ''));
+    return `<div class="opt-translation">${escape(contextCN)}</div>`;
+  }
   function buildOptionMeaningsExplanation(question, escapeHtml) {
     if (!question?.options?.length) return '';
     const escape = escapeHtml || (value => String(value ?? ''));
@@ -218,6 +225,7 @@
 
   return {
     adaptDemoContextByLevel,
+    buildContextTranslationHtml,
     buildOptionMeaningsExplanation,
     buildQuestionExplanation,
     buildMeaningReviewExplanation,

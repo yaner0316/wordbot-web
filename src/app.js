@@ -1,6 +1,7 @@
 // ========== State ==========
 const {
   adaptDemoContextByLevel,
+  buildContextTranslationHtml,
   buildOptionMeaningsExplanation,
   buildQuestionExplanation,
   buildMeaningReviewExplanation,
@@ -2992,10 +2993,6 @@ function renderResults(data) {
       } else if (q?.type === 3 && q?.context) {
         contextDisplay = '🌐 ' + escapeHtml(q.context);
       }
-      if (!isMeaningReview) {
-        explanationHtml = buildOptionMeaningsExplanation(q, escapeHtml)
-          + buildQuestionExplanation(q, r, escapeHtml);
-      }
 
       // 构建选项列表
       let optionsHtml = '';
@@ -3016,7 +3013,8 @@ function renderResults(data) {
           else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">你的选择</span>';
           const rawWord = String(opt).replace(/^[A-D]\.\s*/, '');
           const displayWord = formatOptionDisplayText(rawWord, q.options, q);
-          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}</div>`;
+          const translationHtml = isCorrect ? buildContextTranslationHtml(q, escapeHtml) : '';
+          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}${translationHtml}</div>`;
         }).join('');
       } else {
         optionsHtml = `<div style="color:#999;font-size:13px;padding:8px 0;">选项未保存（历史记录）</div>`;
@@ -3043,10 +3041,10 @@ function renderResults(data) {
             ${optionsHtml}
           </div>
 
-          <div class="explain-box">
+          ${isMeaningReview ? `<div class="explain-box">
             <div class="explain-label">解析：</div>
             ${explanationHtml}
-          </div>
+          </div>` : ''}
         </div>
       `;
     });

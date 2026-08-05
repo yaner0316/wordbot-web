@@ -192,13 +192,16 @@ test('answer analysis explains the concrete question and compares a wrong choice
     assert.match(quizLogic, /与本题给出的语境或释义不匹配/);
 });
 
-test('answer analysis lists Chinese meanings for all options before the reasoning', () => {
-    assert.match(quizLogic, /function buildOptionMeaningsExplanation/);
-    assert.match(quizLogic, /question\.optionMeanings/);
-    assert.match(
-        app,
-        /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)[\s\S]*buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/
-    );
+test('ordinary results use only the stored context translation in the correct option', () => {
+    const start = app.indexOf('function renderResults(data)');
+    const end = app.indexOf('function toggleAnalysis()', start);
+    assert.ok(start >= 0 && end > start, 'renderResults function should exist');
+    const renderResultsSource = app.slice(start, end);
+    assert.match(quizLogic, /function buildContextTranslationHtml/);
+    assert.match(renderResultsSource, /const translationHtml = isCorrect\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.doesNotMatch(renderResultsSource, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
+    assert.doesNotMatch(renderResultsSource, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
+    assert.match(renderResultsSource, /\$\{isMeaningReview \? `<div class="explain-box">/);
 });
 
 

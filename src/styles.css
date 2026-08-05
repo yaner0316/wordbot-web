@@ -800,7 +800,7 @@
     .result-analysis-card .opts-label { font-weight: 600; color: var(--text); font-size: 12px; margin-bottom: 4px; }
     .result-analysis-card .opt-item {
       font-size: 14px; padding: 5px 10px; margin: 2px 0; border-radius: 6px;
-      display: flex; align-items: center; gap: 6px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
     .result-analysis-card .opt-correct { background: #E8F5E9; color: #2E7D32; font-weight: 600; }
     .result-analysis-card .opt-wrong { background: #FFEBEE; color: #C62828; }
@@ -809,6 +809,9 @@
     }
     .result-analysis-card .opt-tag.tag-correct { background: #C8E6C9; color: #1B5E20; }
     .result-analysis-card .opt-tag.tag-wrong { background: #FFCDD2; color: #B71C1C; }
+    .result-analysis-card .opt-translation {
+      flex-basis: 100%; margin: 4px 0 0 22px; color: #2E7D32; font-size: 13px; font-weight: 400; line-height: 1.5;
+    }
     .result-analysis-card .explain-box {
       margin-top: 6px; padding: 8px 10px; background: #FFF8E1; border-radius: 8px;
     }
