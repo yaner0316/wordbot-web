@@ -1191,3 +1191,7 @@ test('learning-level save awaits rebuild and refreshes home and parent readiness
     assert.match(source, /finally\s*\{[\s\S]*loadQuizCacheReadiness\(state\.user\)/);
     assert.match(source, /finally\s*\{[\s\S]*loadParentLearningSettings\(\)/);
 });
+
+test('orphan parent delete modal is not rendered without an implemented delete flow', () => {
+    assert.doesNotMatch(html, /parentWordDeleteModal|closeParentWordDeleteConfirm|confirmParentWordDelete/);
+});
