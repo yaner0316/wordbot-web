@@ -1062,8 +1062,40 @@ test('new, local-draft, and remote formal quiz entries share one async gate', ()
     assert.match(gateSource, /inspectFormalQuizResponse\(quiz\)/);
     assert.match(gateSource, /await recoverFromFormalQuizBlock/);
     assert.match(startSource, /await enterFormalQuiz\(data/);
-    assert.match(localRestoreSource, /return await enterFormalQuiz\(saved\.quiz/);
+    assert.match(localRestoreSource, /await enterFormalQuiz\(saved\.quiz/);
     assert.match(remoteRestoreSource, /return await enterFormalQuiz\(quiz/);
+});
+
+test('invalid local quiz draft is removed and student tools refresh after formal entry is rejected', async () => {
+    const removedKeys = [];
+    let refreshes = 0;
+    const storage = new Map([
+        ['wordbot:active-quiz:qiuqiu', JSON.stringify({
+            quiz: { questions: [{ id: 'legacy-question' }] },
+        })],
+    ]);
+    const context = {
+        state: { user: 'qiuqiu' },
+        activeQuizKey(user) { return `wordbot:active-quiz:${user}`; },
+        localStorage: {
+            getItem(key) { return storage.get(key) || null; },
+            removeItem(key) {
+                removedKeys.push(key);
+                storage.delete(key);
+            },
+        },
+        enterFormalQuiz: async () => false,
+        renderStudentTools() { refreshes += 1; },
+    };
+    vm.createContext(context);
+    vm.runInContext('async ' + extractNamedFunction(app, 'restoreQuizDraft'), context);
+
+    const restored = await context.restoreQuizDraft();
+
+    assert.equal(restored, false);
+    assert.deepEqual(removedKeys, ['wordbot:active-quiz:qiuqiu']);
+    assert.equal(refreshes, 1);
+    assert.equal(storage.has('wordbot:active-quiz:qiuqiu'), false);
 });
 
 test('remote formal quiz restoration preserves cache contract metadata for the shared gate', () => {

@@ -1465,11 +1465,16 @@ async function restoreQuizDraft(user = state.user) {
     return false;
   }
   if (!saved?.quiz?.questions?.length || saved.quiz.result) return false;
-  return await enterFormalQuiz(saved.quiz, {
+  const restored = await enterFormalQuiz(saved.quiz, {
     session: saved.session || { kind: 'quiz' },
     currentQuestion: saved.currentQuestion,
     answers: saved.answers,
   });
+  if (!restored) {
+    localStorage.removeItem(activeQuizKey(user));
+    renderStudentTools();
+  }
+  return restored;
 }
 
 let remoteProgressSaveToken = 0;
