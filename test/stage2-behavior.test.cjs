@@ -1195,3 +1195,8 @@ test('learning-level save awaits rebuild and refreshes home and parent readiness
 test('orphan parent delete modal is not rendered without an implemented delete flow', () => {
     assert.doesNotMatch(html, /parentWordDeleteModal|closeParentWordDeleteConfirm|confirmParentWordDelete/);
 });
+
+test('empty quiz resume uses a clean Chinese status message', () => {
+    const resumeSource = extractNamedFunction(app, 'handleContinueQuizEntry');
+    assert.match(resumeSource, /\u6682\u65e0\u672a\u5b8c\u6210\u8003\u6838/);
+});

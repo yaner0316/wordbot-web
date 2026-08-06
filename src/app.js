@@ -1718,7 +1718,7 @@ async function handleContinueQuizEntry() {
     }
   }
   if (await restoreRemoteQuizSession()) return true;
-  showToast('鏆傛棤鏈畢鎴愯€冩牳', 'info');
+  showToast('暂无未完成考核', 'info');
   renderStudentTools();
   return false;
 }
