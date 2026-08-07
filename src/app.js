@@ -6,6 +6,7 @@ const {
   buildQuestionExplanation,
   buildMeaningReviewExplanation,
   formatOptionDisplayText,
+  normalizeApiPayload,
   inspectQuizContentForBlockingIssue,
   inspectFormalQuizResponse,
   normalizeArticleContext,
@@ -135,7 +136,7 @@ function generateDemoQuiz(level) {
       const optionInfo = DEMO_WORDS.find(item => item.word === optionWord);
       return optionInfo?.cn || '中文释义补充失败';
     });
-    return { type, word: w.word, context, options: opts.map((o, i) => `${letters[i]}. ${o}`), optionMeanings, answer: letters[correctIdx], _correctIdx: correctIdx };
+    return { type, word: w.word, meaningId: `demo:${w.word}:${i}`, context, options: opts.map((o, i) => `${letters[i]}. ${o}`), optionMeanings, answer: letters[correctIdx], _correctIdx: correctIdx };
   });
   return { testId: 'DEMO-' + Date.now().toString(36), questions };
 }
@@ -858,7 +859,7 @@ async function api(path, opts = {}) {
       error.missingWords = data.missingWords;
       throw error;
     }
-    return data;
+    return normalizeApiPayload(data);
   } catch (error) {
     throw error;
   } finally {
@@ -1013,7 +1014,7 @@ function loginAs(user) {
 }
 
 function logout() {
-  clearQuizDraft();
+  clearAllQuizDrafts();
   clearSessionUser();
   state.user = null;
   state.quiz = null;
@@ -1156,31 +1157,34 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
     || ['building', 'pending'].includes(rawStatus);
   const countText = `\u5f53\u524d\u53ef\u6d4b\u8bd5 ${readyCount} \u9898`;
 
-  if (status?.operation === 'rebuilding') {
+  const remainingQuestionCount = Math.max(0, requiredCount - readyCount);
+  const canStartTestQuiz = state.mode === 'test' && readyCount > 0;
+
+  if (!canStartTestQuiz && status?.operation === 'rebuilding' && readyCount < requiredCount) {
     return {
       readyCount,
       disabled: true,
       buttonLabel: '\u9898\u5e93\u6062\u590d\u4e2d',
-      detail: `${countText} \u00b7 \u6b63\u5728\u91cd\u5efa\u9898\u5e93`,
+      detail: `${countText} \u00b7 \u8fd8\u9700\u51c6\u5907 ${remainingQuestionCount} \u9898 \u00b7 \u6b63\u5728\u91cd\u5efa\u9898\u5e93`,
       state: 'rebuilding',
       action: null,
       canRetry: false,
     };
   }
 
-  if (status?.queryError) {
+  if (!canStartTestQuiz && status?.queryError) {
     return {
       readyCount,
       disabled: true,
       buttonLabel: '\u91cd\u65b0\u67e5\u8be2\u9898\u5e93',
-      detail: `${countText} \u00b7 \u9898\u5e93\u72b6\u6001\u67e5\u8be2\u5931\u8d25\uff1a${status.queryError}`,
+      detail: `${countText} \u00b7 \u8fd8\u9700\u51c6\u5907 ${remainingQuestionCount} \u9898 \u00b7 \u9898\u5e93\u72b6\u6001\u67e5\u8be2\u5931\u8d25\uff1a${status.queryError}`,
       state: 'query-error',
       action: 'query',
       canRetry: true,
     };
   }
 
-  if (readyCount > 0) {
+  if (canStartTestQuiz || readyCount >= requiredCount) {
     const progressText = retrying ? '\u6b63\u5728\u91cd\u8bd5' : (pending ? '\u6b63\u5728\u751f\u6210' : '');
     return {
       readyCount,
@@ -1196,6 +1200,7 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
   if (needsManualReview || lastError || ['failed', 'error'].includes(rawStatus)) {
     const detailParts = [
       countText,
+      `\u8fd8\u9700\u51c6\u5907 ${remainingQuestionCount} \u9898`,
       needsManualReview ? '\u9700\u8981\u4eba\u5de5\u68c0\u67e5' : '\u751f\u6210\u5931\u8d25',
     ];
     if (lastError) detailParts.push(lastError);
@@ -1210,9 +1215,9 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
     };
   }
 
-  const generationText = retrying
-    ? '\u6b63\u5728\u91cd\u8bd5'
-    : (pending ? '\u6b63\u5728\u751f\u6210' : `\u8fd8\u9700\u51c6\u5907 ${Math.max(0, requiredCount - readyCount)} \u9898`);
+  const progressText = retrying ? '\u6b63\u5728\u91cd\u8bd5' : (pending ? '\u6b63\u5728\u751f\u6210' : '');
+  const generationText = [`\u8fd8\u9700\u51c6\u5907 ${remainingQuestionCount} \u9898`, progressText]
+    .filter(Boolean).join(' \u00b7 ');
   return {
     readyCount,
     disabled: true,
@@ -1371,15 +1376,19 @@ async function ensureLevelCacheReadyForQuiz(user, level) {
   return false;
 }
 
-function activeQuizKey(user) {
-  return `wordbot:active-quiz:${user}`;
+function activeQuizKey(user, mode = state.mode || 'real') {
+  return `wordbot:active-quiz:${user}${mode === 'test' ? ':test' : ''}`;
 }
 
 function hasActiveQuizDraft(user) {
   if (!user) return false;
   try {
-    const saved = JSON.parse(localStorage.getItem(activeQuizKey(user)) || 'null');
-    return Boolean(saved?.quiz?.questions?.length && !saved.quiz.result) || Boolean(remoteQuizSession?.questions?.length);
+    const mode = state.mode || 'real';
+    const saved = JSON.parse(localStorage.getItem(activeQuizKey(user, mode)) || 'null');
+    const savedMode = saved?.quiz?.mode || 'real';
+    const hasLocalDraft = savedMode === mode && Boolean(saved?.quiz?.questions?.length && !saved.quiz.result);
+    const remoteMode = remoteQuizSession?.mode || 'real';
+    return hasLocalDraft || (remoteMode === mode && Boolean(remoteQuizSession?.questions?.length));
   } catch {
     return false;
   }
@@ -1387,7 +1396,7 @@ function hasActiveQuizDraft(user) {
 
 function saveQuizDraft() {
   if (!state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || state.quiz.result) return;
-  localStorage.setItem(activeQuizKey(state.user), JSON.stringify({
+  localStorage.setItem(activeQuizKey(state.user, state.mode), JSON.stringify({
     session: state.session,
     quiz: state.quiz,
     currentQuestion: state.currentQuestion,
@@ -1397,8 +1406,16 @@ function saveQuizDraft() {
   renderStudentTools();
 }
 
-function clearQuizDraft() {
-  if (state.user) localStorage.removeItem(activeQuizKey(state.user));
+function clearQuizDraft(mode) {
+  if (state.user) localStorage.removeItem(activeQuizKey(state.user, mode));
+  renderStudentTools();
+}
+
+function clearAllQuizDrafts() {
+  if (state.user) {
+    localStorage.removeItem(activeQuizKey(state.user, 'real'));
+    localStorage.removeItem(activeQuizKey(state.user, 'test'));
+  }
   renderStudentTools();
 }
 
@@ -1420,6 +1437,18 @@ async function recoverFromFormalQuizBlock(issue) {
   }
 }
 
+function getFormalChallengeQuestionCountIssue(quiz, requiredCount = 10) {
+  const questionCount = Array.isArray(quiz?.questions) ? quiz.questions.length : 0;
+  if (quiz?.mode === 'test') return null;
+  if (questionCount === requiredCount) return null;
+  const remainingQuestionCount = Math.max(0, requiredCount - questionCount);
+  return {
+    blocked: true,
+    code: 'FORMAL_QUIZ_REQUIRES_TEN',
+    message: `\u6b63\u5f0f\u6311\u6218\u9700\u8981\u5b8c\u6574 ${requiredCount} \u9898\uff0c\u5f53\u524d\u8fd8\u9700\u51c6\u5907 ${remainingQuestionCount} \u9898\u3002\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\uff1b\u82e5\u6301\u7eed\u51fa\u73b0\uff0c\u8bf7\u8ba9\u5bb6\u957f\u91cd\u5efa\u9898\u5e93\u3002`,
+  };
+}
+
 async function enterFormalQuiz(quiz, options) {
   options = options || {};
   const {
@@ -1427,7 +1456,9 @@ async function enterFormalQuiz(quiz, options) {
     currentQuestion = 0,
     answers = null,
   } = options;
-  const formalQuizIssue = inspectFormalQuizResponse(quiz);
+  const formalQuizIssue = quiz?.mode === 'test'
+    ? { blocked: false }
+    : getFormalChallengeQuestionCountIssue(quiz) || inspectFormalQuizResponse(quiz);
   if (formalQuizIssue.blocked) {
     await recoverFromFormalQuizBlock(formalQuizIssue);
     return false;
@@ -1455,23 +1486,26 @@ async function enterFormalQuiz(quiz, options) {
 }
 
 async function restoreQuizDraft(user = state.user) {
-  const raw = localStorage.getItem(activeQuizKey(user));
+  const mode = state.mode || 'real';
+  const key = activeQuizKey(user, mode);
+  const raw = localStorage.getItem(key);
   if (!raw) return false;
   let saved;
   try {
     saved = JSON.parse(raw);
   } catch {
-    localStorage.removeItem(activeQuizKey(user));
+    localStorage.removeItem(key);
     return false;
   }
   if (!saved?.quiz?.questions?.length || saved.quiz.result) return false;
+  if ((saved.quiz.mode || 'real') !== mode) return false;
   const restored = await enterFormalQuiz(saved.quiz, {
     session: saved.session || { kind: 'quiz' },
     currentQuestion: saved.currentQuestion,
     answers: saved.answers,
   });
   if (!restored) {
-    localStorage.removeItem(activeQuizKey(user));
+    localStorage.removeItem(key);
     renderStudentTools();
   }
   return restored;
@@ -1650,6 +1684,9 @@ async function cleanupUserData(user) {
 function selectMode(el, mode) {
   if (!DEV_MODE && mode === 'test') return;
   state.mode = mode;
+  if (state.questionCacheStatus) {
+    renderQuizCacheReadiness(state.questionCacheStatus, state.level);
+  }
   document.querySelectorAll('.mode-btn').forEach(button => {
     button.classList.toggle('level-active', button.dataset.mode === mode);
   });
@@ -1676,22 +1713,28 @@ function manualSelectUser() {
   selectUser(name);
 }
 
-async function loadRemoteQuizSession(user = state.user) {
+async function loadRemoteQuizSession(user = state.user, mode = state.mode || 'real') {
   if (DEMO_MODE || !user) return null;
-  const data = await api('/api/quiz/session?user=' + encodeURIComponent(user));
-  remoteQuizSession = data?.active ? data : null;
+  const requestedMode = mode || 'real';
+  const data = await api('/api/quiz/session?user=' + encodeURIComponent(user) + '&mode=' + encodeURIComponent(requestedMode));
+  const sessionMode = data?.mode || 'real';
+  remoteQuizSession = data?.active && sessionMode === requestedMode
+    ? { ...data, mode: sessionMode }
+    : null;
   renderStudentTools();
   return remoteQuizSession;
 }
 
 async function restoreRemoteQuizSession() {
   const saved = remoteQuizSession;
+  const savedMode = saved?.mode || 'real';
+  if (savedMode !== (state.mode || 'real')) return false;
   if (!saved?.questions?.length || !saved.testId) return false;
   const progress = saved.progress || { currentQuestion: 0, answers: [] };
   const session = { kind: 'quiz', sourceTestId: null, reviewId: null, parentReviewId: null, round: 0, firstResult: null, reviewRounds: [], remainingRecordIds: [], deferredRecordIds: [], analysisViewed: false };
   const quiz = {
     testId: saved.testId,
-    mode: saved.mode || 'real',
+    mode: savedMode,
     level: saved.level || state.level,
     source: saved.source,
     diagnostics: saved.diagnostics,
@@ -1708,21 +1751,18 @@ async function restoreRemoteQuizSession() {
 
 async function handleContinueQuizEntry() {
   if (await restoreQuizDraft()) return true;
-  if (!remoteQuizSession) {
-    try {
-      await loadRemoteQuizSession();
-    } catch (error) {
-      showToast('\u672a\u80fd\u67e5\u8be2\u4e0a\u6b21\u6d4b\u8bd5\uff1a' + normalizeApiError(error).message, 'error');
-      renderStudentTools();
-      return false;
-    }
+  try {
+    await loadRemoteQuizSession(state.user, state.mode || 'real');
+  } catch (error) {
+    showToast('未能查询上次测试：' + normalizeApiError(error).message, 'error');
+    renderStudentTools();
+    return false;
   }
   if (await restoreRemoteQuizSession()) return true;
   showToast('暂无未完成考核', 'info');
   renderStudentTools();
   return false;
 }
-
 function renderStudentTools() {
   if (!state.user) return;
   let section = $('studentTools');
@@ -2599,7 +2639,7 @@ async function startQuiz() {
   if (!state.user) { showToast('请先选择一个用户', 'error'); return; }
   showLoading('正在生成题目...');
   clearActiveReview();
-  clearQuizDraft();
+  clearQuizDraft(state.mode);
   state.session = {
     kind: 'quiz',
     sourceTestId: null,
@@ -2802,6 +2842,7 @@ async function submitQuizToBackend(payload) {
 async function submitReviewToBackend(reviewId, payload) {
   return submitWithTimeoutConfirmation(`/api/reviews/${encodeURIComponent(reviewId)}/submit`, payload);
 }
+
 async function submitQuiz() {
   if (!state.quiz) return;
   if (state.submitting) return;
@@ -2838,7 +2879,7 @@ async function submitQuiz() {
           return {
             q: i+1,
             word: q.word,
-            recordId: q.recordId || q.word,
+            meaningId: q.meaningId,
             your: yourText,
             answer: expected,
             correct: isCorrect
@@ -2851,7 +2892,7 @@ async function submitQuiz() {
         return {
           q: i+1,
           word: q.word,
-          recordId: q.recordId || q.word,
+          meaningId: q.meaningId,
           your: yourLetter,
           answer: q.answer,
           correct: isCorrect
@@ -2888,7 +2929,7 @@ async function submitQuiz() {
     state.quiz.result = data;
 
     if (state.session.kind === 'quiz') {
-      clearQuizDraft();
+      clearQuizDraft(state.mode);
       addGameRewardToBank(data.gameReward, state.user, state.quiz?.testId || data.testId);
     }
     const remaining = (data.results || [])
@@ -2980,9 +3021,12 @@ function renderResults(data) {
 
   let detailsHtml = '';
   if (data.results) {
+    const questions = state.quiz?.questions || [];
     data.results.forEach((r, i) => {
-      const q = state.quiz?.questions[i];
-      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
+      const resultMeaningId = String(r?.meaningId || '').trim();
+      const q = resultMeaningId
+        ? questions.find(question => String(question?.meaningId || '').trim() === resultMeaningId)
+        : undefined;      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
       const isMeaningReview = isMeaningReviewQuestion(q);
 
       // 构建完整题干展示
@@ -3003,6 +3047,9 @@ function renderResults(data) {
 
       // 构建选项列表
       let optionsHtml = '';
+      const translationHtml = !isMeaningReview && r.correct
+        ? buildContextTranslationHtml(q, escapeHtml)
+        : '';
       if (isMeaningReview) {
         optionsHtml = `<div class="detail-line"><strong>你的答案：</strong>${escapeHtml(r.your || '（未作答）')}</div>
           <div class="detail-line"><strong>参考释义：</strong>${escapeHtml(r.answer || q?.correctMeaning || '暂无参考释义')}</div>`;
@@ -3020,8 +3067,7 @@ function renderResults(data) {
           else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">你的选择</span>';
           const rawWord = String(opt).replace(/^[A-D]\.\s*/, '');
           const displayWord = formatOptionDisplayText(rawWord, q.options, q);
-          const translationHtml = isCorrect ? buildContextTranslationHtml(q, escapeHtml) : '';
-          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}${translationHtml}</div>`;
+          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}</div>`;
         }).join('');
       } else {
         optionsHtml = `<div style="color:#999;font-size:13px;padding:8px 0;">选项未保存（历史记录）</div>`;
@@ -3046,6 +3092,7 @@ function renderResults(data) {
           <div class="opts-box">
             <div class="opts-label">${isMeaningReview ? '答案：' : '选项：'}</div>
             ${optionsHtml}
+            ${translationHtml}
           </div>
 
           ${isMeaningReview ? `<div class="explain-box">

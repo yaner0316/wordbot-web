@@ -45,8 +45,8 @@ function extractNamedFunction(source, name) {
     throw new Error(`Could not extract ${name}`);
 }
 
-function loadQuizReadinessHelpers() {
-    const context = { state: { level: '\u4e2d\u5b66' } };
+function loadQuizReadinessHelpers(stateOverrides = {}) {
+    const context = { state: { level: '\u4e2d\u5b66', ...stateOverrides } };
     vm.createContext(context);
     vm.runInContext([
         extractNamedFunction(app, 'getLevelCacheStatus'),
@@ -192,13 +192,14 @@ test('answer analysis explains the concrete question and compares a wrong choice
     assert.match(quizLogic, /与本题给出的语境或释义不匹配/);
 });
 
-test('ordinary results use only the stored context translation in the correct option', () => {
+test('ordinary results place the stored context translation after all options', () => {
     const start = app.indexOf('function renderResults(data)');
     const end = app.indexOf('function toggleAnalysis()', start);
     assert.ok(start >= 0 && end > start, 'renderResults function should exist');
     const renderResultsSource = app.slice(start, end);
     assert.match(quizLogic, /function buildContextTranslationHtml/);
-    assert.match(renderResultsSource, /const translationHtml = isCorrect\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.match(renderResultsSource, /const translationHtml = !isMeaningReview && r\.correct\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.match(renderResultsSource, /\$\{optionsHtml\}\s*\$\{translationHtml\}/);
     assert.doesNotMatch(renderResultsSource, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
     assert.doesNotMatch(renderResultsSource, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
     assert.match(renderResultsSource, /\$\{isMeaningReview \? `<div class="explain-box">/);
@@ -799,26 +800,107 @@ test('quiz readiness trusts eligible backend meanings and enables at ten', () =>
     assert.equal(getLevelCacheReadyCount(legacyStatus, '\u4e2d\u5b66'), 10);
 });
 
-test('quiz readiness allows a partial cache to start while it is still building', () => {
+test('quiz readiness blocks seven and eight prepared questions until all ten are ready', () => {
     const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    for (const readyCount of [8, 7]) {
+        const readiness = getQuizCacheReadiness({
+            configured: true,
+            status: 'building',
+            eligibleReadyMeanings: readyCount,
+            byLevel: {
+                '\u4e2d\u5b66': { ready: readyCount, total: 10, eligibleReadyMeanings: readyCount },
+            },
+            generation: {
+                counts: { pending: 10 - readyCount, retrying: 0, manualReview: 0, ready: readyCount },
+                failures: [],
+            },
+        }, '\u4e2d\u5b66');
+
+        assert.equal(readiness.disabled, true, `${readyCount} ready questions must not start a formal challenge`);
+        assert.equal(readiness.state, 'partial');
+        assert.equal(readiness.buttonLabel, '\u9898\u5e93\u51c6\u5907\u4e2d');
+        assert.match(readiness.detail, new RegExp(`\\u5f53\\u524d\\u53ef\\u6d4b\\u8bd5 ${readyCount} \\u9898`));
+        assert.match(readiness.detail, new RegExp(`\\u8fd8\\u9700\\u51c6\\u5907 ${10 - readyCount} \\u9898`));
+        assert.match(readiness.detail, /\u6b63\u5728\u751f\u6210/);
+    }
+});
+
+test('test mode keeps partial quiz readiness behavior unchanged', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers({ mode: 'test' });
     const readiness = getQuizCacheReadiness({
         configured: true,
         status: 'building',
-        eligibleReadyMeanings: 4,
+        eligibleReadyMeanings: 7,
         byLevel: {
-            '\u4e2d\u5b66': { ready: 4, total: 10, eligibleReadyMeanings: 4 },
+            '\u4e2d\u5b66': { ready: 7, total: 10, eligibleReadyMeanings: 7 },
         },
         generation: {
-            counts: { pending: 6, retrying: 0, manualReview: 0, ready: 8 },
+            counts: { pending: 3, retrying: 0, manualReview: 0, ready: 7 },
             failures: [],
         },
     }, '\u4e2d\u5b66');
 
     assert.equal(readiness.disabled, false);
-    assert.equal(readiness.state, 'ready');
     assert.equal(readiness.buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
-    assert.match(readiness.detail, /\u5f53\u524d\u53ef\u6d4b\u8bd5 4 \u9898/);
-    assert.match(readiness.detail, /\u6b63\u5728\u751f\u6210/);
+});
+
+test('test mode uses ready questions despite rebuild or query blockers', () => {
+    const testReadiness = loadQuizReadinessHelpers({ mode: 'test' }).getQuizCacheReadiness;
+    const realReadiness = loadQuizReadinessHelpers({ mode: 'real' }).getQuizCacheReadiness;
+    const level = '\u4e2d\u5b66';
+    const readyStatus = {
+        eligibleReadyMeanings: 1,
+        byLevel: { [level]: { eligibleReadyMeanings: 1 } },
+    };
+
+    for (const blocker of [
+        { operation: 'rebuilding' },
+        { queryError: 'network timeout' },
+    ]) {
+        const testResult = testReadiness({ ...readyStatus, ...blocker }, level);
+        assert.equal(testResult.disabled, false);
+        assert.equal(testResult.state, 'ready');
+
+        const emptyResult = testReadiness({ ...blocker, eligibleReadyMeanings: 0 }, level);
+        assert.equal(emptyResult.disabled, true);
+
+        const realResult = realReadiness({ ...readyStatus, ...blocker }, level);
+        assert.equal(realResult.disabled, true);
+    }
+});
+
+test('selectMode rerenders cached readiness when switching assessment modes', () => {
+    const readinessCalls = [];
+    const context = {
+        DEV_MODE: true,
+        state: {
+            mode: 'real',
+            level: '\u4e2d\u5b66',
+            questionCacheStatus: { eligibleReadyMeanings: 7 },
+        },
+        document: {
+            querySelectorAll() {
+                return [];
+            },
+        },
+        $(id) {
+            assert.equal(id, 'modeHint');
+            return { textContent: '' };
+        },
+        renderQuizCacheReadiness(status, level) {
+            readinessCalls.push({ mode: context.state.mode, status, level });
+        },
+    };
+    vm.createContext(context);
+    vm.runInContext(extractNamedFunction(app, 'selectMode'), context);
+
+    context.selectMode(null, 'test');
+    context.selectMode(null, 'real');
+
+    assert.deepEqual(readinessCalls, [
+        { mode: 'test', status: context.state.questionCacheStatus, level: '\u4e2d\u5b66' },
+        { mode: 'real', status: context.state.questionCacheStatus, level: '\u4e2d\u5b66' },
+    ]);
 });
 
 test('quiz readiness exposes retrying and manual-review failures', () => {
@@ -832,9 +914,10 @@ test('quiz readiness exposes retrying and manual-review failures', () => {
             failures: [],
         },
     }, '\u4e2d\u5b66');
-    assert.equal(retrying.disabled, false);
-    assert.equal(retrying.state, 'ready');
-    assert.equal(retrying.buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
+    assert.equal(retrying.disabled, true);
+    assert.equal(retrying.state, 'retrying');
+    assert.equal(retrying.buttonLabel, '\u9898\u5e93\u51c6\u5907\u4e2d');
+    assert.match(retrying.detail, /\u8fd8\u9700\u51c6\u5907 4 \u9898/);
     assert.match(retrying.detail, /\u6b63\u5728\u91cd\u8bd5/);
 
     const failed = getQuizCacheReadiness({
@@ -870,7 +953,7 @@ test('ready cache rows and ready generation jobs do not count as eligible meanin
     };
 
     assert.equal(getLevelCacheReadyCount(status, level), 4);
-    assert.equal(getQuizCacheReadiness(status, level).disabled, false);
+    assert.equal(getQuizCacheReadiness(status, level).disabled, true);
 });
 
 test('quiz readiness distinguishes query errors and in-progress rebuilds from manual review', () => {
@@ -893,6 +976,76 @@ test('quiz readiness distinguishes query errors and in-progress rebuilds from ma
     assert.equal(rebuilding.state, 'rebuilding');
 });
 
+test('formal readiness states always show remaining questions before ten are ready', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const level = String.fromCharCode(0x4e2d, 0x5b66);
+    const states = [
+        {
+            name: 'rebuilding',
+            status: { operation: 'rebuilding' },
+            expectedState: 'rebuilding',
+        },
+        {
+            name: 'retrying',
+            status: { generation: { retrying: true, counts: { retrying: 1 }, failures: [] } },
+            expectedState: 'retrying',
+        },
+        {
+            name: 'pending',
+            status: { status: 'pending', generation: { counts: { pending: 1 }, failures: [] } },
+            expectedState: 'partial',
+        },
+    ];
+
+    for (const { name, status, expectedState } of states) {
+        for (let readyCount = 1; readyCount < 10; readyCount += 1) {
+            const readiness = getQuizCacheReadiness({
+                ...status,
+                eligibleReadyMeanings: readyCount,
+                byLevel: { [level]: { eligibleReadyMeanings: readyCount } },
+            }, level);
+
+            assert.equal(readiness.disabled, true, `${name} must keep ${readyCount} questions disabled`);
+            assert.equal(readiness.state, expectedState);
+            assert.match(readiness.detail, new RegExp(`\\u8fd8\\u9700\\u51c6\\u5907 ${10 - readyCount} \\u9898`));
+        }
+
+        const ready = getQuizCacheReadiness({
+            ...status,
+            eligibleReadyMeanings: 10,
+            byLevel: { [level]: { eligibleReadyMeanings: 10 } },
+        }, level);
+        assert.equal(ready.disabled, false, `${name} must enable the formal challenge at ten questions`);
+        assert.equal(ready.buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
+    }
+});
+test('partial query and manual-review states retain their actions while showing remaining questions', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const level = String.fromCharCode(0x4e2d, 0x5b66);
+    const baseStatus = {
+        eligibleReadyMeanings: 9,
+        byLevel: { [level]: { eligibleReadyMeanings: 9 } },
+    };
+
+    const queryError = getQuizCacheReadiness({ ...baseStatus, queryError: 'network timeout' }, level);
+    assert.equal(queryError.disabled, true);
+    assert.equal(queryError.state, 'query-error');
+    assert.equal(queryError.action, 'query');
+    assert.match(queryError.detail, /\u8fd8\u9700\u51c6\u5907 1 \u9898/);
+
+    const manualReview = getQuizCacheReadiness({
+        ...baseStatus,
+        generation: {
+            needsManualReview: true,
+            counts: { manualReview: 1 },
+            failures: [{ lastErrorCode: 'QUALITY_REJECTED' }],
+        },
+    }, level);
+    assert.equal(manualReview.disabled, true);
+    assert.equal(manualReview.state, 'manual-review');
+    assert.equal(manualReview.action, 'rebuild');
+    assert.match(manualReview.detail, /\u8fd8\u9700\u51c6\u5907 1 \u9898/);
+});
 test('partial quiz results use the actual total and do not show ten-question reward promises', () => {
     const start = app.indexOf('function renderResults(data)');
     const end = app.indexOf('function toggleAnalysis()', start);
@@ -1042,17 +1195,19 @@ test('formal quiz contract is checked before entering the answer flow', () => {
     assert.match(startQuizSource, /await enterFormalQuiz\(data/);
 });
 
-test('formal quiz identity validation never uses English spelling deduplication', () => {
+test('formal quiz identity validation uses only canonical meaningId after API normalization', () => {
     const formalGuardSource = extractNamedFunction(quizLogic, 'inspectFormalQuizResponse');
     const identitySource = extractNamedFunction(quizLogic, 'getQuestionMeaningId');
+    const normalizerSource = extractNamedFunction(quizLogic, 'normalizeQuestionMeaningIdentity');
 
-    assert.match(identitySource, /wordId/);
-    assert.match(identitySource, /sourceRecordId/);
-    assert.match(identitySource, /wordRecordId/);
-    assert.doesNotMatch(identitySource, /sourceWordRecordId|word_id|source_word_record_id/);
-    assert.doesNotMatch(formalGuardSource + identitySource, /question\?\.word\b|\.spelling\b|new Set/);
+    assert.match(identitySource, /meaningId/);
+    assert.doesNotMatch(identitySource, /wordId|sourceRecordId|wordRecordId|record_id|question?.word|.spelling/);
+    assert.match(normalizerSource, /record_id/);
+    assert.match(normalizerSource, /wordId/);
+    assert.match(normalizerSource, /sourceRecordId/);
+    assert.match(normalizerSource, /wordRecordId/);
+    assert.doesNotMatch(formalGuardSource + identitySource, /question?.word|.spelling/);
 });
-
 test('new, local-draft, and remote formal quiz entries share one async gate', () => {
     const gateSource = extractNamedFunction(app, 'enterFormalQuiz');
     const startSource = extractNamedFunction(app, 'startQuiz');
@@ -1108,6 +1263,38 @@ test('remote formal quiz restoration preserves cache contract metadata for the s
         remoteRestoreSource.indexOf('source: saved.source') < remoteRestoreSource.indexOf('enterFormalQuiz(quiz'),
         'remote metadata must be retained before the shared gate runs'
     );
+});
+
+test('remote partial formal sessions are rejected by the shared ten-question entry gate', async () => {
+    const questionCount = 7;
+    const recoveries = [];
+    const context = {
+        state: { level: '\u4e2d\u5b66' },
+        remoteQuizSession: {
+            testId: 'partial-remote-session',
+            source: 'question_cache',
+            diagnostics: { fallbackUsed: false, readyCount: questionCount, requiredCount: 10 },
+            partialFormalChallenge: true,
+            questions: Array.from({ length: questionCount }, (_, index) => ({ id: `question-${index}` })),
+            progress: { currentQuestion: 0, answers: [] },
+        },
+        inspectFormalQuizResponse() { return { blocked: false, code: '', message: '' }; },
+        recoverFromFormalQuizBlock: async issue => { recoveries.push(issue); },
+    };
+    vm.createContext(context);
+    vm.runInContext([
+        extractNamedFunction(app, 'getFormalChallengeQuestionCountIssue'),
+        'async ' + extractNamedFunction(app, 'enterFormalQuiz'),
+        'async ' + extractNamedFunction(app, 'restoreRemoteQuizSession'),
+    ].join('\n'), context);
+
+    const restored = await context.restoreRemoteQuizSession();
+
+    assert.equal(restored, false);
+    assert.equal(recoveries.length, 1);
+    assert.equal(recoveries[0].code, 'FORMAL_QUIZ_REQUIRES_TEN');
+    assert.match(recoveries[0].message, /10/);
+    assert.match(recoveries[0].message, /\u8fd8\u9700\u51c6\u5907 3 \u9898/);
 });
 
 test('formal guard recovery is awaited, observable, and refreshes readiness after rebuild settles', () => {
@@ -1199,4 +1386,225 @@ test('orphan parent delete modal is not rendered without an implemented delete f
 test('empty quiz resume uses a clean Chinese status message', () => {
     const resumeSource = extractNamedFunction(app, 'handleContinueQuizEntry');
     assert.match(resumeSource, /\u6682\u65e0\u672a\u5b8c\u6210\u8003\u6838/);
+});
+
+test('test mode requires at least one ready question while real mode still requires ten', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers({ mode: 'test' });
+    const emptyStatus = {
+        configured: true,
+        status: 'pending',
+        eligibleReadyMeanings: 0,
+        byLevel: { '\\u4e2d\\u5b66': { ready: 0, total: 10, eligibleReadyMeanings: 0 } },
+        generation: { counts: { pending: 10, retrying: 0, manualReview: 0, ready: 0 }, failures: [] },
+    };
+
+    assert.equal(getQuizCacheReadiness(emptyStatus, '\\u4e2d\\u5b66').disabled, true);
+    assert.equal(getQuizCacheReadiness({ ...emptyStatus, eligibleReadyMeanings: 1, byLevel: { '\\u4e2d\\u5b66': { ready: 1, total: 10, eligibleReadyMeanings: 1 } } }, '\\u4e2d\\u5b66').disabled, false);
+    assert.equal(loadQuizReadinessHelpers({ mode: 'real' }).getQuizCacheReadiness({ ...emptyStatus, eligibleReadyMeanings: 9, byLevel: { '\\u4e2d\\u5b66': { ready: 9, total: 10, eligibleReadyMeanings: 9 } } }, '\\u4e2d\\u5b66').disabled, true);
+});
+
+test('API question boundary canonicalizes legacy meaning identity aliases', () => {
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(quizLogic, context);
+
+    for (const [alias, value] of [
+        ['record_id', 'legacy-record'],
+        ['wordRecordId', 'word-record'],
+        ['sourceRecordId', 'source-record'],
+        ['wordId', 'word-id'],
+    ]) {
+        const question = context.WordBotQuizLogic.normalizeQuestionMeaningIdentity({ word: 'bank', [alias]: value });
+        assert.equal(question.meaningId, value, alias + ' should normalize to meaningId');
+    }
+
+    assert.equal(
+        context.WordBotQuizLogic.normalizeQuestionMeaningIdentity({ meaningId: 'canonical', wordId: 'legacy' }).meaningId,
+        'canonical'
+    );
+});
+
+test('quiz draft storage is mode-scoped while preserving the real-mode legacy key', async () => {
+    const storage = new Map([
+        ['wordbot:active-quiz:student', JSON.stringify({ quiz: { mode: 'real', questions: [{ id: 'real-question' }] } })],
+    ]);
+    const entered = [];
+    const context = {
+        state: {
+            user: 'student',
+            mode: 'test',
+            session: { kind: 'quiz' },
+            quiz: { mode: 'test', questions: [{ id: 'test-question' }] },
+            currentQuestion: 0,
+            answers: [null],
+        },
+        remoteQuizSession: { mode: 'real', questions: [{ id: 'remote-real' }] },
+        localStorage: {
+            getItem(key) { return storage.get(key) || null; },
+            setItem(key, value) { storage.set(key, value); },
+            removeItem(key) { storage.delete(key); },
+        },
+        renderStudentTools() {},
+        enterFormalQuiz: async quiz => { entered.push(quiz); return true; },
+    };
+    vm.createContext(context);
+    vm.runInContext([
+        extractNamedFunction(app, 'activeQuizKey'),
+        extractNamedFunction(app, 'hasActiveQuizDraft'),
+        extractNamedFunction(app, 'saveQuizDraft'),
+        extractNamedFunction(app, 'clearQuizDraft'),
+        'async ' + extractNamedFunction(app, 'restoreQuizDraft'),
+    ].join('\n'), context);
+
+    assert.equal(context.activeQuizKey('student', 'real'), 'wordbot:active-quiz:student');
+    assert.equal(context.activeQuizKey('student', 'test'), 'wordbot:active-quiz:student:test');
+    assert.equal(context.hasActiveQuizDraft('student'), false, 'test mode must not see a real draft or remote session');
+
+    context.saveQuizDraft();
+    assert.equal(JSON.parse(storage.get('wordbot:active-quiz:student:test')).quiz.mode, 'test');
+    assert.ok(storage.has('wordbot:active-quiz:student'));
+
+    context.clearQuizDraft('test');
+    assert.equal(storage.has('wordbot:active-quiz:student:test'), false);
+    assert.equal(storage.has('wordbot:active-quiz:student'), true, 'clearing test mode must preserve the legacy real-mode draft');
+
+    storage.set('wordbot:active-quiz:student:test', JSON.stringify({ quiz: { mode: 'real', questions: [{ id: 'wrong-mode' }] } }));
+    assert.equal(await context.restoreQuizDraft(), false, 'test restore must reject a real draft');
+    assert.equal(entered.length, 0);
+    assert.ok(storage.has('wordbot:active-quiz:student'));
+
+    context.state.mode = 'real';
+    assert.equal(await context.restoreQuizDraft(), true, 'legacy drafts without quiz.mode are real mode');
+    assert.equal(entered.length, 1);
+    context.clearQuizDraft('real');
+    assert.equal(storage.has('wordbot:active-quiz:student'), false);
+    assert.equal(storage.has('wordbot:active-quiz:student:test'), true, 'clearing real mode must preserve the test draft');
+});
+
+test('quiz draft clearing callers distinguish current and global scope', () => {
+    const startSource = extractNamedFunction(app, 'startQuiz');
+    const submitSource = extractNamedFunction(app, 'submitQuiz');
+    const logoutSource = extractNamedFunction(app, 'logout');
+
+    assert.match(startSource, /clearQuizDraft\(state\.mode\)/);
+    assert.match(submitSource, /clearQuizDraft\(state\.mode\)/);
+    assert.match(logoutSource, /clearAllQuizDrafts\(\)/);
+    assert.doesNotMatch(startSource, /clearAllQuizDrafts/);
+    assert.doesNotMatch(submitSource, /clearAllQuizDrafts/);
+});
+
+test('remote sessions query and restore only the current mode', async () => {
+    const requested = [];
+    const context = {
+        DEMO_MODE: false,
+        state: { user: 'student', mode: 'real', level: 'middle' },
+        encodeURIComponent,
+        api: async url => {
+            requested.push(url);
+            return { active: true, mode: 'test', testId: 'test-session', questions: [{ id: 'test-question' }] };
+        },
+        remoteQuizSession: null,
+        renderStudentTools() {},
+        enterFormalQuiz: async () => { throw new Error('wrong-mode remote session must not restore'); },
+    };
+    vm.createContext(context);
+    vm.runInContext([
+        'async ' + extractNamedFunction(app, 'loadRemoteQuizSession'),
+        'async ' + extractNamedFunction(app, 'restoreRemoteQuizSession'),
+    ].join('\n'), context);
+
+    assert.equal(await context.loadRemoteQuizSession('student', 'real'), null);
+    assert.equal(context.remoteQuizSession, null);
+    assert.equal(requested[0], '/api/quiz/session?user=student&mode=real');
+
+    context.api = async url => {
+        requested.push(url);
+        return { active: true, mode: 'test', testId: 'test-session', questions: [{ id: 'test-question' }] };
+    };
+    assert.equal((await context.loadRemoteQuizSession('student', 'test')).mode, 'test');
+    assert.equal(context.remoteQuizSession.mode, 'test');
+    assert.equal(requested[1], '/api/quiz/session?user=student&mode=test');
+
+    context.state.mode = 'real';
+    assert.equal(await context.restoreRemoteQuizSession(), false);
+    assert.equal(context.remoteQuizSession.mode, 'test', 'rejecting another mode must not clear it');
+});
+
+test('continue entry refreshes an already-cached remote session from the current mode', async () => {
+    const loads = [];
+    const restores = [];
+    const context = {
+        state: { user: 'student', mode: 'real' },
+        remoteQuizSession: { mode: 'test', testId: 'test-session', questions: [{ id: 'test-question' }] },
+        restoreQuizDraft: async () => false,
+        loadRemoteQuizSession: async (user, mode) => {
+            loads.push([user, mode]);
+            context.remoteQuizSession = { mode: 'real', testId: 'real-session', questions: [{ id: 'real-question' }] };
+            return context.remoteQuizSession;
+        },
+        restoreRemoteQuizSession: async () => {
+            restores.push(context.remoteQuizSession.mode);
+            return context.remoteQuizSession.mode === 'real';
+        },
+        showToast() {},
+        normalizeApiError(error) { return error; },
+        renderStudentTools() {},
+    };
+    vm.createContext(context);
+    vm.runInContext('async ' + extractNamedFunction(app, 'handleContinueQuizEntry'), context);
+
+    assert.equal(await context.handleContinueQuizEntry(), true);
+    assert.deepEqual(loads, [['student', 'real']]);
+    assert.deepEqual(restores, ['real']);
+});
+
+test('demo questions and results use canonical meaningId identity', () => {
+    const demoQuizSource = extractNamedFunction(app, 'generateDemoQuiz');
+    const submitSource = extractNamedFunction(app, 'submitQuiz');
+
+    assert.match(demoQuizSource, /meaningId:\s*`demo:\$\{w\.word\}:\$\{i\}`/);
+    assert.doesNotMatch(demoQuizSource, /recordId/);
+    assert.match(submitSource, /meaningId:\s*q\.meaningId/);
+    assert.doesNotMatch(submitSource, /getQuestionMeaningIdentity|recordId:\s*/);
+});
+
+test('test-mode quiz entry bypasses formal validation but still inspects content', async () => {
+    let contentInspections = 0;
+    const context = {
+        state: {
+            mode: 'test',
+            session: { kind: 'quiz' },
+            currentQuestion: 0,
+            answers: [],
+        },
+        inspectFormalQuizResponse() {
+            throw new Error('test mode must bypass formal validation');
+        },
+        inspectQuizContentForBlockingIssue(quiz) {
+            contentInspections += 1;
+            assert.equal(quiz.mode, 'test');
+            return { blocked: false };
+        },
+        recoverFromFormalQuizBlock: async () => {
+            throw new Error('test mode must not recover through the formal gate');
+        },
+        saveQuizDraft() {},
+        navigateTo() {},
+        renderQuestion() {},
+    };
+    vm.createContext(context);
+    vm.runInContext([
+        extractNamedFunction(app, 'getFormalChallengeQuestionCountIssue'),
+        'async ' + extractNamedFunction(app, 'enterFormalQuiz'),
+    ].join('\n'), context);
+
+    const entered = await context.enterFormalQuiz({
+        mode: 'test',
+        source: 'fallback',
+        questions: [{ word: 'bank' }],
+    });
+
+    assert.equal(entered, true);
+    assert.equal(contentInspections, 1);
+    assert.equal(context.state.quiz.mode, 'test');
 });

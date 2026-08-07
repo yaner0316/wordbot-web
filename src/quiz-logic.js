@@ -85,14 +85,38 @@
   const repeatedDistractorSmokeWords = new Set(['bomb', 'crowded', 'genaine']);
   const formalQuizQuestionCount = 10;
 
+  function normalizeQuestionMeaningIdentity(question) {
+    if (!question || typeof question !== 'object') return question;
+    const meaningId = [
+      question.meaningId,
+      question.record_id,
+      question.wordRecordId,
+      question.sourceRecordId,
+      question.wordId,
+    ].map(value => String(value ?? '').trim()).find(Boolean) || '';
+    return meaningId ? { ...question, meaningId } : { ...question };
+  }
+
+  function normalizeApiPayload(data) {
+    if (!data || typeof data !== 'object') return data;
+    const normalized = { ...data };
+    if (Array.isArray(data.questions)) {
+      normalized.questions = data.questions.map(normalizeQuestionMeaningIdentity);
+    }
+    if (Array.isArray(data.results)) {
+      normalized.results = data.results.map(normalizeQuestionMeaningIdentity);
+    }
+    if (data.quiz && typeof data.quiz === 'object') {
+      normalized.quiz = { ...data.quiz };
+      if (Array.isArray(data.quiz.questions)) {
+        normalized.quiz.questions = data.quiz.questions.map(normalizeQuestionMeaningIdentity);
+      }
+    }
+    return normalized;
+  }
+
   function getQuestionMeaningId(question) {
-    return String(
-      question?.wordId ||
-      question?.wordRecordId ||
-      question?.sourceRecordId ||
-      question?.record_id ||
-      ''
-    ).trim();
+    return String(question?.meaningId || '').trim();
   }
 
   function inspectFormalQuizResponse(quiz) {
@@ -105,7 +129,7 @@
     }
 
     const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
-    if (questions.length < 1 || questions.length > formalQuizQuestionCount || (questions.length !== formalQuizQuestionCount && quiz?.partialFormalChallenge !== true)) {
+    if (questions.length !== formalQuizQuestionCount) {
       return {
         blocked: true,
         code: 'FORMAL_QUIZ_REQUIRES_TEN',
@@ -230,6 +254,8 @@
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
+    normalizeApiPayload,
+    normalizeQuestionMeaningIdentity,
     getQuestionMeaningId,
     inspectQuizContentForBlockingIssue,
     inspectFormalQuizResponse,
