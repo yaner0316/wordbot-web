@@ -1461,7 +1461,9 @@ async function enterFormalQuiz(quiz, options) {
     return false;
   }
   state.session = session || { kind: 'quiz' };
-  state.quiz = quiz;
+  state.quiz = quiz?.mode === 'test'
+    ? quiz
+    : { ...quiz, formalDraftVersion: 'formal-cache-v2' };
   state.currentQuestion = Math.min(
     Math.max(0, Number(currentQuestion) || 0),
     quiz.questions.length - 1
@@ -1490,6 +1492,11 @@ async function restoreQuizDraft(user = state.user) {
   if (!saved?.quiz?.questions?.length || saved.quiz.result) return false;
   if ((saved.quiz.mode || 'real') !== mode) {
     localStorage.removeItem(key);
+    return false;
+  }
+  if (mode === 'real' && saved.quiz.formalDraftVersion !== 'formal-cache-v2') {
+    localStorage.removeItem(key);
+    renderStudentTools();
     return false;
   }
   const restored = await enterFormalQuiz(saved.quiz, {
@@ -3003,6 +3010,14 @@ function buildAnimalGardenRewardHtml(rewardSummary) {
   `;
 }
 
+function buildResultOptionMeaningHtml(question, letter, escape = escapeHtml) {
+  const index = String(letter || '').trim().toUpperCase().charCodeAt(0) - 65;
+  const meaning = index >= 0 && index < 4
+    ? String(question?.optionMeanings?.[index] || '').trim()
+    : '';
+  return meaning ? `<div class="opt-meaning">${escape(meaning)}</div>` : '';
+}
+
 function renderResults(data) {
   const { correct, total, accuracy, masteredWords } = data;
   const pass = correct / total >= 0.6;
@@ -3088,12 +3103,13 @@ function renderResults(data) {
           else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">你的选择</span>';
           const rawWord = String(opt).replace(/^[A-D]\.\s*/, '');
           const displayWord = formatOptionDisplayText(rawWord, q.options, q);
-          const translationHtml = isCorrect ? buildContextTranslationHtml(q, escapeHtml) : '';
-          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}${translationHtml}</div>`;
+          const meaningHtml = buildResultOptionMeaningHtml(q, letter, escapeHtml);
+          return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}${meaningHtml}</div>`;
         }).join('');
       } else {
         optionsHtml = `<div style="color:#999;font-size:13px;padding:8px 0;">选项未保存（历史记录）</div>`;
       }
+      const translationHtml = !isMeaningReview ? buildContextTranslationHtml(q, escapeHtml) : '';
 
       detailsHtml += `
         <div class="result-analysis-card ${r.correct ? 'correct' : 'wrong'}">
@@ -3113,7 +3129,7 @@ function renderResults(data) {
 
           <div class="opts-box">
             <div class="opts-label">${isMeaningReview ? '答案：' : '选项：'}</div>
-            ${optionsHtml}
+            ${optionsHtml}${translationHtml}
           </div>
 
           ${isMeaningReview ? `<div class="explain-box">

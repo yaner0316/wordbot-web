@@ -192,13 +192,14 @@ test('answer analysis explains the concrete question and compares a wrong choice
     assert.match(quizLogic, /与本题给出的语境或释义不匹配/);
 });
 
-test('ordinary results use only the stored context translation in the correct option', () => {
+test('ordinary results use only the stored context translation after the option list', () => {
     const start = app.indexOf('function renderResults(data)');
     const end = app.indexOf('function toggleAnalysis()', start);
     assert.ok(start >= 0 && end > start, 'renderResults function should exist');
     const renderResultsSource = app.slice(start, end);
     assert.match(quizLogic, /function buildContextTranslationHtml/);
-    assert.match(renderResultsSource, /const translationHtml = isCorrect\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.match(renderResultsSource, /const translationHtml = !isMeaningReview\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.match(renderResultsSource, /\$\{optionsHtml\}\$\{translationHtml\}/);
     assert.doesNotMatch(renderResultsSource, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
     assert.doesNotMatch(renderResultsSource, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
     assert.match(renderResultsSource, /\$\{isMeaningReview \? `<div class="explain-box">/);
@@ -1421,8 +1422,9 @@ test('quiz draft storage is mode-scoped while preserving the real-mode legacy ke
     assert.ok(storage.has('wordbot:active-quiz:student'));
 
     context.state.mode = 'real';
-    assert.equal(await context.restoreQuizDraft(), true, 'legacy drafts without quiz.mode are real mode');
-    assert.equal(entered.length, 1);
+    assert.equal(await context.restoreQuizDraft(), false, 'legacy real drafts without the current formal version must be discarded');
+    assert.equal(entered.length, 0);
+    assert.equal(storage.has('wordbot:active-quiz:student'), false);
     context.clearQuizDraft();
     assert.equal(storage.has('wordbot:active-quiz:student'), false);
     assert.equal(storage.has('wordbot:active-quiz:student:test'), false);

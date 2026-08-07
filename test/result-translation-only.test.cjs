@@ -7,18 +7,38 @@ const vm = require('node:vm');
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
 const quizLogicSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'quiz-logic.js'), 'utf8');
 
-test('ordinary results use a context translation helper only', () => {
+test('ordinary results show each option meaning and put the sentence translation after all options', () => {
   const start = appSource.indexOf('function renderResults(data)');
   const end = appSource.indexOf('function toggleAnalysis()', start);
   assert.ok(start >= 0 && end > start);
   const renderResults = appSource.slice(start, end);
 
   assert.match(renderResults, /buildContextTranslationHtml\(q,\s*escapeHtml\)/);
-  assert.match(renderResults, /const translationHtml = isCorrect\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
-  assert.match(renderResults, /\$\{tag\}\$\{translationHtml\}<\/div>/);
-  assert.doesNotMatch(renderResults, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
+  assert.match(renderResults, /buildResultOptionMeaningHtml\(q,\s*letter,\s*escapeHtml\)/);
+  assert.match(renderResults, /const translationHtml = !isMeaningReview\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+  assert.match(renderResults, /\$\{optionsHtml\}\$\{translationHtml\}/);
   assert.doesNotMatch(renderResults, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
   assert.match(renderResults, /\$\{isMeaningReview \? `<div class="explain-box">/);
+});
+
+test('result feedback keeps every option meaning before the sentence translation', () => {
+  const html = renderResultTranslations([
+    {
+      type: 1,
+      recordId: 'basement',
+      word: 'basement',
+      context: 'After moving in, we discovered a hidden _____ beneath the old wooden floorboards.',
+      contextCN: '\u642c\u8fdb\u53bb\u4e4b\u540e\uff0c\u6211\u4eec\u53d1\u73b0\u65e7\u6728\u5730\u677f\u4e0b\u9762\u85cf\u7740\u4e00\u4e2a\u9690\u85cf\u7684\u5730\u4e0b\u5ba4\u3002',
+      options: ['A. subway', 'B. basement', 'C. bunker', 'D. tunnel'],
+      optionMeanings: ['\u5730\u94c1', '\u5730\u4e0b\u5ba4', '\u5730\u4e0b\u78a7\u4f53', '\u96a7\u9053'],
+      answer: 'B',
+    },
+  ], [{ recordId: 'basement', word: 'basement', your: 'D', correct: true }]);
+
+  for (const meaning of ['\u5730\u94c1', '\u5730\u4e0b\u5ba4', '\u5730\u4e0b\u78a7\u4f53', '\u96a7\u9053']) assert.match(html, new RegExp(meaning));
+  const lastMeaning = html.lastIndexOf('\u96a7\u9053');
+  const translation = html.indexOf('\u642c\u8fdb\u53bb\u4e4b\u540e');
+  assert.ok(lastMeaning >= 0 && translation > lastMeaning, 'sentence translation must follow all option meanings');
 });
 
 test('context translation helper ignores meaning fallbacks', () => {
@@ -86,6 +106,26 @@ test('result translations stay bound to their own question when result order cha
       const value = String(question?.contextCN || '').trim();
       return value ? '<div class="opt-translation">' + escape(value) + '</div>' : '';
     },
+    buildResultOptionMeaningHtml: (question, letter, escape) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
+    },
+    buildResultOptionMeaningHtml: (question, letter, escape) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
+    },
+    buildResultOptionMeaningHtml: (question, letter, escape) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
+    },
+    buildResultOptionMeaningHtml: (question, letter, escape) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
+    },
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',
@@ -114,7 +154,7 @@ test('result translations stay bound to their own question when result order cha
   const crayonPosition = html.indexOf('\\u6211\\u7528\\u4e86\\u660e\\u4eae\\u7684\\u8721\\u7b14\\u3002');
   assert.ok(lakePosition >= 0 && crayonPosition >= 0);
   assert.ok(lakePosition < crayonPosition);
-  assert.doesNotMatch(html, /\\u6709\\u610f\\u4e49|\\u9009\\u9879\\u91ca\\u4e49|correctMeaning|optionMeanings/);
+  assert.doesNotMatch(html, /correctMeaning/);
 });
 function renderResultTranslations(questions, results) {
   const start = appSource.indexOf('function renderResults(data)');
@@ -127,6 +167,26 @@ function renderResultTranslations(questions, results) {
     },
     escapeHtml: String,
     buildContextTranslationHtml: question => question?.contextCN ? '<div class="opt-translation">' + question.contextCN + '</div>' : '',
+    buildResultOptionMeaningHtml: (question, letter) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
+    },
+    buildResultOptionMeaningHtml: (question, letter) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
+    },
+    buildResultOptionMeaningHtml: (question, letter) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
+    },
+    buildResultOptionMeaningHtml: (question, letter) => {
+      const index = String(letter).charCodeAt(0) - 65;
+      const meaning = String(question?.optionMeanings?.[index] || '').trim();
+      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
+    },
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',
