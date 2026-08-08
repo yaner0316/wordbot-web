@@ -1143,11 +1143,6 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
   const counts = generation.counts || {};
   const failures = Array.isArray(generation.failures) ? generation.failures : [];
   const rawStatus = String(getLevelCacheStatus(status, level).status || status?.status || '').toLowerCase();
-  const failureText = failures
-    .map(failure => failure?.lastErrorCode || failure?.status || '')
-    .filter(Boolean)
-    .join(', ');
-  const lastError = String(generation.lastError || failureText || '').trim();
   const needsManualReview = Boolean(generation.needsManualReview)
     || Math.max(0, Number(counts.manualReview) || 0) > 0
     || failures.length > 0;
@@ -1197,13 +1192,12 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
     };
   }
 
-  if (needsManualReview || lastError || ['failed', 'error'].includes(rawStatus)) {
+  if (needsManualReview || failures.length > 0 || ['failed', 'error'].includes(rawStatus)) {
     const detailParts = [
       countText,
       `\u8fd8\u9700\u51c6\u5907 ${remainingQuestionCount} \u9898`,
       needsManualReview ? '\u9700\u8981\u4eba\u5de5\u68c0\u67e5' : '\u751f\u6210\u5931\u8d25',
     ];
-    if (lastError) detailParts.push(lastError);
     return {
       readyCount,
       disabled: true,

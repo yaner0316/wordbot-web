@@ -936,7 +936,23 @@ test('quiz readiness exposes retrying and manual-review failures', () => {
     assert.equal(failed.state, 'manual-review');
     assert.equal(failed.action, 'rebuild');
     assert.match(failed.detail, /\u9700\u8981\u4eba\u5de5\u68c0\u67e5/);
-    assert.match(failed.detail, /\u751f\u6210\u5185\u5bb9\u9700\u8981\u4eba\u5de5\u786e\u8ba4/);
+    assert.doesNotMatch(failed.detail, /QUALITY_REJECTED/);
+});
+
+test('quiz readiness never exposes generation error codes to children', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const readiness = getQuizCacheReadiness({
+        eligibleReadyMeanings: 5,
+        byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 5 } },
+        generation: {
+            counts: { pending: 0, retrying: 0, manualReview: 1, ready: 57 },
+            failures: [{ lastErrorCode: 'INSUFFICIENT_DISTINCT_READY_VARIANTS' }],
+        },
+    }, '\u4e2d\u5b66');
+
+    assert.equal(readiness.state, 'manual-review');
+    assert.doesNotMatch(readiness.detail, /INSUFFICIENT_DISTINCT_READY_VARIANTS/);
+    assert.match(readiness.detail, /\u9700\u8981\u4eba\u5de5\u68c0\u67e5/);
 });
 
 test('ready cache rows and ready generation jobs do not count as eligible meanings', () => {
