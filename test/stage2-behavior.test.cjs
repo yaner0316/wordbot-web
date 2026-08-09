@@ -1584,6 +1584,16 @@ test('demo questions and results use canonical meaningId identity', () => {
     assert.doesNotMatch(submitSource, /getQuestionMeaningIdentity|recordId:\s*/);
 });
 
+test('incomplete legacy history uses a child-friendly explanation instead of an empty option area', () => {
+    const start = app.indexOf('function openHistoryDetail(');
+    const end = app.indexOf('function closeHistoryDetail()', start);
+    assert.ok(start >= 0 && end > start, 'openHistoryDetail function should exist');
+    const source = app.slice(start, end);
+    assert.match(source, /contentState/);
+    assert.match(source, /这是一条早期考核记录，当时没有保存完整题目。答题结果仍然保留。/);
+    assert.doesNotMatch(source, /选项未保存/);
+});
+
 test('test-mode quiz entry bypasses formal validation but still inspects content', async () => {
     let contentInspections = 0;
     const context = {

@@ -3394,11 +3394,13 @@ function openHistoryDetail(item) {
   questions.forEach((q, i) => {
     const card = document.createElement('div');
     card.className = 'hd-q';
-    const rawStem = escapeHtml(q.question || q.word || '');
+    const legacyIncomplete = q.contentState === 'legacy_incomplete';
+    const incompleteMessage = '这是一条早期考核记录，当时没有保存完整题目。答题结果仍然保留。';
+    const rawStem = escapeHtml(legacyIncomplete ? incompleteMessage : (q.question || q.word || ''));
     const stemHtml = q.type === 1
       ? rawStem.replace(/_____/g, '<span class="blank"></span>')
       : rawStem;
-    const optsHtml = (q.options || []).map(opt => {
+    const optsHtml = legacyIncomplete ? '<div class="hd-opt muted">' + escapeHtml(incompleteMessage) + '</div>' : (q.options || []).map(opt => {
       const letter = optionLetter(opt);
       const word = String(opt).replace(/^[A-D]\.\s*/, '');
       let cls = 'hd-opt';
@@ -3419,7 +3421,7 @@ function openHistoryDetail(item) {
       '</div>' +
       '<div class="hd-q-word">' + escapeHtml(q.word || '') + '</div>' +
       '<div class="hd-q-stem">' + stemHtml + '</div>' +
-      '<div class="hd-opts">' + (optsHtml || '<div class="hd-opt muted">选项未保存</div>') + '</div>' +
+      '<div class="hd-opts">' + (optsHtml || '<div class="hd-opt muted">历史题目细节不完整</div>') + '</div>' +
       answerSummary;
     body.appendChild(card);
   });
