@@ -181,8 +181,14 @@ function calculateDemoGameReward(correct, total, mode) {
   if (mode !== 'real') {
     return { eligible: false, minutes: 0, tier: 'none', reason: 'test_mode' };
   }
-  if (correct >= total && total > 0) {
-    return { eligible: true, minutes: 12, tier: 'perfect', reason: 'perfect_score' };
+  if (total !== 10) {
+    return { eligible: false, minutes: 0, tier: 'none', reason: 'incomplete_quiz' };
+  }
+  if (correct <= 5) {
+    return { eligible: true, minutes: -5, tier: 'penalty', reason: 'five_or_more_wrong' };
+  }
+  if (correct >= total) {
+    return { eligible: true, minutes: 10, tier: 'perfect', reason: 'perfect_score' };
   }
   if (correct >= 9) {
     return { eligible: true, minutes: 5, tier: 'excellent', reason: 'excellent_score' };
@@ -3035,8 +3041,8 @@ function renderResults(data) {
     ? `<div class="game-reward-card">
         <div class="game-reward-icon">🎮</div>
         <div>
-          <div class="game-reward-title">获得小游戏时间 ${escapeHtml(reward.minutes)} 分钟</div>
-          <div class="game-reward-sub">${reward.tier === 'perfect' ? '10 题全对奖励' : '答对 9 题以上奖励'}。</div>
+          <div class="game-reward-title">${reward.tier === 'penalty' ? `本次扣除小游戏时间 ${escapeHtml(Math.abs(Number(reward.minutes) || 0))} 分钟` : `获得小游戏时间 ${escapeHtml(reward.minutes)} 分钟`}</div>
+          <div class="game-reward-sub">${reward.tier === 'perfect' ? '10 题全对奖励' : reward.tier === 'penalty' ? '错 5 题或以上，本次扣除游戏时间。' : '答对 9 题奖励'}。</div>
         </div>
       </div>`
     : '';

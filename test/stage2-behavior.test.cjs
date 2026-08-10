@@ -401,9 +401,10 @@ test('game reward minutes are banked and offered after at least one review round
     assert.match(app, /\u5b58\u7559\u65f6\u95f4/);
 });
 
-test('perfect quiz game reward is twelve minutes and excellent is five', () => {
-    assert.match(app, /minutes:\s*12[\s\S]*tier:\s*'perfect'/);
+test('perfect quiz game reward is ten minutes and excellent is five', () => {
+    assert.match(app, /minutes:\s*10[\s\S]*tier:\s*'perfect'/);
     assert.match(app, /minutes:\s*5[\s\S]*tier:\s*'excellent'/);
+    assert.match(app, /minutes:\s*-5[\s\S]*tier:\s*'penalty'/);
 });
 
 test('banked game time opens a playable animal garden mini game', () => {
