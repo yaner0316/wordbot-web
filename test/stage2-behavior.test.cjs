@@ -1607,6 +1607,23 @@ test('incomplete legacy history uses a child-friendly explanation instead of an 
     assert.doesNotMatch(source, /选项未保存/);
 });
 
+test('history keeps preserved question fields when only some legacy fields are missing', () => {
+    const start = app.indexOf('function openHistoryDetail(');
+    const end = app.indexOf('function closeHistoryDetail()', start);
+    const source = app.slice(start, end);
+    assert.match(source, /q\.question \|\| q\.word/);
+    assert.match(source, /q\.options \|\| \[\]/);
+    assert.match(source, /legacyIncomplete && !q\.question/);
+});
+
+test('results can render the submitted question snapshot when local matching is unavailable', () => {
+    const start = app.indexOf('function renderResults(');
+    const end = app.indexOf('function renderHistoryList(', start);
+    const source = app.slice(start, end);
+    assert.match(source, /matchedQuestion \|\| r/);
+    assert.match(source, /questionData\.options/);
+});
+
 test('test-mode quiz entry bypasses formal validation but still inspects content', async () => {
     let contentInspections = 0;
     const context = {

@@ -3052,9 +3052,12 @@ function renderResults(data) {
     const questions = state.quiz?.questions || [];
     data.results.forEach((r, i) => {
       const resultMeaningId = String(r?.meaningId || '').trim();
-      const q = resultMeaningId
+      const matchedQuestion = resultMeaningId
         ? questions.find(question => String(question?.meaningId || '').trim() === resultMeaningId)
-        : undefined;      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
+        : undefined;
+      const questionData = matchedQuestion || r;
+      const q = questionData;
+      const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
       const isMeaningReview = isMeaningReviewQuestion(q);
 
       // 构建完整题干展示
@@ -3064,13 +3067,13 @@ function renderResults(data) {
       if (isMeaningReview) {
         contextDisplay = '请写出这个单词的中文释义';
         explanationHtml = buildMeaningReviewExplanation(q, r, escapeHtml);
-      } else if (q?.type === 1 && q?.context) {
+      } else if (q?.type === 1 && (q?.context || q?.question)) {
         // Type 1: 显示上下文，空白处用 ___ 占位
-        contextDisplay = escapeHtml(q.context).replace(/_____/g, '<span class="inline-blank">&nbsp;</span>');
-      } else if (q?.type === 2 && q?.context) {
-        contextDisplay = '📘 ' + escapeHtml(q.context);
-      } else if (q?.type === 3 && q?.context) {
-        contextDisplay = '🌐 ' + escapeHtml(q.context);
+        contextDisplay = escapeHtml(q.context || q.question).replace(/_____/g, '<span class="inline-blank">&nbsp;</span>');
+      } else if (q?.type === 2 && (q?.context || q?.question)) {
+        contextDisplay = '📘 ' + escapeHtml(q.context || q.question);
+      } else if (q?.type === 3 && (q?.context || q?.question)) {
+        contextDisplay = '🌐 ' + escapeHtml(q.context || q.question);
       }
 
       // 构建选项列表
@@ -3084,7 +3087,7 @@ function renderResults(data) {
       if (isMeaningReview) {
         optionsHtml = `<div class="detail-line"><strong>你的答案：</strong>${escapeHtml(r.your || '（未作答）')}</div>
           <div class="detail-line"><strong>参考释义：</strong>${escapeHtml(r.answer || q?.correctMeaning || '暂无参考释义')}</div>`;
-      } else if (q?.options && q.options.length > 0) {
+      } else if (questionData?.options && questionData.options.length > 0) {
         optionsHtml = q.options.map(opt => {
           const letter = opt[0];
           const isCorrect = letter === q.answer;
@@ -3097,7 +3100,7 @@ function renderResults(data) {
           else if (isCorrect) tag = '<span class="opt-tag tag-correct">✓ 正确答案</span>';
           else if (isUserChoice) tag = '<span class="opt-tag tag-wrong">你的选择</span>';
           const rawWord = String(opt).replace(/^[A-D]\.\s*/, '');
-          const displayWord = formatOptionDisplayText(rawWord, q.options, q);
+          const displayWord = formatOptionDisplayText(rawWord, questionData.options, questionData);
           return `<div class="${cls}"><strong>${escapeHtml(letter)}.</strong> ${escapeHtml(displayWord)} ${tag}</div>`;
         }).join('');
       } else {
@@ -3434,11 +3437,11 @@ function openHistoryDetail(item) {
     card.className = 'hd-q';
     const legacyIncomplete = q.contentState === 'legacy_incomplete';
     const incompleteMessage = '这是一条早期考核记录，当时没有保存完整题目。答题结果仍然保留。';
-    const rawStem = escapeHtml(legacyIncomplete ? incompleteMessage : (q.question || q.word || ''));
+    const rawStem = escapeHtml((legacyIncomplete && !q.question) ? incompleteMessage : (q.question || q.word || ''));
     const stemHtml = q.type === 1
       ? rawStem.replace(/_____/g, '<span class="blank"></span>')
       : rawStem;
-    const optsHtml = legacyIncomplete ? '<div class="hd-opt muted">' + escapeHtml(incompleteMessage) + '</div>' : (q.options || []).map(opt => {
+    const optsHtml = (q.options || []).length ? (q.options || []).map(opt => {
       const letter = optionLetter(opt);
       const word = String(opt).replace(/^[A-D]\.\s*/, '');
       let cls = 'hd-opt';
