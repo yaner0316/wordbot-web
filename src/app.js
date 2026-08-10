@@ -2920,6 +2920,14 @@ async function submitQuiz() {
       };
       data = await submitQuizToBackend(payload);
     }
+    if (state.session.kind === 'quiz' && data.code === 'FORMAL_QUESTION_REPLACED') {
+      await resumeFormalQuestionReplacement(data);
+      return;
+    }
+    if (state.session.kind === 'quiz' && (data.code === 'FORMAL_REPLACEMENT_NOT_READY' || data.replacementRequired)) {
+      showToast('这道题发现了问题，正在准备替换题，请稍后再提交。', 'info');
+      return;
+    }
     state.quiz.result = data;
 
     if (state.session.kind === 'quiz') {
@@ -2949,6 +2957,26 @@ async function submitQuiz() {
     $('submitBtn').disabled = false;
     hideLoading();
   }
+}
+
+async function resumeFormalQuestionReplacement(data) {
+  const replacements = Array.isArray(data?.replacementQuestions) ? data.replacementQuestions : [];
+  const replacementIndexes = replacements
+    .map(replacement => Number(replacement?.questionIndex))
+    .filter(index => Number.isInteger(index) && index >= 0 && index < state.quiz.questions.length);
+  if (!replacementIndexes.length) {
+    throw new Error('FORMAL_REPLACEMENT_PAYLOAD_INVALID');
+  }
+  const replacementByIndex = new Map(replacements.map(replacement => [Number(replacement.questionIndex), replacement]));
+  state.quiz.questions = state.quiz.questions.map((question, index) => {
+    const replacement = replacementByIndex.get(index);
+    return replacement ? { ...replacement, testId: state.quiz.testId } : question;
+  });
+  state.answers = state.answers.map((answer, index) => replacementByIndex.has(index) ? null : answer);
+  state.currentQuestion = replacementIndexes[0];
+  saveCurrentSessionProgress();
+  renderQuestion(state.currentQuestion);
+  showToast('有一道题发现了问题，已换成新题，请继续作答。', 'info');
 }
 
 // ========== Results ==========

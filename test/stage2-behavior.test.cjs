@@ -1584,6 +1584,18 @@ test('demo questions and results use canonical meaningId identity', () => {
     assert.doesNotMatch(submitSource, /getQuestionMeaningIdentity|recordId:\s*/);
 });
 
+test('a formal bad-question replacement stays in the answer flow instead of producing a false result', () => {
+    const submitSource = extractNamedFunction(app, 'submitQuiz');
+
+    assert.match(submitSource, /data\.code\s*===\s*'FORMAL_QUESTION_REPLACED'/);
+    assert.match(submitSource, /await resumeFormalQuestionReplacement\(data\)/);
+    const replacementIndex = submitSource.indexOf("data.code === 'FORMAL_QUESTION_REPLACED'");
+    const returnIndex = submitSource.indexOf('return;', replacementIndex);
+    const resultIndex = submitSource.indexOf('state.quiz.result = data');
+    assert.ok(returnIndex > replacementIndex, 'replacement branch must stop final result processing');
+    assert.ok(resultIndex > returnIndex, 'result processing must happen only after the replacement branch returns');
+});
+
 test('incomplete legacy history uses a child-friendly explanation instead of an empty option area', () => {
     const start = app.indexOf('function openHistoryDetail(');
     const end = app.indexOf('function closeHistoryDetail()', start);
