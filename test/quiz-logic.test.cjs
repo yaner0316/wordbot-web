@@ -145,6 +145,16 @@ test('allows a complete resumed formal challenge whose questions were created fr
     assert.equal(result.blocked, false);
 });
 
+test('blocks a formal challenge with a missing options snapshot before the answer page renders', () => {
+    const quiz = makeFormalQuiz({ source: 'formal_quiz_challenge' });
+    delete quiz.questions[0].options;
+
+    const result = inspectFormalQuizResponse(quiz);
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_RENDERABLE_REQUIRED');
+});
+
 test('blocks an explicitly marked partial cache challenge with one to nine questions', () => {
     for (const questionCount of [1, 9]) {
         const quiz = makeFormalQuiz({
@@ -175,9 +185,8 @@ test('still rejects an empty explicitly marked partial cache challenge', () => {
 });
 
 test('allows the current record_id API alias without deduplicating equal spellings', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
-        word: 'bank',
-        record_id: `bank-meaning-${index}`,
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question, word: 'bank', record_id: `bank-meaning-${index}`,
     }));
     const result = inspectFormalQuizResponse(makeFormalQuiz({ questions: questions.map(normalizeQuestionMeaningIdentity) }));
 
@@ -185,9 +194,8 @@ test('allows the current record_id API alias without deduplicating equal spellin
 });
 
 test('allows sourceRecordId as the formal meaning identity', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
-        word: 'bank',
-        sourceRecordId: `bank-meaning-${index}`,
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question, word: 'bank', sourceRecordId: `bank-meaning-${index}`,
     }));
     const result = inspectFormalQuizResponse(makeFormalQuiz({ questions: questions.map(normalizeQuestionMeaningIdentity) }));
 
@@ -195,8 +203,8 @@ test('allows sourceRecordId as the formal meaning identity', () => {
 });
 
 test('accepts the real active-session DTO and wordRecordId meaning identity', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
-        type: 1,
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question,
         word: index < 2 ? 'bank' : `word-${index}`,
         wordRecordId: `meaning-${index}`,
         cacheRecordId: `cache-${index}`,
@@ -225,9 +233,11 @@ test('accepts the real active-session DTO and wordRecordId meaning identity', ()
     assert.equal(result.message, '');
 });
 test('rejects unsupported meaning identity aliases in a formal quiz', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question,
         word: `word-${index}`,
         sourceWordRecordId: `legacy-meaning-${index}`,
+        meaningId: '',
     }));
     const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
 

@@ -139,6 +139,24 @@
       };
     }
 
+    const hasRenderableQuestion = question => {
+      const options = question?.options;
+      const answer = String(question?.answer || question?.correctAnswer || '').trim().toUpperCase();
+      return Number(question?.type) === 1
+        && String(question?.context || question?.stem || '').trim()
+        && Array.isArray(options)
+        && options.length === 4
+        && options.every(option => /^[A-D]\.\s+\S/.test(String(option || '').trim()))
+        && ['A', 'B', 'C', 'D'].includes(answer);
+    };
+    if (questions.some(question => !hasRenderableQuestion(question))) {
+      return {
+        blocked: true,
+        code: 'FORMAL_QUIZ_RENDERABLE_REQUIRED',
+        message: '\u8fd9\u5957\u9898\u6b63\u5728\u6062\u590d\uff0c\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\u3002',
+      };
+    }
+
     const meaningIds = questions.map(getQuestionMeaningId);
     if (meaningIds.some(meaningId => !meaningId)) {
       return {
