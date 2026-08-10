@@ -7,17 +7,17 @@ const vm = require('node:vm');
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
 const quizLogicSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'quiz-logic.js'), 'utf8');
 
-test('ordinary results use a context translation helper only', () => {
+test('ordinary results show all option meanings and the sentence translation whether correct or wrong', () => {
   const start = appSource.indexOf('function renderResults(data)');
   const end = appSource.indexOf('function toggleAnalysis()', start);
   assert.ok(start >= 0 && end > start);
   const renderResults = appSource.slice(start, end);
 
   assert.match(renderResults, /buildContextTranslationHtml\(q,\s*escapeHtml\)/);
-  assert.match(renderResults, /const translationHtml = !isMeaningReview && r\.correct\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+  assert.match(renderResults, /const translationHtml = !isMeaningReview\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+  assert.match(renderResults, /const optionMeaningsHtml = !isMeaningReview\s*\?\s*buildOptionMeaningsExplanation\(q,\s*escapeHtml\)\s*:\s*'';/);
   assert.match(renderResults, /\$\{tag\}<\/div>/);
-  assert.match(renderResults, /\$\{optionsHtml\}\s*\$\{translationHtml\}/);
-  assert.doesNotMatch(renderResults, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
+  assert.match(renderResults, /\$\{optionsHtml\}\s*\$\{optionMeaningsHtml\}\s*\$\{translationHtml\}/);
   assert.doesNotMatch(renderResults, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
   assert.match(renderResults, /\$\{isMeaningReview \? `<div class="explain-box">/);
 });
@@ -87,6 +87,7 @@ test('result translations stay bound to their own question when result order cha
       const value = String(question?.contextCN || '').trim();
       return value ? '<div class="opt-translation">' + escape(value) + '</div>' : '';
     },
+    buildOptionMeaningsExplanation: () => '',
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',
@@ -128,6 +129,7 @@ function renderResultTranslations(questions, results) {
     },
     escapeHtml: String,
     buildContextTranslationHtml: question => question?.contextCN ? '<div class="opt-translation">' + question.contextCN + '</div>' : '',
+    buildOptionMeaningsExplanation: () => '',
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',

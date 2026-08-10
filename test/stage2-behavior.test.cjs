@@ -192,15 +192,15 @@ test('answer analysis explains the concrete question and compares a wrong choice
     assert.match(quizLogic, /与本题给出的语境或释义不匹配/);
 });
 
-test('ordinary results place the stored context translation after all options', () => {
+test('ordinary results place option meanings and the stored context translation after all options', () => {
     const start = app.indexOf('function renderResults(data)');
     const end = app.indexOf('function toggleAnalysis()', start);
     assert.ok(start >= 0 && end > start, 'renderResults function should exist');
     const renderResultsSource = app.slice(start, end);
     assert.match(quizLogic, /function buildContextTranslationHtml/);
-    assert.match(renderResultsSource, /const translationHtml = !isMeaningReview && r\.correct\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
-    assert.match(renderResultsSource, /\$\{optionsHtml\}\s*\$\{translationHtml\}/);
-    assert.doesNotMatch(renderResultsSource, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
+    assert.match(renderResultsSource, /const optionMeaningsHtml = !isMeaningReview\s*\?\s*buildOptionMeaningsExplanation\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.match(renderResultsSource, /const translationHtml = !isMeaningReview\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
+    assert.match(renderResultsSource, /\$\{optionsHtml\}\s*\$\{optionMeaningsHtml\}\s*\$\{translationHtml\}/);
     assert.doesNotMatch(renderResultsSource, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
     assert.match(renderResultsSource, /\$\{isMeaningReview \? `<div class="explain-box">/);
 });

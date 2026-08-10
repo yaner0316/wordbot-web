@@ -3069,7 +3069,10 @@ function renderResults(data) {
 
       // 构建选项列表
       let optionsHtml = '';
-      const translationHtml = !isMeaningReview && r.correct
+      const optionMeaningsHtml = !isMeaningReview
+        ? buildOptionMeaningsExplanation(q, escapeHtml)
+        : '';
+      const translationHtml = !isMeaningReview
         ? buildContextTranslationHtml(q, escapeHtml)
         : '';
       if (isMeaningReview) {
@@ -3114,6 +3117,7 @@ function renderResults(data) {
           <div class="opts-box">
             <div class="opts-label">${isMeaningReview ? '答案：' : '选项：'}</div>
             ${optionsHtml}
+            ${optionMeaningsHtml}
             ${translationHtml}
           </div>
 
