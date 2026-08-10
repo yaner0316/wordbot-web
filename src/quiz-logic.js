@@ -120,7 +120,9 @@
   }
 
   function inspectFormalQuizResponse(quiz) {
-    if (quiz?.source !== 'question_cache' || quiz?.diagnostics?.fallbackUsed !== false) {
+    const source = String(quiz?.source || '').trim();
+    const cacheBackedFormalSource = source === 'question_cache' || source === 'formal_quiz_challenge';
+    if (!cacheBackedFormalSource || quiz?.diagnostics?.fallbackUsed !== false) {
       return {
         blocked: true,
         code: 'FORMAL_QUIZ_CACHE_REQUIRED',

@@ -131,6 +131,20 @@ test('allows exactly ten cache questions with meaning-level identifiers', () => 
     assert.equal(result.blocked, false);
 });
 
+test('allows a complete resumed formal challenge whose questions were created from the cache', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz({
+        source: 'formal_quiz_challenge',
+        diagnostics: {
+            fallbackUsed: false,
+            resumed: true,
+            requiredCount: 10,
+            readyCount: 10,
+        },
+    }));
+
+    assert.equal(result.blocked, false);
+});
+
 test('blocks an explicitly marked partial cache challenge with one to nine questions', () => {
     for (const questionCount of [1, 9]) {
         const quiz = makeFormalQuiz({
