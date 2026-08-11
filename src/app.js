@@ -31,6 +31,10 @@ const parentWordLibraryState = {
   total: 0,
   totalPages: 1,
   words: [],
+  hasMore: true,
+  loading: false,
+  loadedPages: new Set(),
+  scrollAttached: false,
 };
 function formatLearningLevel(level) {
   return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
@@ -38,6 +42,35 @@ function formatLearningLevel(level) {
 
 function formatWordStatus(status) {
   return STATUS_LABELS[status] || status || STATUS_LABELS.Pending;
+}
+
+function parentWordRecordId(item) {
+  return String(item?.recordId || item?.id || item?.record_id || '');
+}
+
+function mergeParentWordPages(existing = [], incoming = []) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of [...(Array.isArray(existing) ? existing : []), ...(Array.isArray(incoming) ? incoming : [])]) {
+    const recordId = parentWordRecordId(item);
+    if (!recordId || seen.has(recordId)) continue;
+    seen.add(recordId);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function isParentWordSubmissionSuccessful(result) {
+  if (!result || result.success !== true) return false;
+  if (!Number.isFinite(Number(result.count)) || Number(result.count) < 0) return false;
+  if (Array.isArray(result.errors) && result.errors.length > 0) return false;
+  if (result.errors && !Array.isArray(result.errors) && typeof result.errors === 'object' && Object.keys(result.errors).length > 0) return false;
+  return true;
+}
+
+function buildParentWordCooldownNotice(count = 0) {
+  const safeCount = Number.isFinite(Number(count)) ? Number(count) : 0;
+  return `已录入 ${safeCount} 个单词。新录入单词需要约 18 小时冷却，冷却结束后才会进入孩子的正式挑战。`;
 }
 const SESSION_USER_KEY = 'wordbot:session-user';
 const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
@@ -1805,6 +1838,7 @@ function openStudentWordEntry() {
       <textarea id="studentWordsInput" rows="6" placeholder="可以用换行、逗号或分号分隔，例如&#10;resilient, genuine&#10;promotion | 促销活动"></textarea>
     </label>
     <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库；释义、例句和检查由后端生成。</div>
+    <div id="studentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
     <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
   `;
@@ -1972,6 +2006,7 @@ function openParentTool(tool) {
         <textarea id="parentWordsInput" rows="6" placeholder="一行一个英文单词；新义项可写 word | 中文释义，例如&#10;resilient&#10;promotion | 促销活动"></textarea>
       </label>
       <div class="parent-help">当前会把单词加入 ${escapeHtml(state.user)} 的词库；英文释义、中文释义、例句和干扰项由后端生成。</div>
+      <div id="parentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
       <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
     `;
@@ -2010,7 +2045,9 @@ function openParentTool(tool) {
       <div id="parentWordLibrary" class="parent-result-empty">正在加载词库...</div>
       <div id="parentWordEditor" class="parent-word-editor"></div>
     `;
-    loadParentWordLibrary(1);
+    resetParentWordLibraryState();
+    attachParentWordLibraryScroll();
+    loadParentWordLibrary(1, { reset: true });
     return;
   }
   if (tool === 'learningSettings') {
@@ -2184,8 +2221,19 @@ async function submitParentWords(options = {}) {
             skipDuplicateWords: Boolean(options.skipDuplicateWords),
           })
         });
+    if (!isParentWordSubmissionSuccessful(result)) {
+      const errors = Array.isArray(result?.errors) ? result.errors : [];
+      const detail = errors.length ? `：${errors.map(error => error?.message || error?.word || String(error)).join('、')}` : '';
+      showToast('录入未完成' + detail, 'error');
+      return;
+    }
+    const count = Number(result.count);
     const skipped = result.skippedDuplicateWords?.length ? `，跳过重复 ${result.skippedDuplicateWords.length} 个` : '';
-    showToast('已提交 ' + (result.count ?? entries.length) + ' 个单词' + skipped, 'success');
+    showToast(buildParentWordCooldownNotice(count) + skipped, 'success');
+    for (const id of ['parentWordEntryCooldownNotice', 'studentWordEntryCooldownNotice']) {
+      const notice = $(id);
+      if (notice) notice.textContent = buildParentWordCooldownNotice(count);
+    }
     if (input) input.value = '';
     clearDuplicateWordConfirmation();
     loadStats(state.user);
@@ -2258,10 +2306,40 @@ function parentWordStatusOptions(currentStatus) {
   return STATUS_OPTIONS.map(status => `<option value="${status}" ${status === selectedStatus ? 'selected' : ''}>${escapeHtml(STATUS_LABELS[status])}</option>`).join('');
 }
 
-async function loadParentWordLibrary(page = 1) {
+function resetParentWordLibraryState() {
+  parentWordLibraryState.page = 1;
+  parentWordLibraryState.total = 0;
+  parentWordLibraryState.totalPages = 1;
+  parentWordLibraryState.words = [];
+  parentWordLibraryState.hasMore = true;
+  parentWordLibraryState.loadedPages = new Set();
+}
+
+function attachParentWordLibraryScroll() {
+  if (parentWordLibraryState.scrollAttached || typeof window === 'undefined') return;
+  window.addEventListener('scroll', handleParentWordLibraryScroll, { passive: true });
+  parentWordLibraryState.scrollAttached = true;
+}
+
+function handleParentWordLibraryScroll() {
+  const libraryEl = $('parentWordLibrary');
+  if (!libraryEl || parentWordLibraryState.loading || !parentWordLibraryState.hasMore) return;
+  const viewportBottom = window.scrollY + window.innerHeight;
+  const documentBottom = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+  if (viewportBottom < documentBottom - 320) return;
+  loadParentWordLibrary(parentWordLibraryState.page + 1, { append: true });
+}
+
+async function loadParentWordLibrary(page = 1, options = {}) {
   const libraryEl = $('parentWordLibrary');
   if (!libraryEl) return;
-  libraryEl.textContent = '正在加载词库...';
+  const append = Boolean(options.append);
+  const reset = options.reset !== undefined ? Boolean(options.reset) : !append && Number(page) <= 1;
+  if (parentWordLibraryState.loading) return;
+  if (reset) resetParentWordLibraryState();
+  if (!reset && (!parentWordLibraryState.hasMore || parentWordLibraryState.loadedPages.has(Number(page)))) return;
+  if (!append) libraryEl.textContent = '正在加载词库...';
+  parentWordLibraryState.loading = true;
   const statusFilter = getParentWordStatusFilter();
   try {
     const pageSize = 20;
@@ -2284,11 +2362,25 @@ async function loadParentWordLibrary(page = 1) {
           return { words: words.slice(start, start + pageSize), page: safePage, pageSize, total, totalPages };
         })()
       : await api(`/api/admin/words?userId=${encodeURIComponent(state.user)}&page=${encodeURIComponent(page)}&pageSize=${encodeURIComponent(pageSize)}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ''}`);
-    renderParentWordLibrary(data);
+    const incomingWords = Array.isArray(data?.words) ? data.words : [];
+    const mergedWords = reset
+      ? mergeParentWordPages([], incomingWords)
+      : mergeParentWordPages(parentWordLibraryState.words, incomingWords);
+    const loadedPage = Number(data?.page || page || 1);
+    parentWordLibraryState.page = loadedPage;
+    parentWordLibraryState.pageSize = Number(data?.pageSize || 20);
+    parentWordLibraryState.total = Number(data?.total || mergedWords.length);
+    parentWordLibraryState.totalPages = Number(data?.totalPages || loadedPage || 1);
+    parentWordLibraryState.hasMore = loadedPage < parentWordLibraryState.totalPages && incomingWords.length > 0;
+    parentWordLibraryState.loadedPages.add(loadedPage);
+    parentWordLibraryState.words = mergedWords;
+    renderParentWordLibrary({ ...data, page: loadedPage, words: mergedWords, total: parentWordLibraryState.total, totalPages: parentWordLibraryState.totalPages });
   } catch (error) {
-    libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
+    if (!append) libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
     const editorEl = $('parentWordEditor');
-    if (editorEl) editorEl.innerHTML = '';
+    if (editorEl && !append) editorEl.innerHTML = '';
+  } finally {
+    parentWordLibraryState.loading = false;
   }
 }
 function renderParentWordLibrary(data) {
@@ -2299,10 +2391,10 @@ function renderParentWordLibrary(data) {
   const totalPages = Number(data?.totalPages || 1);
   const total = Number(data?.total || words.length);
   parentWordLibraryState.page = page;
-  parentWordLibraryState.pageSize = Number(data?.pageSize || 20);
+  parentWordLibraryState.pageSize = Number(data?.pageSize || parentWordLibraryState.pageSize || 20);
   parentWordLibraryState.total = total;
   parentWordLibraryState.totalPages = totalPages;
-  parentWordLibraryState.words = words;
+  parentWordLibraryState.hasMore = page < totalPages;
   const editorEl = $('parentWordEditor');
   if (editorEl) editorEl.innerHTML = '';
   if (!words.length) {
@@ -2310,20 +2402,25 @@ function renderParentWordLibrary(data) {
     return;
   }
   const rows = words.map(item => {
-    const recordId = item.recordId || item.id || item.record_id || '';
+    const recordId = parentWordRecordId(item);
     const currentStatus = item.status || item.Status || 'Pending';
     const word = item.word || item.Word || '';
+    const actionArg = escapeHtml(JSON.stringify(recordId));
     return `
-      <div class="parent-word-list-item">
-        <button class="parent-word-list-main" type="button" onclick="openParentWordEditor('${escapeHtml(recordId)}', ${page})">
+      <div class="parent-word-list-item" data-record-id="${escapeHtml(recordId)}">
+        <button class="parent-word-list-main" type="button" onclick="openParentWordEditor(${actionArg}, ${page})">
           <div class="parent-word-main">
             <strong>${escapeHtml(word)}</strong>
             <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
           </div>
         </button>
-        <select class="parent-word-status-select" aria-label="修改 ${escapeHtml(word)} 状态" data-record-id="${escapeHtml(recordId)}" data-previous-status="${escapeHtml(currentStatus)}" onchange="saveParentWordStatusFromList(this)">
-          ${parentWordStatusOptions(currentStatus)}
-        </select>
+        <div class="parent-word-list-actions">
+          <button class="btn btn-secondary btn-small" type="button" onclick="openParentWordEditor(${actionArg}, ${page})">编辑</button>
+          <button class="btn btn-danger btn-small" type="button" onclick="deleteParentWord(${actionArg})">删除</button>
+          <select class="parent-word-status-select" aria-label="修改 ${escapeHtml(word)} 状态" data-record-id="${escapeHtml(recordId)}" data-previous-status="${escapeHtml(currentStatus)}" onchange="saveParentWordStatusFromList(this)">
+            ${parentWordStatusOptions(currentStatus)}
+          </select>
+        </div>
       </div>
     `;
   }).join('');
@@ -2331,13 +2428,10 @@ function renderParentWordLibrary(data) {
     <div class="parent-word-library">
       <div class="parent-word-library-head">
         <strong>共 ${escapeHtml(total)} 个单词</strong>
-        <span>第 ${escapeHtml(page)} / ${escapeHtml(totalPages)} 页</span>
+        <span>${parentWordLibraryState.loading ? '正在加载...' : (parentWordLibraryState.hasMore ? '向下滚动加载更多' : '已加载全部')}</span>
       </div>
       ${rows}
-      <div class="parent-word-pager">
-        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
-        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
-      </div>
+      <div class="parent-word-load-status" aria-live="polite">${parentWordLibraryState.loading ? '正在加载更多单词...' : (parentWordLibraryState.hasMore ? '继续向下拖动以加载更多' : '没有更多单词')}</div>
     </div>
   `;
 }
@@ -2368,7 +2462,7 @@ async function saveParentWordStatusFromList(selectEl) {
     showToast(`状态已更新为${formatWordStatus(status)}`, 'success');
     const activeFilter = getParentWordStatusFilter();
     if (activeFilter && activeFilter !== status) {
-      await loadParentWordLibrary(parentWordLibraryState.page || 1);
+      await loadParentWordLibrary(1, { reset: true });
     } else {
       loadStats(state.user);
     }
@@ -2463,10 +2557,42 @@ async function saveParentWord() {
       });
     }
     showToast('已保存单词记录', 'success');
-    await loadParentWordLibrary(parentWordLibraryState.page || 1);
+    await loadParentWordLibrary(1, { reset: true });
     loadStats(state.user);
   } catch (error) {
     showToast('保存失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function deleteParentWord(recordId) {
+  const stableRecordId = String(recordId || '');
+  if (!stableRecordId) {
+    showToast('缺少单词释义记录编号，无法删除', 'error');
+    return;
+  }
+  if (!window.confirm('确定删除这个单词释义吗？其他同拼写释义不会受影响。')) return;
+  showLoading('正在删除单词释义...');
+  try {
+    if (!DEMO_MODE) {
+      await api(`/api/word?recordId=${encodeURIComponent(stableRecordId)}&userId=${encodeURIComponent(state.user || '')}`, {
+        method: 'DELETE',
+      });
+    }
+    parentWordLibraryState.words = parentWordLibraryState.words.filter(item => parentWordRecordId(item) !== stableRecordId);
+    parentWordLibraryState.total = Math.max(0, parentWordLibraryState.total - 1);
+    renderParentWordLibrary({
+      words: parentWordLibraryState.words,
+      page: parentWordLibraryState.page,
+      pageSize: parentWordLibraryState.pageSize,
+      total: parentWordLibraryState.total,
+      totalPages: parentWordLibraryState.totalPages,
+    });
+    showToast('单词释义已删除', 'success');
+    loadStats(state.user);
+  } catch (error) {
+    showToast('删除失败：' + normalizeApiError(error).message, 'error');
   } finally {
     hideLoading();
   }

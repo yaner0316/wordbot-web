@@ -484,6 +484,25 @@
       border-color: var(--orange);
       background: #fff;
     }
+    .parent-word-list-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .parent-word-list-actions .btn-small {
+      padding: 6px 9px;
+      white-space: nowrap;
+    }
+    .btn-danger {
+      border: 1px solid #E7A9A0;
+      background: #FFF3F1;
+      color: #B33A2F;
+    }
+    .btn-danger:hover {
+      background: #FFE4E0;
+    }
     .parent-word-list-main {
       min-width: 0;
       border: 0;
@@ -532,11 +551,23 @@
       border-color: var(--orange);
       box-shadow: 0 0 0 2px rgba(245, 139, 52, 0.16);
     }
-    .parent-word-pager {
+    .parent-word-load-status {
       display: flex;
-      justify-content: flex-end;
-      gap: 8px;
+      justify-content: center;
+      color: var(--text-secondary);
+      font-size: 12px;
       margin-top: 4px;
+      padding: 10px 0 4px;
+    }
+    .parent-cooldown-notice {
+      margin: 8px 0 12px;
+      padding: 9px 11px;
+      border: 1px solid #D8E9FF;
+      border-radius: 10px;
+      background: #F6FAFF;
+      color: #45627F;
+      font-size: 12px;
+      line-height: 1.5;
     }
     .parent-word-editor-card {
       margin-top: 12px;
