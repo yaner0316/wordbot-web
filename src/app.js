@@ -1123,7 +1123,7 @@ function selectUser(user) {
   Promise.all([
     syncLearningSettingsFromServer(user),
     syncGameStateFromServer(user),
-    loadStats(user, { showOverlay: false }),
+    loadStats(user),
   ]).then(async () => {
     await loadRemoteQuizSession(user);
     await loadQuizCacheReadiness(user);
@@ -2763,7 +2763,7 @@ async function loadStats(user, { showOverlay = true } = {}) {
     `;
   } catch(e) {
     // Stats are non-blocking; a slow database must not make login look broken.
-    if (e.code !== 'REQUEST_TIMEOUT' || showOverlay) {
+    if (e.code !== 'REQUEST_TIMEOUT') {
       showToast('加载统计失败: ' + normalizeApiError(e).message, 'error');
     }
   } finally {
