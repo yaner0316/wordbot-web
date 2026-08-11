@@ -3574,7 +3574,7 @@ function openHistoryDetail(item) {
       if (letter === optionLetter(q.correctAnswer)) cls += ' correct';
       else if (letter === optionLetter(q.yourAnswer) && !q.isCorrect) cls += ' wrong';
       return '<div class="' + cls + '"><strong>' + escapeHtml(letter) + '.</strong> ' + escapeHtml(word) + '</div>';
-    }).join('');
+    }).join('') : '';
     const answerSummary =
       '<div class="hd-answer-row">' +
         '<span>孩子答案：' + escapeHtml(optionTextByLetter(q.options, q.yourAnswer)) + '</span>' +
