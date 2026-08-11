@@ -900,6 +900,13 @@ async function api(path, opts = {}) {
     }
     return normalizeApiPayload(data);
   } catch (error) {
+    if (controller.signal.aborted && !signal?.aborted) {
+      const timeoutError = new Error('REQUEST_TIMEOUT');
+      timeoutError.name = 'AbortError';
+      timeoutError.code = 'REQUEST_TIMEOUT';
+      timeoutError.timeoutMs = timeoutMs;
+      throw timeoutError;
+    }
     throw error;
   } finally {
     clearTimeout(timer);
@@ -1116,7 +1123,7 @@ function selectUser(user) {
   Promise.all([
     syncLearningSettingsFromServer(user),
     syncGameStateFromServer(user),
-    loadStats(user),
+    loadStats(user, { showOverlay: false }),
   ]).then(async () => {
     await loadRemoteQuizSession(user);
     await loadQuizCacheReadiness(user);
@@ -2706,7 +2713,7 @@ async function loadStats(user, { showOverlay = true } = {}) {
   try {
     const data = DEMO_MODE
       ? generateDemoStats(user)
-      : await api('/api/stats/' + encodeURIComponent(user));
+      : await api('/api/stats/' + encodeURIComponent(user), { timeoutMs: 12000 });
     const totalWords = Number(data.totalWords || 0);
     const masteredWords = Number(data.masteredWords || 0);
     const consolidatingWords = Number(data.consolidatingWords || 0);
@@ -2755,7 +2762,10 @@ async function loadStats(user, { showOverlay = true } = {}) {
       ${lastTestTime ? `<p class="home-v2-last-test"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg>上次考核：${escapeHtml(formatDate(lastTestTime))}</p>` : ''}
     `;
   } catch(e) {
-    showToast('加载统计失败: ' + e.message, 'error');
+    // Stats are non-blocking; a slow database must not make login look broken.
+    if (e.code !== 'REQUEST_TIMEOUT' || showOverlay) {
+      showToast('加载统计失败: ' + normalizeApiError(e).message, 'error');
+    }
   } finally {
     if (showOverlay) hideLoading();
   }
