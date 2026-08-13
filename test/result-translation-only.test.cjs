@@ -93,6 +93,9 @@ test('result translations stay bound to their own question when result order cha
     getEncourage: () => '',
     isMeaningReviewQuestion: () => false,
     formatOptionDisplayText: value => value,
+    mergeResultQuestionSnapshot: (matched, result) => context.WordBotQuizLogic
+      ? context.WordBotQuizLogic.mergeResultQuestionSnapshot(matched, result)
+      : ({ ...(matched || {}), ...(result || {}) }),
     updateResultActions: () => {},
     launchConfetti: () => {},
     $: id => id === 'resultContent' ? resultContent : null,
@@ -135,11 +138,14 @@ function renderResultTranslations(questions, results) {
     getEncourage: () => '',
     isMeaningReviewQuestion: () => false,
     formatOptionDisplayText: value => value,
+    mergeResultQuestionSnapshot: undefined,
     updateResultActions: () => {},
     launchConfetti: () => {},
     $: id => id === 'resultContent' ? resultContent : null,
   };
   vm.createContext(context);
+  vm.runInContext(quizLogicSource, context);
+  context.mergeResultQuestionSnapshot = context.WordBotQuizLogic.mergeResultQuestionSnapshot;
   context.renderResults = vm.runInContext('(' + appSource.slice(start, end) + ')', context);
   context.renderResults({
     correct: results.length,
@@ -223,6 +229,45 @@ test('meaningId binds reversed same-spelling results to the right translation', 
   assert.match(html, /guide lead sentence/);
   assert.match(html, /metal lead sentence/);
   assert.ok(html.indexOf('guide lead sentence') < html.indexOf('metal lead sentence'));
+});
+
+test('recordId replay result binds to the canonical meaningId question and renders four options', () => {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(quizLogicSource, context);
+  const result = context.WordBotQuizLogic.normalizeApiPayload({ results: [{
+    recordId: 'meaning-bank-finance', word: 'bank', your: 'B', correct: false,
+  }] }).results[0];
+  const html = renderResultTranslations([{
+    meaningId: 'meaning-bank-finance', type: 1, word: 'bank',
+    context: 'She deposited money in the _____.', contextCN: '她把钱存进了银行。',
+    options: ['A. bank', 'B. river', 'C. desk', 'D. road'], answer: 'A',
+  }], [result]);
+
+  assert.equal(result.meaningId, 'meaning-bank-finance');
+  assert.match(html, />A\.<\/strong> bank/);
+  assert.match(html, />D\.<\/strong> road/);
+  assert.doesNotMatch(html, /选项未保存/);
+});
+
+test('server replay snapshot wins while empty replay fields do not erase the matched question', () => {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(quizLogicSource, context);
+  const result = context.WordBotQuizLogic.normalizeApiPayload({ results: [{
+    recordId: 'meaning-bank-finance', word: 'bank', type: 1,
+    question: 'Server replay _____.', options: [], optionMeanings: [],
+    answer: 'A', your: 'A', correct: true,
+  }] }).results[0];
+  const html = renderResultTranslations([{
+    meaningId: 'meaning-bank-finance', type: 1, word: 'bank', context: 'Current _____.',
+    contextCN: '当前句译', options: ['A. bank', 'B. river', 'C. desk', 'D. road'],
+    optionMeanings: ['银行', '河流', '桌子', '道路'], answer: 'A',
+  }], [result]);
+
+  assert.match(html, /Server replay/);
+  assert.match(html, />D\.<\/strong> road/);
+  assert.match(html, /当前句译/);
 });
 
 test('raw wordId does not bypass canonical meaningId result binding', () => {

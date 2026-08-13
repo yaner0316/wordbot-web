@@ -1620,7 +1620,7 @@ test('results can render the submitted question snapshot when local matching is 
     const start = app.indexOf('function renderResults(');
     const end = app.indexOf('function renderHistoryList(', start);
     const source = app.slice(start, end);
-    assert.match(source, /matchedQuestion \|\| r/);
+    assert.match(source, /mergeResultQuestionSnapshot\(matchedQuestion, r\)/);
     assert.match(source, /questionData\.options/);
 });
 

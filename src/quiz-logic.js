@@ -89,12 +89,28 @@
     if (!question || typeof question !== 'object') return question;
     const meaningId = [
       question.meaningId,
+      question.recordId,
       question.record_id,
       question.wordRecordId,
       question.sourceRecordId,
       question.wordId,
     ].map(value => String(value ?? '').trim()).find(Boolean) || '';
     return meaningId ? { ...question, meaningId } : { ...question };
+  }
+
+  function mergeResultQuestionSnapshot(matchedQuestion, result) {
+    const base = matchedQuestion && typeof matchedQuestion === 'object' ? matchedQuestion : {};
+    const replay = result && typeof result === 'object' ? result : {};
+    const merged = { ...base };
+    for (const [key, value] of Object.entries(replay)) {
+      const emptyString = typeof value === 'string' && !value.trim();
+      const emptyArray = Array.isArray(value) && value.length === 0;
+      if ((value === undefined || value === null || emptyString || emptyArray) && merged[key] !== undefined) continue;
+      merged[key] = value;
+    }
+    if (replay.question && !replay.context) merged.context = replay.question;
+    if (replay.translation && !replay.contextCN) merged.contextCN = replay.translation;
+    return merged;
   }
 
   function normalizeApiPayload(data) {
@@ -276,6 +292,7 @@
     formatOptionDisplayText,
     normalizeApiPayload,
     normalizeQuestionMeaningIdentity,
+    mergeResultQuestionSnapshot,
     getQuestionMeaningId,
     inspectQuizContentForBlockingIssue,
     inspectFormalQuizResponse,

@@ -7,6 +7,7 @@ const {
   buildMeaningReviewExplanation,
   formatOptionDisplayText,
   normalizeApiPayload,
+  mergeResultQuestionSnapshot,
   inspectQuizContentForBlockingIssue,
   inspectFormalQuizResponse,
   normalizeArticleContext,
@@ -3191,7 +3192,7 @@ function renderResults(data) {
       const matchedQuestion = resultMeaningId
         ? questions.find(question => String(question?.meaningId || '').trim() === resultMeaningId)
         : undefined;
-      const questionData = matchedQuestion || r;
+      const questionData = mergeResultQuestionSnapshot(matchedQuestion, r);
       const q = questionData;
       const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
       const isMeaningReview = isMeaningReviewQuestion(q);
