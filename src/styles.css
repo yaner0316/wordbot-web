@@ -933,9 +933,11 @@
       background: var(--progress-bg, #f0e8df); color: var(--text-primary, #333);
       display: flex; align-items: center; gap: 6px;
     }
+    .hd-option-meaning { flex-basis: 100%; padding-left: 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
     .hd-opt.correct { background: #E8F5E9; color: #2E7D32; font-weight: 600; }
     .hd-opt.wrong   { background: #FFEBEE; color: var(--red, #e53935); }
     .hd-opt.muted { color: var(--text-secondary); }
+    .hd-context-translation { margin-top: 10px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
     .hd-answer-row { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
     .hd-q-result.pass { color: var(--orange); font-weight: 700; }
     .hd-q-result.fail { color: var(--red); font-weight: 700; }
