@@ -7,38 +7,19 @@ const vm = require('node:vm');
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
 const quizLogicSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'quiz-logic.js'), 'utf8');
 
-test('ordinary results show each option meaning and put the sentence translation after all options', () => {
+test('ordinary results show all option meanings and the sentence translation whether correct or wrong', () => {
   const start = appSource.indexOf('function renderResults(data)');
   const end = appSource.indexOf('function toggleAnalysis()', start);
   assert.ok(start >= 0 && end > start);
   const renderResults = appSource.slice(start, end);
 
   assert.match(renderResults, /buildContextTranslationHtml\(q,\s*escapeHtml\)/);
-  assert.match(renderResults, /buildResultOptionMeaningHtml\(q,\s*letter,\s*escapeHtml\)/);
   assert.match(renderResults, /const translationHtml = !isMeaningReview\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
-  assert.match(renderResults, /\$\{optionsHtml\}\$\{translationHtml\}/);
+  assert.match(renderResults, /const optionMeaningsHtml = !isMeaningReview\s*\?\s*buildOptionMeaningsExplanation\(q,\s*escapeHtml\)\s*:\s*'';/);
+  assert.match(renderResults, /\$\{tag\}<\/div>/);
+  assert.match(renderResults, /\$\{optionsHtml\}\s*\$\{optionMeaningsHtml\}\s*\$\{translationHtml\}/);
   assert.doesNotMatch(renderResults, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
   assert.match(renderResults, /\$\{isMeaningReview \? `<div class="explain-box">/);
-});
-
-test('result feedback keeps every option meaning before the sentence translation', () => {
-  const html = renderResultTranslations([
-    {
-      type: 1,
-      recordId: 'basement',
-      word: 'basement',
-      context: 'After moving in, we discovered a hidden _____ beneath the old wooden floorboards.',
-      contextCN: '\u642c\u8fdb\u53bb\u4e4b\u540e\uff0c\u6211\u4eec\u53d1\u73b0\u65e7\u6728\u5730\u677f\u4e0b\u9762\u85cf\u7740\u4e00\u4e2a\u9690\u85cf\u7684\u5730\u4e0b\u5ba4\u3002',
-      options: ['A. subway', 'B. basement', 'C. bunker', 'D. tunnel'],
-      optionMeanings: ['\u5730\u94c1', '\u5730\u4e0b\u5ba4', '\u5730\u4e0b\u78a7\u4f53', '\u96a7\u9053'],
-      answer: 'B',
-    },
-  ], [{ recordId: 'basement', word: 'basement', your: 'D', correct: true }]);
-
-  for (const meaning of ['\u5730\u94c1', '\u5730\u4e0b\u5ba4', '\u5730\u4e0b\u78a7\u4f53', '\u96a7\u9053']) assert.match(html, new RegExp(meaning));
-  const lastMeaning = html.lastIndexOf('\u96a7\u9053');
-  const translation = html.indexOf('\u642c\u8fdb\u53bb\u4e4b\u540e');
-  assert.ok(lastMeaning >= 0 && translation > lastMeaning, 'sentence translation must follow all option meanings');
 });
 
 test('context translation helper ignores meaning fallbacks', () => {
@@ -82,7 +63,7 @@ test('result translations stay bound to their own question when result order cha
         questions: [
           {
             type: 1,
-            recordId: 'q-one',
+            meaningId: 'q-one',
             word: 'bright',
             context: 'I used bright _____.',
             contextCN: '\\u6211\\u7528\\u4e86\\u660e\\u4eae\\u7684\\u8721\\u7b14\\u3002',
@@ -91,7 +72,7 @@ test('result translations stay bound to their own question when result order cha
           },
           {
             type: 1,
-            recordId: 'q-two',
+            meaningId: 'q-two',
             word: 'calm',
             context: 'The lake stayed _____.',
             contextCN: '\\u6e56\\u9762\\u4fdd\\u6301\\u5e73\\u9759\\u3002',
@@ -106,31 +87,15 @@ test('result translations stay bound to their own question when result order cha
       const value = String(question?.contextCN || '').trim();
       return value ? '<div class="opt-translation">' + escape(value) + '</div>' : '';
     },
-    buildResultOptionMeaningHtml: (question, letter, escape) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
-    },
-    buildResultOptionMeaningHtml: (question, letter, escape) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
-    },
-    buildResultOptionMeaningHtml: (question, letter, escape) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
-    },
-    buildResultOptionMeaningHtml: (question, letter, escape) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + escape(meaning) + '</div>' : '';
-    },
+    buildOptionMeaningsExplanation: () => '',
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',
     isMeaningReviewQuestion: () => false,
     formatOptionDisplayText: value => value,
+    mergeResultQuestionSnapshot: (matched, result) => context.WordBotQuizLogic
+      ? context.WordBotQuizLogic.mergeResultQuestionSnapshot(matched, result)
+      : ({ ...(matched || {}), ...(result || {}) }),
     updateResultActions: () => {},
     launchConfetti: () => {},
     $: id => id === 'resultContent' ? resultContent : null,
@@ -144,8 +109,8 @@ test('result translations stay bound to their own question when result order cha
     accuracy: '100.0%',
     masteredWords: [],
     results: [
-      { recordId: 'q-two', word: 'calm', your: 'A', correct: true },
-      { recordId: 'q-one', word: 'bright', your: 'A', correct: true },
+      { meaningId: 'q-two', word: 'calm', your: 'A', correct: true },
+      { meaningId: 'q-one', word: 'bright', your: 'A', correct: true },
     ],
   });
 
@@ -154,7 +119,7 @@ test('result translations stay bound to their own question when result order cha
   const crayonPosition = html.indexOf('\\u6211\\u7528\\u4e86\\u660e\\u4eae\\u7684\\u8721\\u7b14\\u3002');
   assert.ok(lakePosition >= 0 && crayonPosition >= 0);
   assert.ok(lakePosition < crayonPosition);
-  assert.doesNotMatch(html, /correctMeaning/);
+  assert.doesNotMatch(html, /\\u6709\\u610f\\u4e49|\\u9009\\u9879\\u91ca\\u4e49|correctMeaning|optionMeanings/);
 });
 function renderResultTranslations(questions, results) {
   const start = appSource.indexOf('function renderResults(data)');
@@ -167,36 +132,20 @@ function renderResultTranslations(questions, results) {
     },
     escapeHtml: String,
     buildContextTranslationHtml: question => question?.contextCN ? '<div class="opt-translation">' + question.contextCN + '</div>' : '',
-    buildResultOptionMeaningHtml: (question, letter) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
-    },
-    buildResultOptionMeaningHtml: (question, letter) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
-    },
-    buildResultOptionMeaningHtml: (question, letter) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
-    },
-    buildResultOptionMeaningHtml: (question, letter) => {
-      const index = String(letter).charCodeAt(0) - 65;
-      const meaning = String(question?.optionMeanings?.[index] || '').trim();
-      return meaning ? '<div class="opt-meaning">' + meaning + '</div>' : '';
-    },
+    buildOptionMeaningsExplanation: () => '',
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',
     isMeaningReviewQuestion: () => false,
     formatOptionDisplayText: value => value,
+    mergeResultQuestionSnapshot: undefined,
     updateResultActions: () => {},
     launchConfetti: () => {},
     $: id => id === 'resultContent' ? resultContent : null,
   };
   vm.createContext(context);
+  vm.runInContext(quizLogicSource, context);
+  context.mergeResultQuestionSnapshot = context.WordBotQuizLogic.mergeResultQuestionSnapshot;
   context.renderResults = vm.runInContext('(' + appSource.slice(start, end) + ')', context);
   context.renderResults({
     correct: results.length,
@@ -208,7 +157,7 @@ function renderResultTranslations(questions, results) {
   return resultContent.innerHTML;
 }
 
-test('snake_case record_id binds reversed same-spelling results to the right translation', () => {
+test('raw snake_case record_id does not bypass canonical meaningId result binding', () => {
   const html = renderResultTranslations([
     { type: 1, record_id: 'bank-finance', word: 'bank', contextCN: 'finance bank sentence', options: ['A. bank'], answer: 'A' },
     { type: 1, record_id: 'bank-river', word: 'bank', contextCN: 'river bank sentence', options: ['A. bank'], answer: 'A' },
@@ -217,12 +166,11 @@ test('snake_case record_id binds reversed same-spelling results to the right tra
     { record_id: 'bank-finance', word: 'bank', your: 'A', correct: true },
   ]);
 
-  assert.match(html, /river bank sentence/);
-  assert.match(html, /finance bank sentence/);
-  assert.ok(html.indexOf('river bank sentence') < html.indexOf('finance bank sentence'));
+  assert.doesNotMatch(html, /river bank sentence|finance bank sentence/);
+
 });
 
-test('wordRecordId binds reversed same-spelling results to the right translation', () => {
+test('raw wordRecordId does not bypass canonical meaningId result binding', () => {
   const html = renderResultTranslations([
     { type: 1, wordRecordId: 'seal-animal', word: 'seal', contextCN: 'animal seal sentence', options: ['A. seal'], answer: 'A' },
     { type: 1, wordRecordId: 'seal-stamp', word: 'seal', contextCN: 'stamp seal sentence', options: ['A. seal'], answer: 'A' },
@@ -231,9 +179,8 @@ test('wordRecordId binds reversed same-spelling results to the right translation
     { wordRecordId: 'seal-animal', word: 'seal', your: 'A', correct: true },
   ]);
 
-  assert.match(html, /stamp seal sentence/);
-  assert.match(html, /animal seal sentence/);
-  assert.ok(html.indexOf('stamp seal sentence') < html.indexOf('animal seal sentence'));
+  assert.doesNotMatch(html, /stamp seal sentence|animal seal sentence/);
+
 });
 
 test('ambiguous spelling without a source record identity shows no translation', () => {
@@ -247,7 +194,7 @@ test('ambiguous spelling without a source record identity shows no translation',
   assert.doesNotMatch(html, /finance bank sentence|river bank sentence/);
 });
 
-test('question number binds same-spelling results when the response has no meaning alias', () => {
+test('question number does not bind same-spelling results without meaningId', () => {
   const html = renderResultTranslations([
     { type: 1, wordRecordId: 'bank-finance', word: 'bank', contextCN: 'finance bank sentence', options: ['A. bank'], answer: 'A' },
     { type: 1, wordRecordId: 'bank-river', word: 'bank', contextCN: 'river bank sentence', options: ['A. bank'], answer: 'A' },
@@ -256,12 +203,10 @@ test('question number binds same-spelling results when the response has no meani
     { q: 1, word: 'bank', your: 'A', correct: true },
   ]);
 
-  assert.ok(html.indexOf('river bank sentence') >= 0);
-  assert.ok(html.indexOf('finance bank sentence') >= 0);
-  assert.ok(html.indexOf('river bank sentence') < html.indexOf('finance bank sentence'));
+  assert.doesNotMatch(html, /river bank sentence|finance bank sentence/);
 });
 
-test('unique word remains a fallback when result source identity is absent', () => {
+test('unique word does not bind results without meaningId', () => {
   const html = renderResultTranslations([
     { type: 1, word: 'unique', contextCN: 'unique fallback sentence', options: ['A. unique'], answer: 'A' },
     { type: 1, word: 'other', contextCN: 'other sentence', options: ['A. other'], answer: 'A' },
@@ -269,10 +214,63 @@ test('unique word remains a fallback when result source identity is absent', () 
     { word: 'unique', your: 'A', correct: true },
   ]);
 
-  assert.match(html, /unique fallback sentence/);
+  assert.doesNotMatch(html, /unique fallback sentence/);
 });
 
-test('wordId binds reversed same-spelling results to the right translation', () => {
+test('meaningId binds reversed same-spelling results to the right translation', () => {
+  const html = renderResultTranslations([
+    { type: 1, meaningId: 'lead-metal', word: 'lead', contextCN: 'metal lead sentence', options: ['A. lead'], answer: 'A' },
+    { type: 1, meaningId: 'lead-guide', word: 'lead', contextCN: 'guide lead sentence', options: ['A. lead'], answer: 'A' },
+  ], [
+    { meaningId: 'lead-guide', word: 'lead', your: 'A', correct: true },
+    { meaningId: 'lead-metal', word: 'lead', your: 'A', correct: true },
+  ]);
+
+  assert.match(html, /guide lead sentence/);
+  assert.match(html, /metal lead sentence/);
+  assert.ok(html.indexOf('guide lead sentence') < html.indexOf('metal lead sentence'));
+});
+
+test('recordId replay result binds to the canonical meaningId question and renders four options', () => {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(quizLogicSource, context);
+  const result = context.WordBotQuizLogic.normalizeApiPayload({ results: [{
+    recordId: 'meaning-bank-finance', word: 'bank', your: 'B', correct: false,
+  }] }).results[0];
+  const html = renderResultTranslations([{
+    meaningId: 'meaning-bank-finance', type: 1, word: 'bank',
+    context: 'She deposited money in the _____.', contextCN: '她把钱存进了银行。',
+    options: ['A. bank', 'B. river', 'C. desk', 'D. road'], answer: 'A',
+  }], [result]);
+
+  assert.equal(result.meaningId, 'meaning-bank-finance');
+  assert.match(html, />A\.<\/strong> bank/);
+  assert.match(html, />D\.<\/strong> road/);
+  assert.doesNotMatch(html, /选项未保存/);
+});
+
+test('server replay snapshot wins while empty replay fields do not erase the matched question', () => {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(quizLogicSource, context);
+  const result = context.WordBotQuizLogic.normalizeApiPayload({ results: [{
+    recordId: 'meaning-bank-finance', word: 'bank', type: 1,
+    question: 'Server replay _____.', options: [], optionMeanings: [],
+    answer: 'A', your: 'A', correct: true,
+  }] }).results[0];
+  const html = renderResultTranslations([{
+    meaningId: 'meaning-bank-finance', type: 1, word: 'bank', context: 'Current _____.',
+    contextCN: '当前句译', options: ['A. bank', 'B. river', 'C. desk', 'D. road'],
+    optionMeanings: ['银行', '河流', '桌子', '道路'], answer: 'A',
+  }], [result]);
+
+  assert.match(html, /Server replay/);
+  assert.match(html, />D\.<\/strong> road/);
+  assert.match(html, /当前句译/);
+});
+
+test('raw wordId does not bypass canonical meaningId result binding', () => {
   const html = renderResultTranslations([
     { type: 1, wordId: 'bat-animal', word: 'bat', contextCN: 'animal bat sentence', options: ['A. bat'], answer: 'A' },
     { type: 1, wordId: 'bat-tool', word: 'bat', contextCN: 'tool bat sentence', options: ['A. bat'], answer: 'A' },
@@ -281,12 +279,11 @@ test('wordId binds reversed same-spelling results to the right translation', () 
     { wordId: 'bat-animal', word: 'bat', your: 'A', correct: true },
   ]);
 
-  assert.match(html, /tool bat sentence/);
-  assert.match(html, /animal bat sentence/);
-  assert.ok(html.indexOf('tool bat sentence') < html.indexOf('animal bat sentence'));
+  assert.doesNotMatch(html, /tool bat sentence|animal bat sentence/);
+
 });
 
-test('sourceRecordId binds reversed same-spelling results to the right translation', () => {
+test('raw sourceRecordId does not bypass canonical meaningId result binding', () => {
   const html = renderResultTranslations([
     { type: 1, sourceRecordId: 'match-sport', word: 'match', contextCN: 'sport match sentence', options: ['A. match'], answer: 'A' },
     { type: 1, sourceRecordId: 'match-fire', word: 'match', contextCN: 'fire match sentence', options: ['A. match'], answer: 'A' },
@@ -295,7 +292,6 @@ test('sourceRecordId binds reversed same-spelling results to the right translati
     { sourceRecordId: 'match-sport', word: 'match', your: 'A', correct: true },
   ]);
 
-  assert.match(html, /fire match sentence/);
-  assert.match(html, /sport match sentence/);
-  assert.ok(html.indexOf('fire match sentence') < html.indexOf('sport match sentence'));
+  assert.doesNotMatch(html, /fire match sentence|sport match sentence/);
+
 });

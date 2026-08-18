@@ -85,18 +85,60 @@
   const repeatedDistractorSmokeWords = new Set(['bomb', 'crowded', 'genaine']);
   const formalQuizQuestionCount = 10;
 
+  function normalizeQuestionMeaningIdentity(question) {
+    if (!question || typeof question !== 'object') return question;
+    const meaningId = [
+      question.meaningId,
+      question.recordId,
+      question.record_id,
+      question.wordRecordId,
+      question.sourceRecordId,
+      question.wordId,
+    ].map(value => String(value ?? '').trim()).find(Boolean) || '';
+    return meaningId ? { ...question, meaningId } : { ...question };
+  }
+
+  function mergeResultQuestionSnapshot(matchedQuestion, result) {
+    const base = matchedQuestion && typeof matchedQuestion === 'object' ? matchedQuestion : {};
+    const replay = result && typeof result === 'object' ? result : {};
+    const merged = { ...base };
+    for (const [key, value] of Object.entries(replay)) {
+      const emptyString = typeof value === 'string' && !value.trim();
+      const emptyArray = Array.isArray(value) && value.length === 0;
+      if ((value === undefined || value === null || emptyString || emptyArray) && merged[key] !== undefined) continue;
+      merged[key] = value;
+    }
+    if (replay.question && !replay.context) merged.context = replay.question;
+    if (replay.translation && !replay.contextCN) merged.contextCN = replay.translation;
+    return merged;
+  }
+
+  function normalizeApiPayload(data) {
+    if (!data || typeof data !== 'object') return data;
+    const normalized = { ...data };
+    if (Array.isArray(data.questions)) {
+      normalized.questions = data.questions.map(normalizeQuestionMeaningIdentity);
+    }
+    if (Array.isArray(data.results)) {
+      normalized.results = data.results.map(normalizeQuestionMeaningIdentity);
+    }
+    if (data.quiz && typeof data.quiz === 'object') {
+      normalized.quiz = { ...data.quiz };
+      if (Array.isArray(data.quiz.questions)) {
+        normalized.quiz.questions = data.quiz.questions.map(normalizeQuestionMeaningIdentity);
+      }
+    }
+    return normalized;
+  }
+
   function getQuestionMeaningId(question) {
-    return String(
-      question?.wordId ||
-      question?.wordRecordId ||
-      question?.sourceRecordId ||
-      question?.record_id ||
-      ''
-    ).trim();
+    return String(question?.meaningId || '').trim();
   }
 
   function inspectFormalQuizResponse(quiz) {
-    if (quiz?.source !== 'question_cache' || quiz?.diagnostics?.fallbackUsed !== false) {
+    const source = String(quiz?.source || '').trim();
+    const cacheBackedFormalSource = source === 'question_cache' || source === 'formal_quiz_challenge';
+    if (!cacheBackedFormalSource || quiz?.diagnostics?.fallbackUsed !== false) {
       return {
         blocked: true,
         code: 'FORMAL_QUIZ_CACHE_REQUIRED',
@@ -105,11 +147,29 @@
     }
 
     const questions = Array.isArray(quiz?.questions) ? quiz.questions : [];
-    if (questions.length < 1 || questions.length > formalQuizQuestionCount || (questions.length !== formalQuizQuestionCount && quiz?.partialFormalChallenge !== true)) {
+    if (questions.length !== formalQuizQuestionCount) {
       return {
         blocked: true,
         code: 'FORMAL_QUIZ_REQUIRES_TEN',
         message: `\u6b63\u5f0f\u6d4b\u8bd5\u9700\u8981\u5b8c\u6574 ${formalQuizQuestionCount} \u9898\uff0c\u5f53\u524d\u9898\u5e93\u5c1a\u672a\u51c6\u5907\u597d\u3002\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\uff1b\u82e5\u6301\u7eed\u51fa\u73b0\uff0c\u8bf7\u8ba9\u5bb6\u957f\u91cd\u5efa\u9898\u5e93\u3002`,
+      };
+    }
+
+    const hasRenderableQuestion = question => {
+      const options = question?.options;
+      const answer = String(question?.answer || question?.correctAnswer || '').trim().toUpperCase();
+      return Number(question?.type) === 1
+        && String(question?.context || question?.stem || '').trim()
+        && Array.isArray(options)
+        && options.length === 4
+        && options.every(option => /^[A-D]\.\s+\S/.test(String(option || '').trim()))
+        && ['A', 'B', 'C', 'D'].includes(answer);
+    };
+    if (questions.some(question => !hasRenderableQuestion(question))) {
+      return {
+        blocked: true,
+        code: 'FORMAL_QUIZ_RENDERABLE_REQUIRED',
+        message: '\u8fd9\u5957\u9898\u6b63\u5728\u6062\u590d\uff0c\u8bf7\u8fd4\u56de\u9996\u9875\u7a0d\u540e\u91cd\u8bd5\u3002',
       };
     }
 
@@ -230,6 +290,9 @@
     buildQuestionExplanation,
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
+    normalizeApiPayload,
+    normalizeQuestionMeaningIdentity,
+    mergeResultQuestionSnapshot,
     getQuestionMeaningId,
     inspectQuizContentForBlockingIssue,
     inspectFormalQuizResponse,

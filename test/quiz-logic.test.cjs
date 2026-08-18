@@ -19,6 +19,7 @@ const {
     formatOptionDisplayText,
     inspectQuizContentForBlockingIssue,
     inspectFormalQuizResponse,
+    normalizeQuestionMeaningIdentity,
     normalizeArticleContext,
     optionWord,
 } = context.WordBotQuizLogic;
@@ -32,9 +33,7 @@ function makeFormalQuiz(overrides = {}) {
         context: `Question ${index + 1} uses _____.`,
         options: ['A. answer', 'B. option', 'C. choice', 'D. other'],
         answer: 'A',
-        ...(index % 2 === 0
-            ? { wordId: `word-id-${index}` }
-            : { sourceRecordId: `record-id-${index}` }),
+        meaningId: 'meaning-' + index,
     }));
     return {
         source: 'question_cache',
@@ -132,7 +131,31 @@ test('allows exactly ten cache questions with meaning-level identifiers', () => 
     assert.equal(result.blocked, false);
 });
 
-test('allows an explicitly marked partial cache challenge with one to nine questions', () => {
+test('allows a complete resumed formal challenge whose questions were created from the cache', () => {
+    const result = inspectFormalQuizResponse(makeFormalQuiz({
+        source: 'formal_quiz_challenge',
+        diagnostics: {
+            fallbackUsed: false,
+            resumed: true,
+            requiredCount: 10,
+            readyCount: 10,
+        },
+    }));
+
+    assert.equal(result.blocked, false);
+});
+
+test('blocks a formal challenge with a missing options snapshot before the answer page renders', () => {
+    const quiz = makeFormalQuiz({ source: 'formal_quiz_challenge' });
+    delete quiz.questions[0].options;
+
+    const result = inspectFormalQuizResponse(quiz);
+
+    assert.equal(result.blocked, true);
+    assert.equal(result.code, 'FORMAL_QUIZ_RENDERABLE_REQUIRED');
+});
+
+test('blocks an explicitly marked partial cache challenge with one to nine questions', () => {
     for (const questionCount of [1, 9]) {
         const quiz = makeFormalQuiz({
             partialFormalChallenge: true,
@@ -146,7 +169,8 @@ test('allows an explicitly marked partial cache challenge with one to nine quest
 
         const result = inspectFormalQuizResponse(quiz);
 
-        assert.equal(result.blocked, false, 'expected ' + questionCount + ' questions to be allowed');
+        assert.equal(result.blocked, true, 'expected ' + questionCount + ' questions to be blocked');
+        assert.equal(result.code, 'FORMAL_QUIZ_REQUIRES_TEN');
     }
 });
 
@@ -161,28 +185,26 @@ test('still rejects an empty explicitly marked partial cache challenge', () => {
 });
 
 test('allows the current record_id API alias without deduplicating equal spellings', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
-        word: 'bank',
-        record_id: `bank-meaning-${index}`,
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question, word: 'bank', record_id: `bank-meaning-${index}`,
     }));
-    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions: questions.map(normalizeQuestionMeaningIdentity) }));
 
     assert.equal(result.blocked, false);
 });
 
 test('allows sourceRecordId as the formal meaning identity', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
-        word: 'bank',
-        sourceRecordId: `bank-meaning-${index}`,
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question, word: 'bank', sourceRecordId: `bank-meaning-${index}`,
     }));
-    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
+    const result = inspectFormalQuizResponse(makeFormalQuiz({ questions: questions.map(normalizeQuestionMeaningIdentity) }));
 
     assert.equal(result.blocked, false);
 });
 
 test('accepts the real active-session DTO and wordRecordId meaning identity', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
-        type: 1,
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question,
         word: index < 2 ? 'bank' : `word-${index}`,
         wordRecordId: `meaning-${index}`,
         cacheRecordId: `cache-${index}`,
@@ -202,15 +224,20 @@ test('accepts the real active-session DTO and wordRecordId meaning identity', ()
         progress: { currentQuestion: 3, answers: ['A'] },
     };
 
-    const result = inspectFormalQuizResponse(activeSessionDto);
+    const result = inspectFormalQuizResponse({
+        ...activeSessionDto,
+        questions: activeSessionDto.questions.map(normalizeQuestionMeaningIdentity),
+    });
     assert.equal(result.blocked, false);
     assert.equal(result.code, '');
     assert.equal(result.message, '');
 });
 test('rejects unsupported meaning identity aliases in a formal quiz', () => {
-    const questions = Array.from({ length: 10 }, (_, index) => ({
+    const questions = makeFormalQuiz().questions.map((question, index) => ({
+        ...question,
         word: `word-${index}`,
         sourceWordRecordId: `legacy-meaning-${index}`,
+        meaningId: '',
     }));
     const result = inspectFormalQuizResponse(makeFormalQuiz({ questions }));
 
@@ -220,7 +247,7 @@ test('rejects unsupported meaning identity aliases in a formal quiz', () => {
 
 test('blocks duplicate meaning ids even when the formal quiz has ten questions', () => {
     const quiz = makeFormalQuiz();
-    quiz.questions[9].sourceRecordId = quiz.questions[0].wordId;
+    quiz.questions[9].meaningId = quiz.questions[0].meaningId;
     const result = inspectFormalQuizResponse(quiz);
 
     assert.equal(result.blocked, true);
@@ -264,7 +291,7 @@ test('blocks a nine-question formal set with actionable recovery', () => {
 
 test('blocks a formal set when any question lacks meaning identity metadata', () => {
     const quiz = makeFormalQuiz();
-    delete quiz.questions[4].wordId;
+    delete quiz.questions[4].meaningId;
     const result = inspectFormalQuizResponse(quiz);
 
     assert.equal(result.blocked, true);

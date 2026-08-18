@@ -192,15 +192,15 @@ test('answer analysis explains the concrete question and compares a wrong choice
     assert.match(quizLogic, /与本题给出的语境或释义不匹配/);
 });
 
-test('ordinary results use only the stored context translation after the option list', () => {
+test('ordinary results place option meanings and the stored context translation after all options', () => {
     const start = app.indexOf('function renderResults(data)');
     const end = app.indexOf('function toggleAnalysis()', start);
     assert.ok(start >= 0 && end > start, 'renderResults function should exist');
     const renderResultsSource = app.slice(start, end);
     assert.match(quizLogic, /function buildContextTranslationHtml/);
+    assert.match(renderResultsSource, /const optionMeaningsHtml = !isMeaningReview\s*\?\s*buildOptionMeaningsExplanation\(q,\s*escapeHtml\)\s*:\s*'';/);
     assert.match(renderResultsSource, /const translationHtml = !isMeaningReview\s*\?\s*buildContextTranslationHtml\(q,\s*escapeHtml\)\s*:\s*'';/);
-    assert.match(renderResultsSource, /\$\{optionsHtml\}\$\{translationHtml\}/);
-    assert.doesNotMatch(renderResultsSource, /buildOptionMeaningsExplanation\(q,\s*escapeHtml\)/);
+    assert.match(renderResultsSource, /\$\{optionsHtml\}\s*\$\{optionMeaningsHtml\}\s*\$\{translationHtml\}/);
     assert.doesNotMatch(renderResultsSource, /buildQuestionExplanation\(q,\s*r,\s*escapeHtml\)/);
     assert.match(renderResultsSource, /\$\{isMeaningReview \? `<div class="explain-box">/);
 });
@@ -411,9 +411,10 @@ test('game reward minutes are banked and offered after at least one review round
     assert.match(app, /\u5b58\u7559\u65f6\u95f4/);
 });
 
-test('perfect quiz game reward is twelve minutes and excellent is five', () => {
-    assert.match(app, /minutes:\s*12[\s\S]*tier:\s*'perfect'/);
+test('perfect quiz game reward is ten minutes and excellent is five', () => {
+    assert.match(app, /minutes:\s*10[\s\S]*tier:\s*'perfect'/);
     assert.match(app, /minutes:\s*5[\s\S]*tier:\s*'excellent'/);
+    assert.match(app, /minutes:\s*-5[\s\S]*tier:\s*'penalty'/);
 });
 
 test('banked game time opens a playable animal garden mini game', () => {
@@ -854,6 +855,31 @@ test('test mode keeps partial quiz readiness behavior unchanged', () => {
     assert.equal(readiness.buttonLabel, '\u5f00\u59cb\u6d4b\u8bd5');
 });
 
+test('test mode uses ready questions despite rebuild or query blockers', () => {
+    const testReadiness = loadQuizReadinessHelpers({ mode: 'test' }).getQuizCacheReadiness;
+    const realReadiness = loadQuizReadinessHelpers({ mode: 'real' }).getQuizCacheReadiness;
+    const level = '\u4e2d\u5b66';
+    const readyStatus = {
+        eligibleReadyMeanings: 1,
+        byLevel: { [level]: { eligibleReadyMeanings: 1 } },
+    };
+
+    for (const blocker of [
+        { operation: 'rebuilding' },
+        { queryError: 'network timeout' },
+    ]) {
+        const testResult = testReadiness({ ...readyStatus, ...blocker }, level);
+        assert.equal(testResult.disabled, false);
+        assert.equal(testResult.state, 'ready');
+
+        const emptyResult = testReadiness({ ...blocker, eligibleReadyMeanings: 0 }, level);
+        assert.equal(emptyResult.disabled, true);
+
+        const realResult = realReadiness({ ...readyStatus, ...blocker }, level);
+        assert.equal(realResult.disabled, true);
+    }
+});
+
 test('selectMode rerenders cached readiness when switching assessment modes', () => {
     const readinessCalls = [];
     const context = {
@@ -921,7 +947,23 @@ test('quiz readiness exposes retrying and manual-review failures', () => {
     assert.equal(failed.state, 'manual-review');
     assert.equal(failed.action, 'rebuild');
     assert.match(failed.detail, /\u9700\u8981\u4eba\u5de5\u68c0\u67e5/);
-    assert.match(failed.detail, /\u751f\u6210\u5185\u5bb9\u9700\u8981\u4eba\u5de5\u786e\u8ba4/);
+    assert.doesNotMatch(failed.detail, /QUALITY_REJECTED/);
+});
+
+test('quiz readiness never exposes generation error codes to children', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const readiness = getQuizCacheReadiness({
+        eligibleReadyMeanings: 5,
+        byLevel: { '\u4e2d\u5b66': { eligibleReadyMeanings: 5 } },
+        generation: {
+            counts: { pending: 0, retrying: 0, manualReview: 1, ready: 57 },
+            failures: [{ lastErrorCode: 'INSUFFICIENT_DISTINCT_READY_VARIANTS' }],
+        },
+    }, '\u4e2d\u5b66');
+
+    assert.equal(readiness.state, 'manual-review');
+    assert.doesNotMatch(readiness.detail, /INSUFFICIENT_DISTINCT_READY_VARIANTS/);
+    assert.match(readiness.detail, /\u9700\u8981\u4eba\u5de5\u68c0\u67e5/);
 });
 
 test('ready cache rows and ready generation jobs do not count as eligible meanings', () => {
@@ -1180,17 +1222,19 @@ test('formal quiz contract is checked before entering the answer flow', () => {
     assert.match(startQuizSource, /await enterFormalQuiz\(data/);
 });
 
-test('formal quiz identity validation never uses English spelling deduplication', () => {
+test('formal quiz identity validation uses only canonical meaningId after API normalization', () => {
     const formalGuardSource = extractNamedFunction(quizLogic, 'inspectFormalQuizResponse');
     const identitySource = extractNamedFunction(quizLogic, 'getQuestionMeaningId');
+    const normalizerSource = extractNamedFunction(quizLogic, 'normalizeQuestionMeaningIdentity');
 
-    assert.match(identitySource, /wordId/);
-    assert.match(identitySource, /sourceRecordId/);
-    assert.match(identitySource, /wordRecordId/);
-    assert.doesNotMatch(identitySource, /sourceWordRecordId|word_id|source_word_record_id/);
-    assert.doesNotMatch(formalGuardSource + identitySource, /question\?\.word\b|\.spelling\b|new Set/);
+    assert.match(identitySource, /meaningId/);
+    assert.doesNotMatch(identitySource, /wordId|sourceRecordId|wordRecordId|record_id|question?.word|.spelling/);
+    assert.match(normalizerSource, /record_id/);
+    assert.match(normalizerSource, /wordId/);
+    assert.match(normalizerSource, /sourceRecordId/);
+    assert.match(normalizerSource, /wordRecordId/);
+    assert.doesNotMatch(formalGuardSource + identitySource, /question?.word|.spelling/);
 });
-
 test('new, local-draft, and remote formal quiz entries share one async gate', () => {
     const gateSource = extractNamedFunction(app, 'enterFormalQuiz');
     const startSource = extractNamedFunction(app, 'startQuiz');
@@ -1386,6 +1430,27 @@ test('test mode requires at least one ready question while real mode still requi
     assert.equal(loadQuizReadinessHelpers({ mode: 'real' }).getQuizCacheReadiness({ ...emptyStatus, eligibleReadyMeanings: 9, byLevel: { '\\u4e2d\\u5b66': { ready: 9, total: 10, eligibleReadyMeanings: 9 } } }, '\\u4e2d\\u5b66').disabled, true);
 });
 
+test('API question boundary canonicalizes legacy meaning identity aliases', () => {
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(quizLogic, context);
+
+    for (const [alias, value] of [
+        ['record_id', 'legacy-record'],
+        ['wordRecordId', 'word-record'],
+        ['sourceRecordId', 'source-record'],
+        ['wordId', 'word-id'],
+    ]) {
+        const question = context.WordBotQuizLogic.normalizeQuestionMeaningIdentity({ word: 'bank', [alias]: value });
+        assert.equal(question.meaningId, value, alias + ' should normalize to meaningId');
+    }
+
+    assert.equal(
+        context.WordBotQuizLogic.normalizeQuestionMeaningIdentity({ meaningId: 'canonical', wordId: 'legacy' }).meaningId,
+        'canonical'
+    );
+});
+
 test('quiz draft storage is mode-scoped while preserving the real-mode legacy key', async () => {
     const storage = new Map([
         ['wordbot:active-quiz:student', JSON.stringify({ quiz: { mode: 'real', questions: [{ id: 'real-question' }] } })],
@@ -1426,18 +1491,33 @@ test('quiz draft storage is mode-scoped while preserving the real-mode legacy ke
     assert.equal(JSON.parse(storage.get('wordbot:active-quiz:student:test')).quiz.mode, 'test');
     assert.ok(storage.has('wordbot:active-quiz:student'));
 
+    context.clearQuizDraft('test');
+    assert.equal(storage.has('wordbot:active-quiz:student:test'), false);
+    assert.equal(storage.has('wordbot:active-quiz:student'), true, 'clearing test mode must preserve the legacy real-mode draft');
+
     storage.set('wordbot:active-quiz:student:test', JSON.stringify({ quiz: { mode: 'real', questions: [{ id: 'wrong-mode' }] } }));
     assert.equal(await context.restoreQuizDraft(), false, 'test restore must reject a real draft');
     assert.equal(entered.length, 0);
     assert.ok(storage.has('wordbot:active-quiz:student'));
 
     context.state.mode = 'real';
-    assert.equal(await context.restoreQuizDraft(), false, 'legacy real drafts without the current formal version must be discarded');
-    assert.equal(entered.length, 0);
+    assert.equal(await context.restoreQuizDraft(), true, 'legacy drafts without quiz.mode are real mode');
+    assert.equal(entered.length, 1);
+    context.clearQuizDraft('real');
     assert.equal(storage.has('wordbot:active-quiz:student'), false);
-    context.clearQuizDraft();
-    assert.equal(storage.has('wordbot:active-quiz:student'), false);
-    assert.equal(storage.has('wordbot:active-quiz:student:test'), false);
+    assert.equal(storage.has('wordbot:active-quiz:student:test'), true, 'clearing real mode must preserve the test draft');
+});
+
+test('quiz draft clearing callers distinguish current and global scope', () => {
+    const startSource = extractNamedFunction(app, 'startQuiz');
+    const submitSource = extractNamedFunction(app, 'submitQuiz');
+    const logoutSource = extractNamedFunction(app, 'logout');
+
+    assert.match(startSource, /clearQuizDraft\(state\.mode\)/);
+    assert.match(submitSource, /clearQuizDraft\(state\.mode\)/);
+    assert.match(logoutSource, /clearAllQuizDrafts\(\)/);
+    assert.doesNotMatch(startSource, /clearAllQuizDrafts/);
+    assert.doesNotMatch(submitSource, /clearAllQuizDrafts/);
 });
 
 test('remote sessions query and restore only the current mode', async () => {
@@ -1503,4 +1583,94 @@ test('continue entry refreshes an already-cached remote session from the current
     assert.equal(await context.handleContinueQuizEntry(), true);
     assert.deepEqual(loads, [['student', 'real']]);
     assert.deepEqual(restores, ['real']);
+});
+
+test('demo questions and results use canonical meaningId identity', () => {
+    const demoQuizSource = extractNamedFunction(app, 'generateDemoQuiz');
+    const submitSource = extractNamedFunction(app, 'submitQuiz');
+
+    assert.match(demoQuizSource, /meaningId:\s*`demo:\$\{w\.word\}:\$\{i\}`/);
+    assert.doesNotMatch(demoQuizSource, /recordId/);
+    assert.match(submitSource, /meaningId:\s*q\.meaningId/);
+    assert.doesNotMatch(submitSource, /getQuestionMeaningIdentity|recordId:\s*/);
+});
+
+test('a formal bad-question replacement stays in the answer flow instead of producing a false result', () => {
+    const submitSource = extractNamedFunction(app, 'submitQuiz');
+
+    assert.match(submitSource, /data\.code\s*===\s*'FORMAL_QUESTION_REPLACED'/);
+    assert.match(submitSource, /await resumeFormalQuestionReplacement\(data\)/);
+    const replacementIndex = submitSource.indexOf("data.code === 'FORMAL_QUESTION_REPLACED'");
+    const returnIndex = submitSource.indexOf('return;', replacementIndex);
+    const resultIndex = submitSource.indexOf('state.quiz.result = data');
+    assert.ok(returnIndex > replacementIndex, 'replacement branch must stop final result processing');
+    assert.ok(resultIndex > returnIndex, 'result processing must happen only after the replacement branch returns');
+});
+
+test('incomplete legacy history uses a child-friendly explanation instead of an empty option area', () => {
+    const start = app.indexOf('function openHistoryDetail(');
+    const end = app.indexOf('function closeHistoryDetail()', start);
+    assert.ok(start >= 0 && end > start, 'openHistoryDetail function should exist');
+    const source = app.slice(start, end);
+    assert.match(source, /contentState/);
+    assert.match(source, /这是一条早期考核记录，当时没有保存完整题目。答题结果仍然保留。/);
+    assert.doesNotMatch(source, /选项未保存/);
+});
+
+test('history keeps preserved question fields when only some legacy fields are missing', () => {
+    const start = app.indexOf('function openHistoryDetail(');
+    const end = app.indexOf('function closeHistoryDetail()', start);
+    const source = app.slice(start, end);
+    assert.match(source, /q\.question \|\| q\.word/);
+    assert.match(source, /q\.options \|\| \[\]/);
+    assert.match(source, /legacyIncomplete && !q\.question/);
+});
+
+test('results can render the submitted question snapshot when local matching is unavailable', () => {
+    const start = app.indexOf('function renderResults(');
+    const end = app.indexOf('function renderHistoryList(', start);
+    const source = app.slice(start, end);
+    assert.match(source, /mergeResultQuestionSnapshot\(matchedQuestion, r\)/);
+    assert.match(source, /questionData\.options/);
+});
+
+test('test-mode quiz entry bypasses formal validation but still inspects content', async () => {
+    let contentInspections = 0;
+    const context = {
+        state: {
+            mode: 'test',
+            session: { kind: 'quiz' },
+            currentQuestion: 0,
+            answers: [],
+        },
+        inspectFormalQuizResponse() {
+            throw new Error('test mode must bypass formal validation');
+        },
+        inspectQuizContentForBlockingIssue(quiz) {
+            contentInspections += 1;
+            assert.equal(quiz.mode, 'test');
+            return { blocked: false };
+        },
+        recoverFromFormalQuizBlock: async () => {
+            throw new Error('test mode must not recover through the formal gate');
+        },
+        saveQuizDraft() {},
+        navigateTo() {},
+        renderQuestion() {},
+    };
+    vm.createContext(context);
+    vm.runInContext([
+        extractNamedFunction(app, 'getFormalChallengeQuestionCountIssue'),
+        'async ' + extractNamedFunction(app, 'enterFormalQuiz'),
+    ].join('\n'), context);
+
+    const entered = await context.enterFormalQuiz({
+        mode: 'test',
+        source: 'fallback',
+        questions: [{ word: 'bank' }],
+    });
+
+    assert.equal(entered, true);
+    assert.equal(contentInspections, 1);
+    assert.equal(context.state.quiz.mode, 'test');
 });
