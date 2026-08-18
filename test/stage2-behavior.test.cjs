@@ -218,6 +218,16 @@ test('history detail exposes the saved questions and answers', () => {
     assert.match(app, /正确答案/);
 });
 
+test('history detail renders saved Chinese option meanings and sentence translation without placeholders', () => {
+    const historyDetailSource = extractNamedFunction(app, 'openHistoryDetail');
+
+    assert.match(historyDetailSource, /q\?\.optionMeanings\?\.\[index\]/);
+    assert.match(historyDetailSource, /q\.contextCN/);
+    assert.match(historyDetailSource, /hd-option-meaning/);
+    assert.match(historyDetailSource, /hd-context-translation/);
+    assert.doesNotMatch(historyDetailSource, /中文释义补充失败/);
+});
+
 test('the last question shows only one submit action', () => {
     assert.match(app, /const isLastQuestion = idx === total - 1/);
     assert.match(app, /nextBtn'\)\.style\.display\s*=\s*isLastQuestion \? 'none' : 'flex'/);

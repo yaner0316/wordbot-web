@@ -3578,14 +3578,21 @@ function openHistoryDetail(item) {
     const stemHtml = q.type === 1
       ? rawStem.replace(/_____/g, '<span class="blank"></span>')
       : rawStem;
-    const optsHtml = (q.options || []).length ? (q.options || []).map(opt => {
+    const optsHtml = (q.options || []).length ? (q.options || []).map((opt, index) => {
       const letter = optionLetter(opt);
       const word = String(opt).replace(/^[A-D]\.\s*/, '');
+      const meaning = String(q?.optionMeanings?.[index] || '').trim();
       let cls = 'hd-opt';
       if (letter === optionLetter(q.correctAnswer)) cls += ' correct';
       else if (letter === optionLetter(q.yourAnswer) && !q.isCorrect) cls += ' wrong';
-      return '<div class="' + cls + '"><strong>' + escapeHtml(letter) + '.</strong> ' + escapeHtml(word) + '</div>';
+      return '<div class="' + cls + '"><strong>' + escapeHtml(letter) + '.</strong> ' + escapeHtml(word) +
+        (meaning ? '<div class="hd-option-meaning">' + escapeHtml(meaning) + '</div>' : '') +
+      '</div>';
     }).join('') : '';
+    const contextTranslation = String(q.contextCN || '').trim();
+    const contextTranslationHtml = contextTranslation
+      ? '<div class="hd-context-translation">整句翻译：' + escapeHtml(contextTranslation) + '</div>'
+      : '';
     const answerSummary =
       '<div class="hd-answer-row">' +
         '<span>孩子答案：' + escapeHtml(optionTextByLetter(q.options, q.yourAnswer)) + '</span>' +
@@ -3600,6 +3607,7 @@ function openHistoryDetail(item) {
       '<div class="hd-q-word">' + escapeHtml(q.word || '') + '</div>' +
       '<div class="hd-q-stem">' + stemHtml + '</div>' +
       '<div class="hd-opts">' + (optsHtml || '<div class="hd-opt muted">历史题目细节不完整</div>') + '</div>' +
+      contextTranslationHtml +
       answerSummary;
     body.appendChild(card);
   });
