@@ -169,6 +169,46 @@ test('current user card keeps logout in the single global header action', () => 
     assert.doesNotMatch(html, /onclick="selectUser\('\$\{u\}'\)"/);
 });
 
+test('vocabulary progress explains each status through an accessible info popover', () => {
+    const homeStart = app.indexOf('class="home-v2-progress-card"');
+    const homeEnd = app.indexOf('class="home-v2-stats-grid"', homeStart);
+    assert.ok(homeStart >= 0 && homeEnd > homeStart, 'vocabulary progress markup should exist');
+    const progressSource = app.slice(homeStart, homeEnd);
+
+    assert.match(progressSource, /button[^>]+class="[^"]*home-v2-progress-info[^"]*"/);
+    assert.match(progressSource, /aria-expanded="false"/);
+    assert.match(progressSource, /aria-controls="homeVocabProgressDefinitions"/);
+    assert.match(progressSource, /<dt>未开始<\/dt>\s*<dd>还没有正式答题记录<\/dd>/);
+    assert.match(progressSource, /<dt>已认识<\/dt>\s*<dd>已经做过，但最近一次答错后尚未重新答对<\/dd>/);
+    assert.match(progressSource, /<dt>巩固中<\/dt>\s*<dd>最近答错后已经答对，正在等待间隔复测<\/dd>/);
+    assert.match(progressSource, /<dt>已掌握<\/dt>\s*<dd>所有释义均达到间隔掌握条件<\/dd>/);
+    assert.match(app, /mouseenter|mouseover/);
+    assert.match(progressSource, /onfocus="handleVocabularyProgressInfoFocus\(event\)"/);
+    assert.match(app, /function handleVocabularyProgressInfoFocus\(event\)/);
+    assert.match(app, /matches\('\:focus-visible'\)/);
+    assert.match(progressSource, /onclick="setVocabularyProgressDefinitions\(true\)"/);
+    assert.doesNotMatch(progressSource, /onclick="toggleVocabularyProgressDefinitions\(\)"/);
+    assert.match(app, /Escape/);
+    assert.match(app, /click/);
+    assert.match(styles, /.home-v2-progress-info/);
+});
+
+test('result analysis has one primary toggle and no duplicate answer-analysis action', () => {
+    const start = app.indexOf('function renderResults(data)');
+    const end = app.indexOf('function toggleAnalysis()', start);
+    assert.ok(start >= 0 && end > start, 'renderResults function should exist');
+    const renderResultsSource = app.slice(start, end);
+
+    assert.equal((renderResultsSource.match(/答案分析/g) || []).length, 0);
+    assert.match(renderResultsSource, /id="resultActionPanel"/);
+    assert.doesNotMatch(renderResultsSource, /id="analysisBtn"/);
+    const updateActionsSource = extractNamedFunction(app, 'updateResultActions');
+    assert.match(updateActionsSource, /if \(_showAnalysis\)/);
+    assert.match(updateActionsSource, /收起答案解析/);
+    assert.match(app, /查看答案解析/);
+    assert.match(app, /收起答案解析/);
+});
+
 test('quiz generation always clears the loading overlay', () => {
     assert.match(
         app,
