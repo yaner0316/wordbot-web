@@ -984,6 +984,9 @@ function isEditableTarget(target) {
 }
 
 function handleGlobalKeydown(event) {
+  if (event.key === 'Escape') {
+    closeVocabularyProgressDefinitions();
+  }
   if (event.key === 'Backspace' && !isEditableTarget(event.target)) {
     event.preventDefault();
     handleInAppBack();
@@ -996,6 +999,31 @@ function initializeAppHistory() {
   state.historyInitialized = true;
   window.addEventListener('popstate', handleBrowserBack);
   window.addEventListener('keydown', handleGlobalKeydown);
+  document.addEventListener('click', handleVocabularyProgressOutsideClick);
+}
+
+function setVocabularyProgressDefinitions(open) {
+  const button = document.querySelector('[data-vocabulary-progress-info]');
+  const popover = document.getElementById('homeVocabProgressDefinitions');
+  if (!button || !popover) return;
+  button.setAttribute('aria-expanded', String(Boolean(open)));
+  popover.hidden = !open;
+}
+
+function handleVocabularyProgressInfoFocus(event) {
+  if (event.currentTarget.matches(':focus-visible')) {
+    setVocabularyProgressDefinitions(true);
+  }
+}
+
+function closeVocabularyProgressDefinitions() {
+  setVocabularyProgressDefinitions(false);
+}
+
+function handleVocabularyProgressOutsideClick(event) {
+  if (!event.target.closest?.('[data-vocabulary-progress-info-wrap]')) {
+    closeVocabularyProgressDefinitions();
+  }
 }
 
 // ========== Auth ==========
@@ -2748,6 +2776,19 @@ async function loadStats(user, { showOverlay = true } = {}) {
         <div class="home-v2-section-head">
           <span class="home-v2-section-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 5.5h8.8a2.7 2.7 0 0 1 0 5.4H6.5z"/><path d="M6.5 10.9h10a2.8 2.8 0 0 1 0 5.6h-10z"/></svg></span>
           <h2>词汇进度</h2>
+          <span class="home-v2-progress-info-wrap" data-vocabulary-progress-info-wrap onmouseenter="setVocabularyProgressDefinitions(true)" onmouseleave="closeVocabularyProgressDefinitions()">
+            <button class="home-v2-progress-info" type="button" data-vocabulary-progress-info aria-label="查看词汇进度状态定义" aria-expanded="false" aria-controls="homeVocabProgressDefinitions" onclick="setVocabularyProgressDefinitions(true)" onfocus="handleVocabularyProgressInfoFocus(event)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10.5v6"/><path d="M12 7.5h.01"/></svg>
+            </button>
+            <div class="home-v2-progress-info-popover" id="homeVocabProgressDefinitions" role="tooltip" hidden>
+              <dl>
+                <div><dt>未开始</dt><dd>还没有正式答题记录</dd></div>
+                <div><dt>已认识</dt><dd>已经做过，但最近一次答错后尚未重新答对</dd></div>
+                <div><dt>巩固中</dt><dd>最近答错后已经答对，正在等待间隔复测</dd></div>
+                <div><dt>已掌握</dt><dd>所有释义均达到间隔掌握条件</dd></div>
+              </dl>
+            </div>
+          </span>
         </div>
         <div class="home-v2-progress-body">
           <div class="home-v2-donut" aria-label="已掌握 ${escapeHtml(pct)}%" style="--pct:${pct};">
@@ -3309,12 +3350,6 @@ function renderResults(data) {
     <div id="resultActionPanel" class="review-action-panel"></div>
     <div id="animalGardenMount"></div>
 
-    <div style="text-align:right;margin-top:16px;">
-      <button class="btn btn-outline btn-small" id="analysisBtn" onclick="toggleAnalysis()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        答案分析
-      </button>
-    </div>
   `;
   updateResultActions();
 
@@ -3327,14 +3362,8 @@ function renderResults(data) {
 function toggleAnalysis() {
   _showAnalysis = !_showAnalysis;
   const area = $('analysisArea');
-  const btn = $('analysisBtn');
   area.style.display = _showAnalysis ? 'block' : 'none';
-  state.session.analysisViewed = _showAnalysis;
-  if (btn) {
-    btn.innerHTML = _showAnalysis
-      ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg> 收起分析'
-      : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg> 答案分析';
-  }
+  state.session.analysisViewed = state.session.analysisViewed || _showAnalysis;
   updateResultActions();
 }
 
@@ -3346,7 +3375,9 @@ function updateResultActions() {
     analysisViewed: state.session.analysisViewed,
     remainingRecordIds: state.session.remainingRecordIds,
   });
-  if (actions.primary === 'show-analysis') {
+  if (_showAnalysis) {
+    panel.innerHTML = '<button class="btn btn-primary" onclick="toggleAnalysis()">收起答案解析</button>';
+  } else if (actions.primary === 'show-analysis') {
     panel.innerHTML = '<button class="btn btn-primary" onclick="toggleAnalysis()">查看答案解析</button>';
   } else if (actions.primary === 'start-review') {
     panel.innerHTML = `<button class="btn btn-primary" onclick="startWrongAnswerReview()">开始错题复习（${state.session.remainingRecordIds.length} 个词）</button>`;

@@ -2525,6 +2525,49 @@ button.hero-chip:active { transform: scale(.98); }
   border-radius: 26px;
 }
 #pageHome .home-v2-section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+#pageHome .home-v2-progress-info-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-left: 1px;
+}
+#pageHome .home-v2-progress-info {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--home-v2-muted);
+  background: transparent;
+  cursor: pointer;
+}
+#pageHome .home-v2-progress-info:hover,
+#pageHome .home-v2-progress-info:focus-visible {
+  color: var(--home-v2-brand);
+  background: var(--home-v2-brand-pale);
+  outline: 2px solid rgba(242,118,46,0.28);
+  outline-offset: 2px;
+}
+#pageHome .home-v2-progress-info svg { width: 18px; height: 18px; }
+#pageHome .home-v2-progress-info-popover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(300px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid rgba(242,118,46,0.18);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 26px rgba(96,61,24,0.14);
+  color: var(--home-v2-ink-soft);
+}
+#pageHome .home-v2-progress-info-popover[hidden] { display: none; }
+#pageHome .home-v2-progress-info-popover dl { display: grid; gap: 9px; margin: 0; }
+#pageHome .home-v2-progress-info-popover dl > div { display: grid; gap: 2px; }
+#pageHome .home-v2-progress-info-popover dt { color: var(--home-v2-ink); font-size: 12px; font-weight: 700; }
+#pageHome .home-v2-progress-info-popover dd { margin: 0; color: var(--home-v2-muted); font-size: 12px; line-height: 1.45; font-weight: 500; }
 #pageHome .home-v2-section-icon {
   width: 32px;
   height: 32px;
