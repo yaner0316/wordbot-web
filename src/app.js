@@ -871,6 +871,19 @@ function formatDate(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function handleUnauthorizedSession(response, data) {
+  if (response?.status !== 401 && data?.code !== 'UNAUTHORIZED') return false;
+  clearSessionUser();
+  state.user = null;
+  state.users = [];
+  state.quiz = null;
+  state.answers = [];
+  state.parentAccess = false;
+  state.parentAuth = null;
+  showLoginPage({ replace: true });
+  return true;
+}
+
 async function api(path, opts = {}) {
   const timeoutMs = opts.timeoutMs || 45000;
   const { timeoutMs: _timeoutMs, signal, ...fetchOptions } = opts;
@@ -890,6 +903,7 @@ async function api(path, opts = {}) {
       data = {};
     }
     if (!response.ok) {
+      handleUnauthorizedSession(response, data);
       const error = new Error(data.error || ('请求失败（HTTP ' + response.status + '）'));
       error.code = data.code || 'HTTP_ERROR';
       error.source = data.source;

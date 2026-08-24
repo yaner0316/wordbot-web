@@ -74,6 +74,26 @@ test('deployed frontend can point API calls at the Render backend', () => {
     assert.match(app, /replace\(\/\\\/\$\/,\s*''\)/);
 });
 
+test('unauthorized API responses clear stale local login state and return to login', () => {
+    const calls = [];
+    const context = {
+        state: { user: 'qiuqiu', users: ['qiuqiu'], parentAccess: true, parentAuth: {} },
+        clearSessionUser: () => calls.push('clear'),
+        showLoginPage: options => calls.push(['login', options]),
+    };
+    vm.createContext(context);
+    vm.runInContext(extractNamedFunction(app, 'handleUnauthorizedSession'), context);
+
+    const handled = context.handleUnauthorizedSession({ status: 401 }, { code: 'UNAUTHORIZED' });
+
+    assert.equal(handled, true);
+    assert.equal(context.state.user, null);
+    assert.equal(context.state.parentAccess, false);
+    assert.equal(calls[0], 'clear');
+    assert.equal(calls[1][0], 'login');
+    assert.equal(calls[1][1].replace, true);
+});
+
 test('wrong-answer review is offered only after answer analysis', () => {
     assert.match(reviewFlow, /analysisViewed/);
     assert.ok(app.includes('\u5f00\u59cb\u9519\u9898\u590d\u4e60'));
