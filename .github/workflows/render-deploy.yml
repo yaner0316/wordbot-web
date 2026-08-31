@@ -1,6 +1,7 @@
 name: Deploy static site to Render
 
 on:
+  pull_request:
   push:
     branches:
       - codex/frontend-engineering
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,10 +25,32 @@ jobs:
           node-version: 22
 
       - name: Run Web tests
-        run: node --test test/submission-guard.test.cjs test/stage2-behavior.test.cjs test/review-flow.test.cjs test/quiz-logic.test.cjs
+        run: node --test test/submission-guard.test.cjs test/stage2-behavior.test.cjs test/review-flow.test.cjs test/quiz-logic.test.cjs test/parent-repair.test.cjs test/result-translation-only.test.cjs test/render-build.test.cjs test/verify-public-release.test.cjs test/deploy-workflow-contract.test.cjs
+
+      - name: Verify static publish build
+        env:
+          RENDER_GIT_COMMIT: ${{ github.sha }}
+        run: node scripts/render-build.cjs
 
       - name: Check Web JavaScript syntax
-        run: node --check src/app.js && node --check src/quiz-logic.js
+        run: node --check src/app.js && node --check src/quiz-logic.js && node --check scripts/render-build.cjs && node --check scripts/verify-public-release.cjs
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Trigger Render deploy hook
         env:
@@ -35,3 +58,28 @@ jobs:
         run: |
           test -n "$RENDER_DEPLOY_HOOK_URL"
           curl --fail --request POST "$RENDER_DEPLOY_HOOK_URL"
+
+  verify_release:
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out release verifier
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify public frontend release
+        run: >-
+          node scripts/verify-public-release.cjs
+          --release-url https://wordbot-web.onrender.com/release.json
+          --expected-commit ${{ github.sha }}
+          --attempts 40
+          --interval-ms 15000
