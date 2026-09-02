@@ -8,6 +8,7 @@ const source = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'review-flow.js'),
     'utf8'
 );
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
 const context = { globalThis: {} };
 vm.runInNewContext(source, context);
 const {
@@ -69,4 +70,11 @@ test('review summary preserves the original first score', () => {
             deferredRecordIds: [],
         }
     );
+});
+
+test('selected-sense reviews render four Chinese choices and submit the selected letter', () => {
+  assert.match(appSource, /function isSenseChoiceReviewQuestion/);
+  assert.match(appSource, /CN 释义选择/);
+  assert.match(appSource, /String\.fromCharCode\(65 \+ answer\)/);
+  assert.match(appSource, /selectedSenseFlow: true/);
 });
