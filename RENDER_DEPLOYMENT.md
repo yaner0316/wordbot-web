@@ -7,9 +7,9 @@ deploy hook.
 
 - Service type: Static Site
 - Repository: `yaner0316/wordbot-web`
-- Branch: `codex/frontend-engineering`
-- Build command: leave empty
-- Publish directory: `.`
+- Branch: `main`
+- Build command: `node scripts/render-build.cjs`
+- Publish directory: `dist`
 
 The frontend reads the backend URL from `config.js`:
 
@@ -31,4 +31,7 @@ as a repository secret:
 - Secret value: the Render Deploy Hook URL
 
 After that, every push to `codex/frontend-engineering` or `main` triggers a
-Render deploy. You can also run the workflow manually from GitHub Actions.
+Render deploy after the test job succeeds. Pull requests and manual runs only
+run tests. After a `main` deployment, the workflow polls the public
+`/release.json` marker for the exact triggering Git SHA. The marker and check
+use only public, read-only data.
