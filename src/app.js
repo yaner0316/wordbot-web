@@ -1890,7 +1890,8 @@ function openStudentWordEntry() {
     <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库；释义、例句和检查由后端生成。</div>
     <div id="studentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
     <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
-    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
+    <button class="btn btn-secondary btn-small" type="button" onclick="lookupSelectedSenses()">选择释义</button>
+    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">直接录入</button>
   `;
 }
 
@@ -2058,7 +2059,8 @@ function openParentTool(tool) {
       <div class="parent-help">当前会把单词加入 ${escapeHtml(state.user)} 的词库；英文释义、中文释义、例句和干扰项由后端生成。</div>
       <div id="parentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
       <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
-    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">提交录入</button>
+    <button class="btn btn-secondary btn-small" type="button" onclick="lookupSelectedSenses()">选择释义</button>
+    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">直接录入</button>
     `;
     return;
   }
@@ -2235,6 +2237,71 @@ function renderDuplicateWordConfirmation(duplicateWords = []) {
 function clearDuplicateWordConfirmation() {
   const panel = getWordEntryDuplicatePanel();
   if (panel) panel.innerHTML = '';
+}
+
+function buildSelectedSenseEntries(word, senses, selectedIndexes) {
+  const normalizedWord = String(word || '').trim().toLowerCase();
+  const selected = new Set((selectedIndexes || []).map(Number));
+  if (!normalizedWord || !selected.size) return [];
+  return (senses || []).flatMap((sense, index) => {
+    if (!selected.has(index)) return [];
+    const meaning = String(sense?.definition || '').trim();
+    if (!meaning) return [];
+    const pos = String(sense?.partOfSpeech || '').trim();
+    return [{ word: normalizedWord, meaning, ...(pos ? { POS: pos } : {}) }];
+  });
+}
+
+async function lookupSelectedSenses() {
+  const input = $('parentWordsInput') || $('studentWordsInput');
+  const entries = parseParentWordEntries(input?.value);
+  if (entries.length !== 1 || entries[0].meaning || entries[0].cnMeaning) {
+    showToast('选择释义时请先只输入一个英文单词', 'info');
+    return;
+  }
+  showLoading('正在查询释义...');
+  try {
+    const word = entries[0].word;
+    const data = await api(`/api/word-senses?word=${encodeURIComponent(word)}`);
+    const senses = Array.isArray(data?.senses) ? data.senses : [];
+    if (!senses.length) throw new Error('没有找到可选择的释义');
+    const host = getWordEntryDuplicatePanel();
+    if (!host) return;
+    host.innerHTML = `<div class="duplicate-word-confirmation" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>勾选这次要学习的释义：</p>${senses.map((sense, index) => `<label class="parent-field"><input type="checkbox" data-selected-sense="${index}" /> <span>${escapeHtml(sense.partOfSpeech || '')} ${escapeHtml(sense.definition || '')}</span></label>`).join('')}<button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div>`;
+    host._dictionarySenses = senses;
+  } catch (error) {
+    showToast('释义查询失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+async function submitSelectedSenses() {
+  const host = getWordEntryDuplicatePanel();
+  const word = host?.querySelector('[data-selected-sense-word]')?.dataset.selectedSenseWord;
+  const indexes = Array.from(host?.querySelectorAll('[data-selected-sense]:checked') || []).map(node => Number(node.dataset.selectedSense));
+  const entries = buildSelectedSenseEntries(word, host?._dictionarySenses, indexes);
+  if (!entries.length) {
+    showToast('请至少选择一个释义', 'info');
+    return;
+  }
+  showLoading('正在录入释义...');
+  try {
+    const result = await api('/api/admin/addWords', {
+      method: 'POST', timeoutMs: 90000,
+      body: JSON.stringify({ targetUser: state.user, words: entries, confirmNewMeanings: true }),
+    });
+    if (!isParentWordSubmissionSuccessful(result)) throw new Error(result?.error || '录入未完成');
+    showToast(buildParentWordCooldownNotice(result.count), 'success');
+    const input = $('parentWordsInput') || $('studentWordsInput');
+    if (input) input.value = '';
+    clearDuplicateWordConfirmation();
+    loadStats(state.user);
+  } catch (error) {
+    showToast('录入失败: ' + normalizeApiError(error).message, 'error');
+  } finally {
+    hideLoading();
+  }
 }
 
 async function submitParentWords(options = {}) {

@@ -54,6 +54,17 @@ test('parent entry cooldown notice clearly states the 18-hour wait', () => {
   assert.match(notice(2), /18/);
 });
 
+test('selected dictionary senses become independent learning-meaning entries', () => {
+  const buildEntries = loadFunction('buildSelectedSenseEntries');
+  assert.deepEqual(buildEntries('bank', [
+    { partOfSpeech: 'noun', definition: 'a financial institution' },
+    { partOfSpeech: 'noun', definition: 'the side of a river' },
+  ], [1, 0]), [
+    { word: 'bank', meaning: 'a financial institution', POS: 'noun' },
+    { word: 'bank', meaning: 'the side of a river', POS: 'noun' },
+  ]);
+});
+
 test('parent library has continuous loading and per-meaning edit/delete controls', () => {
   assert.match(app, /function handleParentWordLibraryScroll/);
   assert.match(app, /IntersectionObserver|scrollY|scrollTop/);
