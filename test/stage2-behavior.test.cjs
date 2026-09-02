@@ -105,6 +105,11 @@ test('wrong-answer review is offered only after answer analysis', () => {
     assert.match(app, /restoreActiveReview/);
 });
 
+test('home does not show cache-preparation detail until readiness is explicitly revealed', () => {
+    assert.match(app, /state\.quizReadinessRevealed/);
+    assert.match(app, /inlineStatus\.hidden = !state\.quizReadinessRevealed/);
+});
+
 test('difficulty preference is stored per user and defaults to middle school', () => {
     assert.match(app, /DEFAULT_LEVEL\s*=/);
     assert.match(app, /wordbot:difficulty:/);

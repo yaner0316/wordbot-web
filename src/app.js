@@ -85,6 +85,7 @@ let remoteQuizSession = null;
 const state = {
   user: null,
   authMode: 'login',
+  quizReadinessRevealed: false,
   parentAccess: false,
   parentAuth: null,
   level: DEFAULT_LEVEL,
@@ -1336,8 +1337,9 @@ function renderQuizCacheReadiness(status, level = state.level) {
 
   const readiness = getQuizCacheReadiness(status, level);
   button.disabled = readiness.disabled;
-  label.textContent = readiness.buttonLabel;
+  label.textContent = state.quizReadinessRevealed ? readiness.buttonLabel : '开始单词挑战吧！';
   inlineStatus.className = `quiz-readiness-inline ${readiness.state}`;
+  inlineStatus.hidden = !state.quizReadinessRevealed;
   inlineStatus.innerHTML = `
     <span>${escapeHtml(readiness.detail)}</span>
     ${readiness.action === 'query'
@@ -1890,8 +1892,7 @@ function openStudentWordEntry() {
     <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库；释义、例句和检查由后端生成。</div>
     <div id="studentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
     <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
-    <button class="btn btn-secondary btn-small" type="button" onclick="lookupSelectedSenses()">选择释义</button>
-    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">直接录入</button>
+    <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
   `;
 }
 
@@ -2059,8 +2060,7 @@ function openParentTool(tool) {
       <div class="parent-help">当前会把单词加入 ${escapeHtml(state.user)} 的词库；英文释义、中文释义、例句和干扰项由后端生成。</div>
       <div id="parentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
       <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
-    <button class="btn btn-secondary btn-small" type="button" onclick="lookupSelectedSenses()">选择释义</button>
-    <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords()">直接录入</button>
+    <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
     `;
     return;
   }
@@ -2250,6 +2250,17 @@ function buildSelectedSenseEntries(word, senses, selectedIndexes) {
     const pos = String(sense?.partOfSpeech || '').trim();
     return [{ word: normalizedWord, meaning, ...(pos ? { POS: pos } : {}) }];
   });
+}
+
+function shouldChooseDictionarySenses(entries) {
+  return Array.isArray(entries) && entries.length === 1 && !entries[0]?.meaning && !entries[0]?.cnMeaning;
+}
+
+async function submitWordEntry() {
+  const input = $('parentWordsInput') || $('studentWordsInput');
+  const entries = parseParentWordEntries(input?.value);
+  if (shouldChooseDictionarySenses(entries)) return lookupSelectedSenses();
+  return submitParentWords();
 }
 
 async function lookupSelectedSenses() {
@@ -2896,6 +2907,7 @@ async function loadStats(user, { showOverlay = true } = {}) {
 // ========== Quiz ==========
 async function startQuiz() {
   if (!state.user) { showToast('请先选择一个用户', 'error'); return; }
+  state.quizReadinessRevealed = true;
   showLoading('正在生成题目...');
   clearActiveReview();
   clearQuizDraft(state.mode);

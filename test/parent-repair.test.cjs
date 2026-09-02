@@ -65,6 +65,13 @@ test('selected dictionary senses become independent learning-meaning entries', (
   ]);
 });
 
+test('a single bare word defaults to dictionary-sense selection', () => {
+  const shouldChoose = loadFunction('shouldChooseDictionarySenses');
+  assert.equal(shouldChoose([{ word: 'light' }]), true);
+  assert.equal(shouldChoose([{ word: 'light', meaning: 'not heavy' }]), false);
+  assert.equal(shouldChoose([{ word: 'light' }, { word: 'bank' }]), false);
+});
+
 test('parent library has continuous loading and per-meaning edit/delete controls', () => {
   assert.match(app, /function handleParentWordLibraryScroll/);
   assert.match(app, /IntersectionObserver|scrollY|scrollTop/);
