@@ -2289,7 +2289,7 @@ async function submitSelectedSenses() {
   try {
     const result = await api('/api/admin/addWords', {
       method: 'POST', timeoutMs: 90000,
-      body: JSON.stringify({ targetUser: state.user, words: entries, confirmNewMeanings: true }),
+      body: JSON.stringify({ targetUser: state.user, words: entries, confirmNewMeanings: true, selectedSenseFlow: true }),
     });
     if (!isParentWordSubmissionSuccessful(result)) throw new Error(result?.error || '录入未完成');
     showToast(buildParentWordCooldownNotice(result.count), 'success');
@@ -2959,6 +2959,9 @@ async function startQuiz() {
 function isMeaningReviewQuestion(question) {
   return Number(question?.type) === 4 || question?.answerMode === 'cn_meaning';
 }
+function isSenseChoiceReviewQuestion(question) {
+  return question?.answerMode === 'sense_choice' && Array.isArray(question?.options) && question.options.length === 4;
+}
 
 function meaningAnswerValue(index) {
   return String(state.answers[index] ?? '');
@@ -2971,6 +2974,21 @@ function renderQuestion(idx) {
   $('quizTotalText').textContent = total;
 
   if (isMeaningReviewQuestion(q)) {
+    if (isSenseChoiceReviewQuestion(q)) {
+      const optsHtml = q.options.map((option, index) => {
+        const selected = state.answers[idx] === index ? 'selected' : '';
+        return `<button class="option-btn ${selected}" onclick="selectOption(${idx}, ${index})"><span class="letter">${String.fromCharCode(65 + index)}</span><span>${escapeHtml(option)}</span></button>`;
+      }).join('');
+      $('questionArea').innerHTML = `<div class="question-card meaning-review-card"><div class="question-type-badge type4">CN 释义选择</div><div class="question-text meaning-review-word">${escapeHtml(q.word || '')}</div><div class="options">${optsHtml}</div></div>`;
+      const isLastQuestion = idx === total - 1;
+      const canContinue = state.answers[idx] !== null;
+      $('prevBtn').style.visibility = idx === 0 ? 'hidden' : 'visible';
+      $('nextBtn').style.display = isLastQuestion ? 'none' : 'flex';
+      $('submitBtn').style.display = isLastQuestion ? 'flex' : 'none';
+      $('nextBtn').disabled = !canContinue;
+      $('submitBtn').disabled = !canContinue;
+      return;
+    }
     const answer = meaningAnswerValue(idx);
     $('questionArea').innerHTML = `
       <div class="question-card meaning-review-card">
@@ -3055,6 +3073,7 @@ function prevQuestion() {
 function canLeaveCurrentQuestion() {
   const index = state.currentQuestion;
   const question = state.quiz?.questions?.[index];
+  if (isSenseChoiceReviewQuestion(question)) return state.answers[index] !== null;
   if (isMeaningReviewQuestion(question)) {
     if (!meaningAnswerValue(index).trim()) {
       showToast('请先输入中文释义', 'info');
@@ -3106,7 +3125,7 @@ async function submitQuiz() {
   if (!state.quiz) return;
   if (state.submitting) return;
   if (!canLeaveCurrentQuestion()) return;
-  const unanswered = state.quiz.questions.findIndex((question, index) => isMeaningReviewQuestion(question) ? !meaningAnswerValue(index).trim() : state.answers[index] === null);
+  const unanswered = state.quiz.questions.findIndex((question, index) => isSenseChoiceReviewQuestion(question) ? state.answers[index] === null : isMeaningReviewQuestion(question) ? !meaningAnswerValue(index).trim() : state.answers[index] === null);
   if (unanswered !== -1) {
     showToast(`还有第 ${unanswered + 1} 题未作答`, 'info');
     state.currentQuestion = unanswered;
@@ -3171,7 +3190,9 @@ async function submitQuiz() {
     } else if (state.session.kind === 'review') {
       data = await submitReviewToBackend(state.session.reviewId, {
         user: state.user,
-        answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
+        answers: state.answers.map((answer, i) => isSenseChoiceReviewQuestion(state.quiz.questions[i])
+          ? { text: String.fromCharCode(65 + answer) }
+          : isMeaningReviewQuestion(state.quiz.questions[i])
           ? { text: String(answer ?? '').trim() }
           : { option: answer })
       });
@@ -3179,7 +3200,9 @@ async function submitQuiz() {
       const payload = {
         user: state.user,
         testId: state.quiz.testId,
-        answers: state.answers.map((answer, i) => isMeaningReviewQuestion(state.quiz.questions[i])
+        answers: state.answers.map((answer, i) => isSenseChoiceReviewQuestion(state.quiz.questions[i])
+          ? { option: answer }
+          : isMeaningReviewQuestion(state.quiz.questions[i])
           ? { text: String(answer ?? '').trim() }
           : { option: answer })
       };
