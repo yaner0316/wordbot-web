@@ -1103,7 +1103,9 @@ function loginAs(user) {
   ]).then(() => renderStudentTools());
 }
 
-function logout() {
+async function logout() {
+  try { await api('/api/auth/logout', { method: 'POST' }); }
+  catch (_) { showToast('退出未完成，请联网后重试', 'error'); return; }
   clearAllQuizDrafts();
   clearSessionUser();
   state.user = null;
@@ -1337,9 +1339,9 @@ function renderQuizCacheReadiness(status, level = state.level) {
 
   const readiness = getQuizCacheReadiness(status, level);
   button.disabled = readiness.disabled;
-  label.textContent = state.quizReadinessRevealed ? readiness.buttonLabel : '开始单词挑战吧！';
+  label.textContent = (state.quizReadinessRevealed || readiness.disabled) ? readiness.buttonLabel : '开始单词挑战吧！';
   inlineStatus.className = `quiz-readiness-inline ${readiness.state}`;
-  inlineStatus.hidden = !state.quizReadinessRevealed;
+  inlineStatus.hidden = !state.quizReadinessRevealed && !readiness.disabled;
   inlineStatus.innerHTML = `
     <span>${escapeHtml(readiness.detail)}</span>
     ${readiness.action === 'query'
