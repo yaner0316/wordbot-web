@@ -25,7 +25,7 @@ jobs:
           node-version: 22
 
       - name: Run Web tests
-        run: node --test test/submission-guard.test.cjs test/stage2-behavior.test.cjs test/review-flow.test.cjs test/quiz-logic.test.cjs test/parent-repair.test.cjs test/result-translation-only.test.cjs test/render-build.test.cjs test/verify-public-release.test.cjs test/deploy-workflow-contract.test.cjs
+        run: node --test test/audit-ui.test.cjs test/submission-guard.test.cjs test/stage2-behavior.test.cjs test/review-flow.test.cjs test/quiz-logic.test.cjs test/parent-repair.test.cjs test/result-translation-only.test.cjs test/render-build.test.cjs test/verify-public-release.test.cjs test/deploy-workflow-contract.test.cjs
 
       - name: Verify static publish build
         env:
