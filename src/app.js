@@ -1027,6 +1027,8 @@ async function refreshDeviceState() {
   const task = (async () => {
     await Promise.all([syncLearningSettingsFromServer(user, { silent: false }), syncGameStateFromServer(user)]);
     if (state.user !== user) return;
+    if (state.currentPage === 'home') await loadQuizCacheReadiness(user);
+    if (state.user !== user) return;
     const host = $('animalGardenMount');
     if (host?.innerHTML) { host.innerHTML = renderAnimalGardenGame(); void mountCurrentRewardGardenArt(); }
     const quiz = state.session.kind === 'quiz' && !state.quiz?.result ? state.quiz : null;
@@ -1447,6 +1449,22 @@ function renderQuizCacheReadinessFromDiagnostics(diagnostics = {}) {
   return renderQuizCacheReadiness(status, state.level);
 }
 
+let quizReadinessRefreshTimer = null;
+
+function scheduleQuizReadinessRefresh(user) {
+  clearTimeout(quizReadinessRefreshTimer);
+  quizReadinessRefreshTimer = null;
+  if (DEMO_MODE || !user || state.user !== user || state.currentPage !== 'home' || document.visibilityState === 'hidden') return;
+  const readiness = getQuizCacheReadiness(state.questionCacheStatus, state.level);
+  if (!readiness.disabled || readiness.canRetry) return;
+  quizReadinessRefreshTimer = setTimeout(() => {
+    quizReadinessRefreshTimer = null;
+    if (state.user === user && state.currentPage === 'home' && document.visibilityState !== 'hidden') {
+      void loadQuizCacheReadiness(user);
+    }
+  }, 15000);
+}
+
 async function loadQuizCacheReadiness(user = state.user) {
   if (!user) return null;
   if (DEMO_MODE) {
@@ -1466,15 +1484,19 @@ async function loadQuizCacheReadiness(user = state.user) {
   }, state.level);
   try {
     const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
+    if (state.user !== user) return null;
     state.questionCacheStatus = data.status || {};
     return renderQuizCacheReadiness(state.questionCacheStatus, state.level);
   } catch (error) {
+    if (state.user !== user) return null;
     const failedStatus = {
       eligibleReadyMeanings: 0,
       queryError: normalizeApiError(error).message,
     };
     state.questionCacheStatus = failedStatus;
     return renderQuizCacheReadiness(failedStatus, state.level);
+  } finally {
+    if (state.user === user) scheduleQuizReadinessRefresh(user);
   }
 }
 
