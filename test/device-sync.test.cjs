@@ -60,5 +60,16 @@ test('older readiness response cannot replace a newer result for the same user',
  const first=c.loadQuizCacheReadiness('child');const second=c.loadQuizCacheReadiness('child');
  resolveSecond({status:{eligibleReadyMeanings:28}});await second;
  resolveFirst({status:{eligibleReadyMeanings:1}});await first;
- assert.equal(c.state.questionCacheStatus.eligibleReadyMeanings,28);
+  assert.equal(c.state.questionCacheStatus.eligibleReadyMeanings,28);
+});
+
+test('readiness status requests bypass a cached browser response',async()=>{
+  let options;
+  const c=context({quizReadinessRequestId:0,api:async(_path, requestOptions)=>{
+    options=requestOptions;
+    return {status:{eligibleReadyMeanings:28}};
+  },renderQuizCacheReadiness(){},scheduleQuizReadinessRefresh(){}});
+  vm.runInContext(fn('loadQuizCacheReadiness'),c);
+  await c.loadQuizCacheReadiness('child');
+  assert.equal(options.cache,'no-store');
 });
