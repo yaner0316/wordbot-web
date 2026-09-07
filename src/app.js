@@ -364,51 +364,67 @@ function markGameRewardClaimed(claimId, user = state.user) {
   localStorage.setItem(gameTimeRewardClaimKey(user), JSON.stringify([...claimed]));
 }
 
-let gameStateSyncPromise = Promise.resolve();
+const gameStateByUser = new Map();
+const gameMutationQueues = new Map();
 
 function gameStatePayload(user = state.user) {
-  return {
-    minutes: getBankedGameMinutes(user),
-    claimIds: [...getClaimedGameRewardIds(user)],
-    garden: getAnimalGardenState(user),
-  };
+  return { minutes: getBankedGameMinutes(user), claimIds: [...getClaimedGameRewardIds(user)], garden: getAnimalGardenState(user), baseRevision: gameStateByUser.get(user)?.revision };
 }
 
-async function persistGameState(user = state.user) {
-  if (!user || DEMO_MODE) return null;
-  try {
-    const data = await api('/api/game/state/' + encodeURIComponent(user), {
-      method: 'PUT',
-      body: JSON.stringify(gameStatePayload(user)),
-    });
-    return data.state || null;
-  } catch {
-    return null;
-  }
+function applyServerGameState(remote, user = state.user) {
+  if (!remote || !user) return null;
+  gameStateByUser.set(user, remote);
+  setBankedGameMinutes(remote.minutes, user);
+  localStorage.setItem(gameTimeRewardClaimKey(user), JSON.stringify(remote.claimIds || []));
+  setAnimalGardenState(remote.garden || {}, user);
+  return remote;
+}
+
+async function readGameStateFromServer(user) {
+  const data = await api('/api/game/state/' + encodeURIComponent(user));
+  if (!data.state) throw new Error('小游戏状态读取失败');
+  return applyServerGameState(data.state, user);
+}
+
+async function persistGameState(user = state.user, value = gameStatePayload(user)) {
+  if (!user || DEMO_MODE) return value;
+  const data = await api('/api/game/state/' + encodeURIComponent(user), {
+    method: 'PUT', body: JSON.stringify(value),
+  });
+  if (!data.state) throw new Error('小游戏状态保存失败');
+  return applyServerGameState(data.state, user);
 }
 
 async function syncGameStateFromServer(user) {
   if (!user || DEMO_MODE) return null;
   try {
-    const data = await api('/api/game/state/' + encodeURIComponent(user));
-    const remote = data.state || {};
-    const localMinutes = getBankedGameMinutes(user);
-    const remoteMinutes = Math.max(0, Math.floor(Number(remote.minutes) || 0));
-    const mergedMinutes = Math.max(localMinutes, remoteMinutes);
-    const mergedClaims = [...new Set([
-      ...getClaimedGameRewardIds(user),
-      ...(Array.isArray(remote.claimIds) ? remote.claimIds : []),
-    ])];
-    if (mergedMinutes !== localMinutes) setBankedGameMinutes(mergedMinutes, user);
-    localStorage.setItem(gameTimeRewardClaimKey(user), JSON.stringify(mergedClaims));
-    if (remote.garden && typeof remote.garden === 'object' && Object.keys(remote.garden).length) {
-      setAnimalGardenState(remote.garden, user);
-    }
-    await persistGameState(user);
-    return remote;
-  } catch {
+    await gameMutationQueues.get(user);
+    return await readGameStateFromServer(user);
+  } catch (error) {
+    if (state.user === user) showToast('小游戏时间未同步，请联网后重试', 'error');
     return null;
   }
+}
+
+function mutateGameState(user, buildNext) {
+  const task = (gameMutationQueues.get(user) || Promise.resolve()).catch(() => {}).then(async () => {
+    try {
+      const remote = DEMO_MODE ? gameStatePayload(user) : await readGameStateFromServer(user);
+      const next = buildNext(remote);
+      if (!next) return remote;
+      if (DEMO_MODE) return applyServerGameState(next, user);
+      return await persistGameState(user, { ...next, baseRevision: remote.revision });
+    } catch (error) {
+      if (error.code === 'GAME_STATE_CONFLICT') {
+        await readGameStateFromServer(user).catch(() => {});
+        showToast('另一设备已更新小游戏，本次操作未保存，请重试', 'info');
+      } else showToast('小游戏保存结果未确认，请联网后刷新余额再重试', 'error');
+      return null;
+    }
+  });
+  gameMutationQueues.set(user, task);
+  void task.finally(() => { if (gameMutationQueues.get(user) === task) gameMutationQueues.delete(user); });
+  return task;
 }
 function buildQuizDiagnosticsSummary(quizData) {
   const diagnostics = quizData?.diagnostics || null;
@@ -452,6 +468,7 @@ function renderQuizDiagnosticsPanel() {
   </div>`;
 }
 function addGameRewardToBank(reward, user = state.user, claimId = '') {
+  if (!DEMO_MODE) return getBankedGameMinutes(user);
   if (!reward?.eligible || !reward.minutes || !user) return getBankedGameMinutes(user);
   const normalizedClaimId = String(claimId || '').trim();
   if (normalizedClaimId && getClaimedGameRewardIds(user).has(normalizedClaimId)) {
@@ -459,7 +476,6 @@ function addGameRewardToBank(reward, user = state.user, claimId = '') {
   }
   const minutes = setBankedGameMinutes(getBankedGameMinutes(user) + Number(reward.minutes), user);
   markGameRewardClaimed(normalizedClaimId, user);
-  void persistGameState(user);
   return minutes;
 }
 
@@ -708,34 +724,37 @@ async function mountCurrentRewardGardenArt() {
   stage.innerHTML = layers.join('');
 }
 
-function playAnimalGardenAction(action) {
-  const minutes = getBankedGameMinutes();
-  if (minutes <= 0) {
-    showToast('小游戏时间已经用完，下次学习再来玩', 'info');
-    return;
-  }
-  const garden = getAnimalGardenState();
-  const outfits = ['草帽', '莓果领结', '星星挎包', '探险铃'];
-  const gain = {
-    hearts: action === 'care' ? 2 : 1,
-    feed: action === 'collect' ? 2 : 1,
-    visits: action === 'outfit' ? 2 : 1,
-  };
-  const currentOutfit = normalizeGardenOutfit(garden.outfit);
-  const nextOutfitIndex = (outfits.indexOf(currentOutfit) + 1 + outfits.length) % outfits.length;
-  const next = {
-    ...garden,
-    visits: (garden.visits || 0) + gain.visits,
-    hearts: (garden.hearts || 0) + gain.hearts,
-    feed: (garden.feed || 0) + gain.feed,
-    outfit: action === 'outfit' ? outfits[nextOutfitIndex] : currentOutfit,
-    lastAction: action,
-    lastGain: gain,
-    lastActionAt: Date.now(),
-  };
-  setAnimalGardenState(next);
-  setBankedGameMinutes(minutes - 1);
-  void persistGameState();
+async function playAnimalGardenAction(action) {
+  const user = state.user;
+  if (!user || !['care', 'collect', 'outfit'].includes(action)) return;
+  const saved = await mutateGameState(user, remote => {
+    const minutes = Number(remote.minutes) || 0;
+    if (minutes <= 0) {
+      showToast('小游戏时间已经用完，下次学习再来玩', 'info');
+      return;
+    }
+    const garden = remote.garden || {};
+    const outfits = ['草帽', '莓果领结', '星星挎包', '探险铃'];
+    const gain = {
+      hearts: action === 'care' ? 2 : 1,
+      feed: action === 'collect' ? 2 : 1,
+      visits: action === 'outfit' ? 2 : 1,
+    };
+    const currentOutfit = normalizeGardenOutfit(garden.outfit);
+    const nextOutfitIndex = (outfits.indexOf(currentOutfit) + 1 + outfits.length) % outfits.length;
+    const next = {
+      ...garden,
+      visits: (garden.visits || 0) + gain.visits,
+      hearts: (garden.hearts || 0) + gain.hearts,
+      feed: (garden.feed || 0) + gain.feed,
+      outfit: action === 'outfit' ? outfits[nextOutfitIndex] : currentOutfit,
+      lastAction: action,
+      lastGain: gain,
+      lastActionAt: Date.now(),
+    };
+    return { ...remote, garden: next, minutes: minutes - 1 };
+  });
+  if (!saved || state.user !== user) return;
   const host = $('animalGardenMount');
   if (host) {
     host.innerHTML = renderAnimalGardenGame();
@@ -753,7 +772,7 @@ function startGamePreview() {
     showToast('请先登录再体验小游戏', 'info');
     return;
   }
-  if (getBankedGameMinutes() <= 0) setBankedGameMinutes(12);
+  if (DEMO_MODE && getBankedGameMinutes() <= 0) setBankedGameMinutes(12);
   const mount = $('animalGardenMount') || document.createElement('div');
   mount.id = 'animalGardenMount';
   if (!mount.parentNode) $('pageHome').appendChild(mount);
@@ -994,12 +1013,62 @@ function handleGlobalKeydown(event) {
   }
 }
 
+let deviceRefreshPromise = null;
+
+function preserveUnsyncedQuiz(user, quiz) {
+  if (!quiz?.syncFailed || state.quiz !== quiz || state.user !== user) return;
+  localStorage.setItem('wordbot_unsynced_quiz_' + user + '_' + quiz.testId, JSON.stringify({ quiz, answers: state.answers, currentQuestion: state.currentQuestion, savedAt: Date.now() }));
+}
+
+async function refreshDeviceState() {
+  if (DEMO_MODE || !state.user || document.visibilityState === 'hidden') return;
+  if (deviceRefreshPromise) return deviceRefreshPromise;
+  const user = state.user;
+  const task = (async () => {
+    await Promise.all([syncLearningSettingsFromServer(user, { silent: false }), syncGameStateFromServer(user)]);
+    if (state.user !== user) return;
+    const host = $('animalGardenMount');
+    if (host?.innerHTML) { host.innerHTML = renderAnimalGardenGame(); void mountCurrentRewardGardenArt(); }
+    const quiz = state.session.kind === 'quiz' && !state.quiz?.result ? state.quiz : null;
+    await quizProgressSavePromise;
+    const localSnapshot = JSON.stringify([state.currentQuestion, state.answers]);
+    const remote = await loadRemoteQuizSession(user);
+    if (state.user !== user || state.quiz !== quiz || !quiz?.testId || state.currentPage !== 'quiz') return;
+    // Do not replace answers entered while the cloud read was in flight.
+    if (localSnapshot !== JSON.stringify([state.currentQuestion, state.answers])) return;
+    if (remote?.testId === quiz.testId) {
+      if ((remote.progress?.revision || 0) === (quiz.progressRevision || 0)) {
+        if (quiz.syncFailed) {
+          quiz.syncFailed = false;
+          await saveQuizProgressToServer();
+        }
+      } else {
+        preserveUnsyncedQuiz(user, quiz);
+        await restoreRemoteQuizSession();
+        showToast('已更新为另一设备保存的答题进度', 'info');
+      }
+    } else {
+      preserveUnsyncedQuiz(user, quiz);
+      clearQuizDraft(state.mode);
+      state.quiz = null;
+      state.session.kind = null;
+      if (state.currentPage === 'quiz') navigateTo('home');
+      showToast('本次考核已在另一设备结束，请从首页继续', 'info');
+    }
+  })().catch(() => { if (state.user === user) showToast('跨设备同步失败，请联网后重新进入页面', 'error'); });
+  deviceRefreshPromise = task;
+  try { await task; } finally { if (deviceRefreshPromise === task) deviceRefreshPromise = null; }
+}
+
 function initializeAppHistory() {
   if (state.historyInitialized) return;
   history.replaceState({ wordbotPage: state.currentPage }, '', window.location.href);
   state.historyInitialized = true;
   window.addEventListener('popstate', handleBrowserBack);
   window.addEventListener('keydown', handleGlobalKeydown);
+  window.addEventListener('focus', refreshDeviceState);
+  window.addEventListener('online', refreshDeviceState);
+  document.addEventListener('visibilitychange', refreshDeviceState);
   document.addEventListener('click', handleVocabularyProgressOutsideClick);
 }
 
@@ -1195,6 +1264,7 @@ async function syncLearningSettingsFromServer(user, { silent = true } = {}) {
   try {
     const data = await api(`/api/admin/userSettings?userId=${encodeURIComponent(user)}`);
     const settings = data.settings || null;
+    if (state.user !== user) return null;
     if (settings?.learningLevel) {
       state.learningSettings = settings;
       state.level = settings.learningLevel;
@@ -1540,8 +1610,8 @@ async function enterFormalQuiz(quiz, options) {
   options = options || {};
   const {
     session = state.session,
-    currentQuestion = 0,
-    answers = null,
+    currentQuestion = quiz?.progress?.currentQuestion || 0,
+    answers = quiz?.progress?.answers || null,
   } = options;
   const formalQuizIssue = quiz?.mode === 'test'
     ? { blocked: false }
@@ -1558,7 +1628,7 @@ async function enterFormalQuiz(quiz, options) {
     return false;
   }
   state.session = session || { kind: 'quiz' };
-  state.quiz = quiz;
+  state.quiz = { ...quiz, progressRevision: Number(quiz.progress?.revision ?? quiz.progressRevision ?? 0), syncFailed: false };
   state.currentQuestion = Math.min(
     Math.max(0, Number(currentQuestion) || 0),
     quiz.questions.length - 1
@@ -1598,22 +1668,37 @@ async function restoreQuizDraft(user = state.user) {
   return restored;
 }
 
-let remoteProgressSaveToken = 0;
+let quizProgressSavePromise = Promise.resolve();
 
 function saveQuizProgressToServer() {
-  if (DEMO_MODE || !state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || !state.quiz?.testId) return;
-  const token = ++remoteProgressSaveToken;
-  api('/api/quiz/session/progress', {
-    method: 'POST',
-    body: JSON.stringify({
-      user: state.user,
-      testId: state.quiz.testId,
-      currentQuestion: state.currentQuestion,
-      answers: state.answers,
-    }),
-  }).then(() => {
-    if (token === remoteProgressSaveToken) remoteQuizSession = null;
-  }).catch(() => {});
+  if (DEMO_MODE || !state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || !state.quiz?.testId) return Promise.resolve(false);
+  const user = state.user;
+  const quiz = state.quiz;
+  const snapshot = { currentQuestion: state.currentQuestion, answers: JSON.parse(JSON.stringify(state.answers)) };
+  quiz.syncPending = true;
+  saveQuizDraft();
+  const task = quizProgressSavePromise.then(async () => {
+    if (quiz.syncFailed || quiz.result) return false;
+    try {
+      const data = await api('/api/quiz/session/progress', {
+        method: 'POST', body: JSON.stringify({ user, testId: quiz.testId, ...snapshot, baseRevision: quiz.progressRevision || 0 }),
+      });
+      if (!data.saved || (quiz.mode !== 'test' && !Number.isInteger(data.progress?.revision))) throw new Error('进度未被服务器确认');
+      quiz.progressRevision = data.progress?.revision ?? quiz.progressRevision ?? 0;
+      quiz.syncPending = JSON.stringify(snapshot) !== JSON.stringify({ currentQuestion: state.currentQuestion, answers: state.answers });
+      if (state.user === user && state.quiz === quiz) { remoteQuizSession = null; saveQuizDraft(); }
+      return true;
+    } catch (error) {
+      quiz.syncFailed = true;
+      if (state.user === user && state.quiz === quiz) {
+        saveQuizDraft();
+        showToast(error.code === 'QUIZ_PROGRESS_CONFLICT' ? '另一设备已更新进度，请返回首页继续答题；本机草稿已保留' : '进度未同步，本机草稿已保留，请联网后重试', 'error');
+      }
+      return false;
+    }
+  });
+  quizProgressSavePromise = task.catch(() => false);
+  return task;
 }
 
 function saveCurrentSessionProgress() {
@@ -1722,6 +1807,7 @@ async function loadHome() {
   renderUsers(state.users);
   renderStudentTools();
   try {
+    await Promise.all([syncLearningSettingsFromServer(state.user, { silent: false }), syncGameStateFromServer(state.user)]);
     await Promise.all([
       loadStats(state.user, { showOverlay: false }),
       loadQuizCacheReadiness(state.user),
@@ -1804,6 +1890,7 @@ async function loadRemoteQuizSession(user = state.user, mode = state.mode || 're
   if (DEMO_MODE || !user) return null;
   const requestedMode = mode || 'real';
   const data = await api('/api/quiz/session?user=' + encodeURIComponent(user) + '&mode=' + encodeURIComponent(requestedMode));
+  if (state.user !== user || (state.mode || 'real') !== requestedMode) return null;
   const sessionMode = data?.mode || 'real';
   remoteQuizSession = data?.active && sessionMode === requestedMode
     ? { ...data, mode: sessionMode }
@@ -1827,6 +1914,7 @@ async function restoreRemoteQuizSession() {
     diagnostics: saved.diagnostics,
     partialFormalChallenge: saved.partialFormalChallenge,
     questions: saved.questions,
+    progress,
   };
   remoteQuizSession = null;
   return await enterFormalQuiz(quiz, {
@@ -1836,8 +1924,25 @@ async function restoreRemoteQuizSession() {
   });
 }
 
+async function recoverPendingQuizDraft() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(activeQuizKey(state.user, state.mode)) || 'null'); } catch { return false; }
+  if (!saved?.quiz || !(saved.quiz.syncFailed || saved.quiz.syncPending)) return false;
+  const remote = remoteQuizSession;
+  if (remote?.testId === saved.quiz.testId && (remote.progress?.revision || 0) === (saved.quiz.progressRevision || 0)) {
+    if (await enterFormalQuiz({ ...remote, progress: remote.progress }, { session: saved.session, answers: saved.answers, currentQuestion: saved.currentQuestion })) {
+      await saveQuizProgressToServer();
+      return true;
+    }
+  }
+  localStorage.setItem('wordbot_unsynced_quiz_' + state.user + '_' + saved.quiz.testId, JSON.stringify(saved));
+  showToast('云端进度已变化，已保留本机未同步草稿并使用云端进度', 'info');
+  return false;
+}
+
 async function handleContinueQuizEntry() {
-  if (await restoreQuizDraft()) return true;
+  if (DEMO_MODE && await restoreQuizDraft()) return true;
+  await quizProgressSavePromise;
   try {
     await loadRemoteQuizSession(state.user, state.mode || 'real');
   } catch (error) {
@@ -1845,7 +1950,10 @@ async function handleContinueQuizEntry() {
     renderStudentTools();
     return false;
   }
+  if (await recoverPendingQuizDraft()) return true;
+  preserveUnsyncedQuiz(state.user, state.quiz);
   if (await restoreRemoteQuizSession()) return true;
+  clearQuizDraft(state.mode || 'real');
   showToast('暂无未完成考核', 'info');
   renderStudentTools();
   return false;
@@ -2739,6 +2847,8 @@ async function loadParentLearningSettings() {
     const settings = settingsData.settings || {};
     const cacheStatus = cacheData.status || {};
     const currentLevel = settings.learningLevel || state.level || DEFAULT_LEVEL;
+    const levelLocked = settings.canChangeLevel === false;
+    const levelNotice = levelLocked ? '难度每 30 天可调整一次，下次可调整时间：' + (settings.nextLevelChangeAt ? new Date(settings.nextLevelChangeAt).toLocaleString('zh-CN') : '请稍后查看') : '难度每 30 天可调整一次';
     const levelCacheStatus = getLevelCacheStatus(cacheStatus, currentLevel);
     const readyCountForCurrentLevel = getLevelCacheReadyCount(cacheStatus, currentLevel);
     const totalCountForCurrentLevel = Number(levelCacheStatus.total || cacheStatus.totalQuestions || cacheStatus.total || 0);
@@ -2749,10 +2859,11 @@ async function loadParentLearningSettings() {
     content.innerHTML = `
       <label class="parent-field">
         <span>题干语言难度</span>
-        <select id="parentLearningLevel">
+        <select id="parentLearningLevel" ${levelLocked ? 'disabled' : ''}>
           ${['小学','中学','高中','CET4_6_TOEFL'].map(level => `<option value="${level}" ${level === currentLevel ? 'selected' : ''}>${formatLearningLevel(level)}</option>`).join('')}
         </select>
       </label>
+      <small>${escapeHtml(levelNotice)}</small>
       <div class="parent-cache-status">
         <span>题目缓存</span>
         <strong>${escapeHtml(derivedCacheStatus)}</strong>
@@ -2760,7 +2871,7 @@ async function loadParentLearningSettings() {
       </div>
       ${renderQuizDiagnosticsPanel()}
       <div class="parent-actions-row">
-        <button class="btn btn-primary btn-small" type="button" onclick="saveParentLearningSettings()">保存设置</button>
+        <button class="btn btn-primary btn-small" type="button" onclick="saveParentLearningSettings()" ${levelLocked ? 'disabled' : ''}>保存设置</button>
         <button class="btn btn-secondary btn-small" type="button" onclick="rebuildParentQuestionCache()">重建缓存</button>
       </div>
     `;
@@ -3234,7 +3345,9 @@ async function submitQuiz() {
 
     if (state.session.kind === 'quiz') {
       clearQuizDraft(state.mode);
-      addGameRewardToBank(data.gameReward, state.user, state.quiz?.testId || data.testId);
+      if (DEMO_MODE) addGameRewardToBank(data.gameReward, state.user, state.quiz?.testId || data.testId);
+      else if (data.gameState) applyServerGameState(data.gameState, state.user);
+      else await syncGameStateFromServer(state.user);
     }
     const remaining = (data.results || [])
       .filter(result => !result.correct)
