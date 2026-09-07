@@ -73,3 +73,12 @@ test('readiness status requests bypass a cached browser response',async()=>{
   await c.loadQuizCacheReadiness('child');
   assert.equal(options.cache,'no-store');
 });
+
+test('readiness does not present an unknown server result as zero questions while checking',()=>{
+  const c=context();
+  vm.runInContext(['getLevelCacheStatus','getLevelCacheReadyCount','getQuizCacheReadiness'].map(fn).join('\n'),c);
+  const readiness=c.getQuizCacheReadiness({operation:'querying'},'中学');
+  assert.equal(readiness.disabled,true);
+  assert.equal(readiness.buttonLabel,'正在检查题库');
+  assert.doesNotMatch(readiness.detail,/当前可测试 0 题|正在生成/);
+});

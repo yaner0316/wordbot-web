@@ -1302,6 +1302,17 @@ function isLevelCacheReady(status, level = state.level, requiredCount = 10) {
 }
 
 function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) {
+  if (status?.operation === 'querying') {
+    return {
+      readyCount: null,
+      disabled: true,
+      buttonLabel: '正在检查题库',
+      detail: '正在读取题库状态，请稍候',
+      state: 'querying',
+      action: null,
+      canRetry: false,
+    };
+  }
   const readyCount = getLevelCacheReadyCount(status, level);
   const generation = status?.generation || {};
   const counts = generation.counts || {};
@@ -1479,11 +1490,7 @@ async function loadQuizCacheReadiness(user = state.user) {
   const requestId = ++quizReadinessRequestId;
 
   renderQuizCacheReadiness({
-    eligibleReadyMeanings: 0,
-    generation: {
-      counts: { pending: 1, retrying: 0, manualReview: 0, ready: 0 },
-      failures: [],
-    },
+    operation: 'querying',
   }, state.level);
   try {
     const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`, { cache: 'no-store' });
