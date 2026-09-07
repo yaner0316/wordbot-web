@@ -1450,6 +1450,7 @@ function renderQuizCacheReadinessFromDiagnostics(diagnostics = {}) {
 }
 
 let quizReadinessRefreshTimer = null;
+let quizReadinessRequestId = 0;
 
 function scheduleQuizReadinessRefresh(user) {
   clearTimeout(quizReadinessRefreshTimer);
@@ -1475,6 +1476,8 @@ async function loadQuizCacheReadiness(user = state.user) {
     return renderQuizCacheReadiness(demoStatus, state.level);
   }
 
+  const requestId = ++quizReadinessRequestId;
+
   renderQuizCacheReadiness({
     eligibleReadyMeanings: 0,
     generation: {
@@ -1484,11 +1487,11 @@ async function loadQuizCacheReadiness(user = state.user) {
   }, state.level);
   try {
     const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
-    if (state.user !== user) return null;
+    if (state.user !== user || requestId !== quizReadinessRequestId) return null;
     state.questionCacheStatus = data.status || {};
     return renderQuizCacheReadiness(state.questionCacheStatus, state.level);
   } catch (error) {
-    if (state.user !== user) return null;
+    if (state.user !== user || requestId !== quizReadinessRequestId) return null;
     const failedStatus = {
       eligibleReadyMeanings: 0,
       queryError: normalizeApiError(error).message,
@@ -1496,7 +1499,7 @@ async function loadQuizCacheReadiness(user = state.user) {
     state.questionCacheStatus = failedStatus;
     return renderQuizCacheReadiness(failedStatus, state.level);
   } finally {
-    if (state.user === user) scheduleQuizReadinessRefresh(user);
+    if (state.user === user && requestId === quizReadinessRequestId) scheduleQuizReadinessRefresh(user);
   }
 }
 
