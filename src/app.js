@@ -1486,7 +1486,7 @@ async function loadQuizCacheReadiness(user = state.user) {
     },
   }, state.level);
   try {
-    const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
+    const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`, { cache: 'no-store' });
     if (state.user !== user || requestId !== quizReadinessRequestId) return null;
     state.questionCacheStatus = data.status || {};
     return renderQuizCacheReadiness(state.questionCacheStatus, state.level);
@@ -1548,7 +1548,7 @@ async function recoverQuestionCacheAfterQuizFailure(diagnostics) {
 }
 async function ensureLevelCacheReadyForQuiz(user, level) {
   if (DEMO_MODE) return true;
-  const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`);
+  const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`, { cache: 'no-store' });
   const status = data.status || {};
   const requiredCount = 10;
   if (isLevelCacheReady(status, level, requiredCount)) return true;
@@ -2868,7 +2868,7 @@ async function loadParentLearningSettings() {
       : await api(`/api/admin/userSettings?userId=${encodeURIComponent(state.user)}`);
     const cacheData = DEMO_MODE
       ? { status: { status: 'ready', totalQuestions: 30 } }
-      : await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(state.user)}`);
+      : await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(state.user)}`, { cache: 'no-store' });
     const settings = settingsData.settings || {};
     const cacheStatus = cacheData.status || {};
     const currentLevel = settings.learningLevel || state.level || DEFAULT_LEVEL;
