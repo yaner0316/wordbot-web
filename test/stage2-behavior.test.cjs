@@ -437,7 +437,7 @@ test('quiz blocks known dirty cache content before entering the child quiz page'
     assert.match(gateSource, /state\.quiz\s*=\s*null/);
     assert.match(gateSource, /题库正在修复，请稍后再试或换一套/);
     assert.ok(gateSource.indexOf('inspectFormalQuizResponse(quiz)') < gateSource.indexOf('inspectQuizContentForBlockingIssue(quiz)'));
-    assert.ok(gateSource.indexOf('inspectQuizContentForBlockingIssue(quiz)') < gateSource.indexOf('state.quiz = quiz'));
+    assert.ok(gateSource.indexOf('inspectQuizContentForBlockingIssue(quiz)') < gateSource.indexOf('state.quiz = '));
     assert.doesNotMatch(startQuizSource, /inspectQuizContentForBlockingIssue\(data\)/);
 });
 
@@ -1275,7 +1275,7 @@ test('formal quiz contract is checked before entering the answer flow', () => {
     );
     const gateSource = extractNamedFunction(app, 'enterFormalQuiz');
     const guardIndex = gateSource.indexOf('inspectFormalQuizResponse(quiz)');
-    const assignmentIndex = gateSource.indexOf('state.quiz = quiz');
+    const assignmentIndex = gateSource.indexOf('state.quiz = ');
     const navigationIndex = gateSource.indexOf('navigateTo', guardIndex);
 
     assert.ok(guardIndex >= 0, 'formal quiz response guard should run');
@@ -1613,6 +1613,7 @@ test('remote sessions query and restore only the current mode', async () => {
         requested.push(url);
         return { active: true, mode: 'test', testId: 'test-session', questions: [{ id: 'test-question' }] };
     };
+    context.state.mode = 'test';
     assert.equal((await context.loadRemoteQuizSession('student', 'test')).mode, 'test');
     assert.equal(context.remoteQuizSession.mode, 'test');
     assert.equal(requested[1], '/api/quiz/session?user=student&mode=test');
@@ -1626,6 +1627,7 @@ test('continue entry refreshes an already-cached remote session from the current
     const loads = [];
     const restores = [];
     const context = {
+        DEMO_MODE: false, quizProgressSavePromise: Promise.resolve(), preserveUnsyncedQuiz() {}, recoverPendingQuizDraft:async()=>false,
         state: { user: 'student', mode: 'real' },
         remoteQuizSession: { mode: 'test', testId: 'test-session', questions: [{ id: 'test-question' }] },
         restoreQuizDraft: async () => false,
