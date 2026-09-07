@@ -52,3 +52,13 @@ test('home focus refreshes the stale six-question readiness after settings sync'
 test('pending readiness refreshes once after delay and stops when ten questions are ready',async()=>{
  let callback,reads=0;const c=context({quizReadinessRefreshTimer:null,document:{visibilityState:'visible'},clearTimeout(){callback=null;},setTimeout:(cb,delay)=>{assert.equal(delay,15000);callback=cb;return 1;},getQuizCacheReadiness:status=>({disabled:status.eligibleReadyMeanings<10}),loadQuizCacheReadiness:async()=>reads++});c.state.currentPage='home';c.state.questionCacheStatus={eligibleReadyMeanings:6};vm.runInContext(fn('scheduleQuizReadinessRefresh'),c);c.scheduleQuizReadinessRefresh('child');assert.equal(typeof callback,'function');await callback();assert.equal(reads,1);c.state.questionCacheStatus.eligibleReadyMeanings=28;c.scheduleQuizReadinessRefresh('child');assert.equal(callback,null);
 });
+
+test('older readiness response cannot replace a newer result for the same user',async()=>{
+ let resolveFirst,resolveSecond;let request=0;
+ const c=context({quizReadinessRequestId:0,api:()=>new Promise(resolve=>{if(request++===0)resolveFirst=resolve;else resolveSecond=resolve;}),renderQuizCacheReadiness(){},scheduleQuizReadinessRefresh(){}});
+ vm.runInContext(fn('loadQuizCacheReadiness'),c);
+ const first=c.loadQuizCacheReadiness('child');const second=c.loadQuizCacheReadiness('child');
+ resolveSecond({status:{eligibleReadyMeanings:28}});await second;
+ resolveFirst({status:{eligibleReadyMeanings:1}});await first;
+ assert.equal(c.state.questionCacheStatus.eligibleReadyMeanings,28);
+});
