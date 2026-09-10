@@ -1021,7 +1021,7 @@ function preserveUnsyncedQuiz(user, quiz) {
 }
 
 async function refreshDeviceState() {
-  if (DEMO_MODE || !state.user || document.visibilityState === 'hidden') return;
+  if (DEMO_MODE || !state.user || state.submitting || document.visibilityState === 'hidden') return;
   if (deviceRefreshPromise) return deviceRefreshPromise;
   const user = state.user;
   const task = (async () => {
@@ -1035,7 +1035,7 @@ async function refreshDeviceState() {
     await quizProgressSavePromise;
     const localSnapshot = JSON.stringify([state.currentQuestion, state.answers]);
     const remote = await loadRemoteQuizSession(user);
-    if (state.user !== user || state.quiz !== quiz || !quiz?.testId || state.currentPage !== 'quiz') return;
+    if (state.submitting || quiz?.result || state.user !== user || state.quiz !== quiz || !quiz?.testId || state.currentPage !== 'quiz') return;
     // Do not replace answers entered while the cloud read was in flight.
     if (localSnapshot !== JSON.stringify([state.currentQuestion, state.answers])) return;
     if (remote?.testId === quiz.testId) {
@@ -2388,9 +2388,10 @@ function buildSelectedSenseEntries(word, senses, selectedIndexes) {
   return (senses || []).flatMap((sense, index) => {
     if (!selected.has(index)) return [];
     const meaning = String(sense?.definition || '').trim();
-    if (!meaning) return [];
+    const cnMeaning = String(sense?.cnMeaning || '').trim();
+    if (!meaning || !/^[\u3400-\u9fff，、；（）·]{1,20}$/.test(cnMeaning)) return [];
     const pos = String(sense?.partOfSpeech || '').trim();
-    return [{ word: normalizedWord, meaning, ...(pos ? { POS: pos } : {}) }];
+    return [{ word: normalizedWord, meaning, cnMeaning, ...(pos ? { POS: pos } : {}) }];
   });
 }
 
@@ -2416,14 +2417,14 @@ async function lookupSelectedSenses() {
   try {
     const word = entries[0].word;
     const data = await api(`/api/word-senses?word=${encodeURIComponent(word)}`);
-    const senses = Array.isArray(data?.senses) ? data.senses : [];
+    const senses = (Array.isArray(data?.senses) ? data.senses : []).filter(sense => /^[\u3400-\u9fff，、；（）·]{1,20}$/.test(String(sense?.cnMeaning || '').trim()));
     if (!senses.length) throw new Error('没有找到可选择的释义');
     const host = getWordEntryDuplicatePanel();
     if (!host) return;
-    host.innerHTML = `<div class="duplicate-word-confirmation" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>勾选这次要学习的释义：</p>${senses.map((sense, index) => `<label class="parent-field"><input type="checkbox" data-selected-sense="${index}" /> <span>${escapeHtml(sense.partOfSpeech || '')} ${escapeHtml(sense.definition || '')}</span></label>`).join('')}<button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div>`;
+    host.innerHTML = `<div class="duplicate-word-confirmation" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>选择要学习的意思</p>${senses.map((sense, index) => `<label class="parent-field"><input type="checkbox" data-selected-sense="${index}" /> <span>${escapeHtml(sense.cnMeaning)}</span></label>`).join('')}<button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div>`;
     host._dictionarySenses = senses;
   } catch (error) {
-    showToast('释义查询失败: ' + normalizeApiError(error).message, 'error');
+    showToast('暂时未查到中文释义，请稍后重试，或输入“单词 | 中文释义”录入。', 'error');
   } finally {
     hideLoading();
   }
