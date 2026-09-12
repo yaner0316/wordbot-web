@@ -876,6 +876,15 @@ test('quiz readiness trusts eligible backend meanings and enables at ten', () =>
     assert.equal(getLevelCacheReadyCount(legacyStatus, '\u4e2d\u5b66'), 10);
 });
 
+test('quiz readiness explains exclusions instead of implying all unmastered words are ready', () => {
+    const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
+    const result = getQuizCacheReadiness({ eligibleReadyMeanings: 57 });
+    assert.match(result.detail, /每个义项/);
+    assert.match(result.detail, /已掌握/);
+    assert.match(result.detail, /冷却/);
+    assert.match(result.detail, /未就绪/);
+});
+
 test('quiz readiness blocks seven and eight prepared questions until all ten are ready', () => {
     const { getQuizCacheReadiness } = loadQuizReadinessHelpers();
     for (const readyCount of [8, 7]) {

@@ -65,6 +65,32 @@ test('selected dictionary senses become independent learning-meaning entries', (
   ]);
 });
 
+test('word entry selects the endpoint for its visible student or parent form', () => {
+  const source = extractNamedFunction(app, 'getWordEntryEndpoint');
+  const endpoint = Function('$', `${source}; return getWordEntryEndpoint;`)(id => id === 'parentWordsInput' ? null : {});
+  assert.equal(endpoint(), '/api/words');
+  const parent = Function('$', `${source}; return getWordEntryEndpoint;`)(() => ({}));
+  assert.equal(parent(), '/api/admin/addWords');
+  assert.match(extractNamedFunction(app, 'submitSelectedSenses'), /api\(getWordEntryEndpoint\(\)/);
+});
+
+test('parent session errors explain how to recover without discarding typed words', () => {
+  const normalize = loadFunction('normalizeApiError');
+  assert.match(normalize(Object.assign(new Error('Parent session required'), { code: 'PARENT_SESSION_REQUIRED' })).message, /家长.*登录/);
+  assert.match(normalize(new Error('Parent session required')).message, /保留/);
+});
+
+test('sense picker keeps checkbox inline and explains ambiguous Chinese glosses', () => {
+  const render = Function('escapeHtml', `${extractNamedFunction(app, 'renderDictionarySenseOption')}; return renderDictionarySenseOption;`)(value => String(value).replaceAll('<', '&lt;'));
+  const html = render({ cnMeaning: '精神', partOfSpeech: 'noun', definition: 'the distinctive character of a place', usageNote: '指某个地方或时代独有的特点' }, 2);
+  assert.match(html, /class="sense-option"/);
+  assert.match(html, /data-selected-sense="2"/);
+  assert.match(html, /指某个地方或时代独有的特点/);
+  assert.match(html, /名词/);
+  assert.doesNotMatch(html, /the distinctive character|noun/);
+  assert.doesNotMatch(html, /class="parent-field"/);
+});
+
 test('a single bare word defaults to dictionary-sense selection', () => {
   const shouldChoose = loadFunction('shouldChooseDictionarySenses');
   assert.equal(shouldChoose([{ word: 'light' }]), true);

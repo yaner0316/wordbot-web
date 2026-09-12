@@ -405,6 +405,14 @@
       font-size: 13px;
       font-weight: 700;
     }
+    .sense-picker { margin-top: 16px; }
+    .sense-options { display: grid; gap: 10px; margin-top: 12px; }
+    .sense-option-row { padding: 10px 12px; border: 1px solid #E7D9CB; border-radius: 9px; }
+    .sense-option { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .sense-option input[type="checkbox"] { width: 18px; height: 18px; margin: 0; flex: 0 0 18px; }
+    .sense-explanation { margin: 6px 0 0 28px; font-size: 12px; overflow-wrap: anywhere; }
+    .sense-explanation summary { cursor: pointer; }
+    .sense-picker-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .parent-field input,
     .parent-field textarea,
     .parent-field select,

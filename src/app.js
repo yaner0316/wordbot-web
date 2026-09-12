@@ -949,6 +949,9 @@ async function api(path, opts = {}) {
 }
 
 function normalizeApiError(error) {
+  if (error?.code === 'PARENT_SESSION_REQUIRED' || /Parent session required/i.test(error?.message || '')) {
+    return Object.assign(new Error('请进入家长设置重新登录后再试；当前输入仍保留在页面中。'), { code: 'PARENT_SESSION_REQUIRED' });
+  }
   if (error?.name === 'AbortError') {
     return new Error('请求超时，请稍后重试；如果后端刚部署，Render 可能正在冷启动。');
   }
@@ -1325,7 +1328,7 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
   const pending = Boolean(generation.pending)
     || Math.max(0, Number(counts.pending) || 0) > 0
     || ['building', 'pending'].includes(rawStatus);
-  const countText = `\u5f53\u524d\u53ef\u6d4b\u8bd5 ${readyCount} \u9898`;
+  const countText = `当前可测试 ${readyCount} 题（每个义项计1题；已掌握、冷却中和题目未就绪的义项不计入）`;
 
   const remainingQuestionCount = Math.max(0, requiredCount - readyCount);
   const canStartTestQuiz = state.mode === 'test' && readyCount > 0;
@@ -2354,6 +2357,10 @@ function getWordEntryDuplicatePanel() {
   return $('parentWordsInput') ? $('parentWordEntryDuplicatePanel') : $('studentWordEntryDuplicatePanel');
 }
 
+function getWordEntryEndpoint() {
+  return $('parentWordsInput') ? '/api/admin/addWords' : '/api/words';
+}
+
 function renderDuplicateWordConfirmation(duplicateWords = []) {
   const panel = getWordEntryDuplicatePanel();
   if (!panel) return;
@@ -2421,13 +2428,21 @@ async function lookupSelectedSenses() {
     if (!senses.length) throw new Error('没有找到可选择的释义');
     const host = getWordEntryDuplicatePanel();
     if (!host) return;
-    host.innerHTML = `<div class="duplicate-word-confirmation" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>选择要学习的意思</p>${senses.map((sense, index) => `<label class="parent-field"><input type="checkbox" data-selected-sense="${index}" /> <span>${escapeHtml(sense.cnMeaning)}</span></label>`).join('')}<button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div>`;
+    host.innerHTML = `<div class="duplicate-word-confirmation sense-picker" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>选择要学习的意思；相近释义可展开说明确认区别。</p><div class="sense-options">${senses.map(renderDictionarySenseOption).join('')}</div><div class="sense-picker-actions"><button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div></div>`;
     host._dictionarySenses = senses;
   } catch (error) {
     showToast('暂时未查到中文释义，请稍后重试，或输入“单词 | 中文释义”录入。', 'error');
   } finally {
     hideLoading();
   }
+}
+
+function renderDictionarySenseOption(sense, index) {
+  const posLabels = { noun: '名词', verb: '动词', adjective: '形容词', adverb: '副词', preposition: '介词', pronoun: '代词', conjunction: '连词', interjection: '感叹词', determiner: '限定词', phrase: '短语' };
+  const note = String(sense.usageNote || '').trim();
+  const chineseNote = /^[\u3400-\u9fff，。、“”；：（）·？！\s]{1,60}$/.test(note) ? note : '';
+  const explanation = [posLabels[sense.partOfSpeech], chineseNote].filter(Boolean).join(' · ');
+  return `<div class="sense-option-row"><label class="sense-option"><input type="checkbox" data-selected-sense="${index}" /><span>${escapeHtml(sense.cnMeaning)}</span></label>${explanation ? `<details class="sense-explanation"><summary>查看义项说明</summary><p>${escapeHtml(explanation)}</p></details>` : ''}</div>`;
 }
 
 async function submitSelectedSenses() {
@@ -2441,7 +2456,7 @@ async function submitSelectedSenses() {
   }
   showLoading('正在录入释义...');
   try {
-    const result = await api('/api/admin/addWords', {
+    const result = await api(getWordEntryEndpoint(), {
       method: 'POST', timeoutMs: 90000,
       body: JSON.stringify({ targetUser: state.user, words: entries, confirmNewMeanings: true, selectedSenseFlow: true }),
     });
@@ -2482,7 +2497,7 @@ async function submitParentWords(options = {}) {
   try {
     const result = DEMO_MODE
       ? { success: true, count: entries.length }
-      : await api('/api/admin/addWords', {
+      : await api(getWordEntryEndpoint(), {
           method: 'POST',
           timeoutMs: 90000,
           body: JSON.stringify({

@@ -4,7 +4,8 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../src/app.js'), 'utf8');
 function fn(name) {
-  const start = source.indexOf('async function ' + name + '(');
+  const asyncStart = source.indexOf('async function ' + name + '(');
+  const start = asyncStart >= 0 ? asyncStart : source.indexOf('function ' + name + '(');
   const rest = source.slice(start);
   const end = /\n(?:async )?function \w+\(/.exec(rest);
   return end ? rest.slice(0, end.index) : rest;
@@ -37,6 +38,6 @@ test('sense selection renders only Chinese labels and rejects English-only resul
   const c = { $: () => ({ value: 'bank' }), parseParentWordEntries: () => [{ word: 'bank' }], showLoading() {}, hideLoading() {},
     api: async () => ({ senses: [{ cnMeaning: '银行', definition: 'a financial institution', partOfSpeech: 'noun' }, { definition: 'English only' }] }),
     getWordEntryDuplicatePanel: () => host, escapeHtml: x => x, showToast: x => messages.push(x) };
-  vm.createContext(c); vm.runInContext(fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
+  vm.createContext(c); vm.runInContext(fn('renderDictionarySenseOption') + '\n' + fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
   assert.match(host.innerHTML, /银行/); assert.doesNotMatch(host.innerHTML, /financial|noun|English only/); assert.equal(host._dictionarySenses.length, 1);
 });
