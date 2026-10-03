@@ -817,6 +817,9 @@ function keepBankedGameForLater() {
 function updateAuthMode(mode) {
   state.authMode = mode;
   const isRegister = mode === 'register';
+  if ($('authLoginForm')) $('authLoginForm').style.display = 'flex';
+  if ($('authPasswordRecoveryForm')) $('authPasswordRecoveryForm').style.display = 'none';
+  if ($('authRecoveryEntry')) $('authRecoveryEntry').style.display = '';
 
   $('loginTab')?.classList.toggle('active', !isRegister);
   $('registerTab')?.classList.toggle('active', isRegister);
@@ -906,7 +909,7 @@ function handleUnauthorizedSession(response, data) {
 
 async function api(path, opts = {}) {
   const timeoutMs = opts.timeoutMs || 45000;
-  const { timeoutMs: _timeoutMs, signal, ...fetchOptions } = opts;
+  const { timeoutMs: _timeoutMs, signal, resetOnUnauthorized = true, ...fetchOptions } = opts;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -923,7 +926,7 @@ async function api(path, opts = {}) {
       data = {};
     }
     if (!response.ok) {
-      handleUnauthorizedSession(response, data);
+      if (resetOnUnauthorized) handleUnauthorizedSession(response, data);
       const error = new Error(data.error || ('请求失败（HTTP ' + response.status + '）'));
       error.code = data.code || 'HTTP_ERROR';
       error.source = data.source;
@@ -1117,6 +1120,56 @@ function handleUnregisteredPasswordLogin(error) {
   return true;
 }
 
+function openPasswordRecovery() {
+  updateAuthMode('login');
+  $('authLoginForm').style.display = 'none';
+  $('authPasswordRecoveryForm').style.display = 'flex';
+  $('authRecoveryEntry').style.display = 'none';
+  if (!$('recoveryChildUsername').value) $('recoveryChildUsername').value = normalizeUsername(authUsername.value);
+}
+
+function closePasswordRecovery() {
+  $('authLoginForm').style.display = 'flex';
+  $('authPasswordRecoveryForm').style.display = 'none';
+  $('authRecoveryEntry').style.display = '';
+  for (const id of ['recoveryParentPassword', 'recoveryNewPassword', 'recoveryNewPasswordConfirm']) $(id).value = '';
+  updateAuthMode('login');
+}
+
+async function submitPasswordRecovery() {
+  const user = normalizeUsername($('recoveryChildUsername').value);
+  const parentUsername = normalizeUsername($('recoveryParentUsername').value);
+  const parentPassword = $('recoveryParentPassword').value;
+  const newPassword = $('recoveryNewPassword').value;
+  if (!user || !parentUsername || !parentPassword) {
+    showToast('请输入孩子用户名、家长用户名和家长密码', 'error');
+    return;
+  }
+  if (newPassword.length < 4) { showToast('新密码至少需要 4 位', 'error'); return; }
+  if (newPassword !== $('recoveryNewPasswordConfirm').value) { showToast('两次输入的新密码不一致', 'error'); return; }
+  if (state.passwordRecoverySubmitting) return;
+  state.passwordRecoverySubmitting = true;
+  showLoading('正在验证家长并重置密码...');
+  try {
+    const result = await api('/api/auth/parent/reset-child-password', {
+      method: 'POST', body: JSON.stringify({ user, parentUsername, parentPassword, newPassword }),
+    });
+    if (!result.ok || normalizeUsername(result.user).toLowerCase() !== user.toLowerCase()) throw new Error('重置结果未确认');
+    authUsername.value = result.user;
+    authPassword.value = '';
+    authPasswordConfirm.value = '';
+    closePasswordRecovery();
+    showLoginPage();
+    showToast('孩子密码已重置，请用新密码登录', 'success');
+  } catch (error) {
+    const message = /parent username\/password error/i.test(error.message || '') ? '家长用户名或密码不正确，请确认使用该孩子绑定的家长账号。' : normalizeApiError(error).message;
+    showToast('重置失败: ' + message, 'error');
+  } finally {
+    state.passwordRecoverySubmitting = false;
+    hideLoading();
+  }
+}
+
 async function submitAuth() {
   const username = normalizeUsername(authUsername.value);
   const password = authPassword.value;
@@ -1300,6 +1353,14 @@ function getLevelCacheReadyCount(status, level = state.level) {
   return Number.isFinite(readyCount) ? Math.max(0, Math.floor(readyCount)) : 0;
 }
 
+function hasLevelCacheReadyCount(status, level = state.level) {
+  const byLevel = status?.eligibleReadyMeaningsByLevel;
+  return Boolean((byLevel && Object.prototype.hasOwnProperty.call(byLevel, level))
+    || status?.eligibleReadyMeanings !== undefined
+    || status?.readyCount !== undefined
+    || getLevelCacheStatus(status, level)?.eligibleReadyMeanings !== undefined);
+}
+
 function isLevelCacheReady(status, level = state.level, requiredCount = 10) {
   return getLevelCacheReadyCount(status, level) >= requiredCount;
 }
@@ -1316,7 +1377,97 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
       canRetry: false,
     };
   }
-  const readyCount = getLevelCacheReadyCount(status, level);
+  const learning = status?.learning || {};
+  const hasTotalMeanings = learning.totalMeanings !== undefined && Number.isFinite(Number(learning.totalMeanings));
+  const totalMeanings = hasTotalMeanings ? Math.max(0, Number(learning.totalMeanings)) : null;
+  const readyCountKnown = hasLevelCacheReadyCount(status, level);
+  const readyCount = readyCountKnown ? getLevelCacheReadyCount(status, level) : null;
+  const remainingQuestionCount = readyCountKnown ? Math.max(0, requiredCount - readyCount) : requiredCount;
+  if (status?.queryError && !readyCountKnown) {
+    return {
+      readyCount: null,
+      disabled: true,
+      buttonLabel: '题库数量暂不可用',
+      detail: `题库数量暂不可用 · 状态查询失败：${status.queryError}`,
+      state: 'query-error',
+      action: 'query',
+      canRetry: true,
+    };
+  }
+  if (status?.queryError && readyCountKnown) {
+    const lastSuccess = status.lastSuccessAt
+      ? ` · 上次成功查询：${new Date(status.lastSuccessAt).toLocaleString()}`
+      : '';
+    return {
+      readyCount,
+      disabled: true,
+      buttonLabel: '题库状态暂不可用',
+      detail: `显示上次成功的题库数量：${readyCount} 题 · 还需准备 ${remainingQuestionCount} 题 · 状态查询失败：${status.queryError}${lastSuccess}`,
+      state: 'query-error',
+      action: 'query',
+      canRetry: true,
+    };
+  }
+  if (hasTotalMeanings && totalMeanings === 0 && !(readyCountKnown && readyCount >= requiredCount)) {
+    return {
+      readyCount: readyCountKnown ? readyCount : null,
+      disabled: true,
+      buttonLabel: '添加单词后开始',
+      detail: '还没有添加学习单词，先录入一个单词开始学习吧。',
+      state: 'empty',
+      action: 'add-word',
+      canRetry: false,
+    };
+  }
+  if (hasTotalMeanings && totalMeanings > 0
+    && Number(learning.masteredMeanings) >= totalMeanings
+    && !(readyCountKnown && readyCount >= requiredCount)) {
+    return {
+      readyCount: readyCountKnown ? readyCount : null,
+      disabled: true,
+      buttonLabel: '继续添加单词',
+      detail: `太棒了，${totalMeanings} 个义项都已掌握！可以继续添加新单词。`,
+      state: 'all-mastered',
+      action: 'add-word',
+      canRetry: false,
+    };
+  }
+  if (Number(learning.coolingMeanings) > 0 && learning.nextCooldownEndsAt
+    && Number(learning.availableMeanings) === 0) {
+    const nextCooldownText = new Date(learning.nextCooldownEndsAt).toLocaleString();
+    const coolingDetail = `${learning.coolingMeanings} 个义项正在冷却，最早于 ${nextCooldownText} 后可继续练习；这不代表题库届时一定已就绪。`;
+    if (readyCountKnown && readyCount >= requiredCount) {
+      return {
+        readyCount,
+        disabled: false,
+        buttonLabel: '开始单词挑战吧！',
+        detail: `${coolingDetail} 当前已有足够题目，可以开始挑战。`,
+        state: 'ready',
+        action: null,
+        canRetry: false,
+      };
+    }
+    return {
+      readyCount: readyCountKnown ? readyCount : null,
+      disabled: true,
+      buttonLabel: '等待复习时间',
+      detail: coolingDetail,
+      state: 'cooling',
+      action: null,
+      canRetry: false,
+    };
+  }
+  if (!readyCountKnown) {
+    return {
+      readyCount: null,
+      disabled: true,
+      buttonLabel: '题库数量暂不可用',
+      detail: '题库可用题量未知，请重新查询状态。',
+      state: 'unknown',
+      action: 'query',
+      canRetry: true,
+    };
+  }
   const generation = status?.generation || {};
   const counts = generation.counts || {};
   const failures = Array.isArray(generation.failures) ? generation.failures : [];
@@ -1330,7 +1481,6 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
     || ['building', 'pending'].includes(rawStatus);
   const countText = `当前可测试 ${readyCount} 题（每个义项计1题；已掌握、冷却中和题目未就绪的义项不计入）`;
 
-  const remainingQuestionCount = Math.max(0, requiredCount - readyCount);
   const canStartTestQuiz = state.mode === 'test' && readyCount > 0;
 
   if (!canStartTestQuiz && status?.operation === 'rebuilding' && readyCount < requiredCount) {
@@ -1434,7 +1584,9 @@ function renderQuizCacheReadiness(status, level = state.level) {
       ? '<button type="button" onclick="retryQuestionCacheStatusQuery()">\u91cd\u65b0\u67e5\u8be2</button>'
       : (readiness.action === 'rebuild'
         ? '<button type="button" onclick="rebuildQuestionCachePreparation()">\u7ba1\u7406\u5458\u91cd\u5efa\u9898\u5e93</button>'
-        : '')}
+        : (readiness.action === 'add-word'
+          ? '<button type="button" onclick="openStudentWordEntry()">\u5f55\u5165\u5355\u8bcd</button>'
+          : ''))}
   `;
   return readiness;
 }
@@ -1490,6 +1642,7 @@ async function loadQuizCacheReadiness(user = state.user) {
     return renderQuizCacheReadiness(demoStatus, state.level);
   }
 
+  const previousStatus = state.questionCacheStatus;
   const requestId = ++quizReadinessRequestId;
 
   renderQuizCacheReadiness({
@@ -1498,12 +1651,13 @@ async function loadQuizCacheReadiness(user = state.user) {
   try {
     const data = await api(`/api/admin/questionCache/status?userId=${encodeURIComponent(user)}`, { cache: 'no-store' });
     if (state.user !== user || requestId !== quizReadinessRequestId) return null;
-    state.questionCacheStatus = data.status || {};
+    state.questionCacheStatus = { ...(data.status || {}), lastSuccessAt: new Date().toISOString() };
     return renderQuizCacheReadiness(state.questionCacheStatus, state.level);
   } catch (error) {
     if (state.user !== user || requestId !== quizReadinessRequestId) return null;
     const failedStatus = {
-      eligibleReadyMeanings: 0,
+      ...(previousStatus || {}),
+      operation: 'query-error',
       queryError: normalizeApiError(error).message,
     };
     state.questionCacheStatus = failedStatus;
@@ -2013,8 +2167,55 @@ function renderStudentTools() {
     '<button class="home-v2-quick-item home-v2-quick-add" type="button" onclick="openStudentWordEntry()"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><span class="home-v2-quick-text"><strong>录入单词</strong><small>添加新词</small></span></button>',
     '<button class="home-v2-quick-item home-v2-quick-history" type="button" onclick="navigateTo(\'history\')"><span class="home-v2-quick-icon blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg></span><span class="home-v2-quick-text"><strong>考核历史</strong><small>查看记录</small></span></button>',
     '</div>',
+    renderUnsyncedQuizBackups(),
     '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
   ].join('');
+}
+function readUnsyncedQuizBackups() {
+  if (!state.user) return [];
+  const prefix = 'wordbot_unsynced_quiz_' + state.user + '_';
+  const backups = new Map();
+  const add = (raw, key) => {
+    try {
+      const saved = JSON.parse(raw || 'null');
+      if (!saved?.quiz?.testId || !saved.quiz.questions?.length || (saved.quiz.mode || 'real') !== (state.mode || 'real')) return;
+      if (key && key !== prefix + saved.quiz.testId) return;
+      backups.set(saved.quiz.testId, saved);
+    } catch { /* Keep unreadable backups untouched. */ }
+  };
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(prefix)) add(localStorage.getItem(key), key);
+  }
+  try {
+    const raw = localStorage.getItem(activeQuizKey(state.user, state.mode));
+    const saved = JSON.parse(raw || 'null');
+    if (saved?.quiz?.syncFailed || saved?.quiz?.syncPending || saved?.quiz?.submissionUnknown) add(raw);
+  } catch { /* Viewing never removes a draft. */ }
+  return [...backups.values()].sort((a, b) => (Number(b.savedAt) || 0) - (Number(a.savedAt) || 0)).slice(0, 5);
+}
+
+function renderUnsyncedQuizBackups() {
+  const backups = readUnsyncedQuizBackups();
+  if (!backups.length) return '';
+  const answerText = answer => {
+    if (answer === null || answer === undefined || answer === '') return '未作答';
+    if (typeof answer === 'number') return String.fromCharCode(65 + answer);
+    if (typeof answer === 'object') return answer.text ?? (Number.isInteger(answer.option) ? String.fromCharCode(65 + answer.option) : '未作答');
+    return String(answer);
+  };
+  return '<details class="parent-help"><summary>查看本机未同步备份（' + backups.length + '）</summary><p>仅供查看，不会覆盖云端进度。继续练习仍以云端确认的进度为准。</p>' + backups.map(saved => {
+    const remote = remoteQuizSession?.testId === saved.quiz.testId ? remoteQuizSession : null;
+    const cloud = remote?.progress;
+    const positions = cloud ? `本机位置：第 ${Number(saved.currentQuestion || 0) + 1} 题；云端位置：第 ${Number(cloud.currentQuestion || 0) + 1} 题` : '未取得同一场练习的云端进度';
+    const rows = saved.quiz.questions.slice(0, 30).map((question, index) => {
+      const localAnswer = answerText(saved.answers?.[index]);
+      const cloudAnswer = cloud ? answerText(cloud.answers?.[index]) : '';
+      return '<li>' + escapeHtml(question.word || `第 ${index + 1} 题`) + '：本机 ' + escapeHtml(localAnswer)
+        + (cloud ? '；云端 ' + escapeHtml(cloudAnswer) + (localAnswer === cloudAnswer ? '（相同）' : '（不同）') : '') + '</li>';
+    }).join('');
+    return '<details><summary>' + escapeHtml(saved.quiz.testId) + ' · ' + escapeHtml(formatDate(saved.savedAt)) + '</summary><p>' + positions + '</p><ol>' + rows + '</ol></details>';
+  }).join('') + '</details>';
 }
 function openStudentWordEntry() {
   const attempt = Number(arguments[0] || 0);
@@ -2060,8 +2261,9 @@ function ensureParentPage() {
         家长控制台
       </div>
       <div class="header-actions">
-        <button class="header-btn" onclick="navigateTo('home')" title="返回首页">
+        <button class="header-btn parent-exit-btn" onclick="exitParentMode()" title="退出家长模式，返回首页" aria-label="退出家长模式，返回首页">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/><path d="M20 12H9"/></svg>
+          <span>退出家长模式</span>
         </button>
       </div>
     </div>
@@ -2107,6 +2309,10 @@ function getParentToolPanel() {
 }
 
 function resetParentConsole() {
+  state.parentSetupCreatedFor = null;
+  for (const id of ['parentPasswordInput', 'parentChildPasswordInput', 'parentPasswordConfirmInput']) {
+    if ($(id)) $(id).value = '';
+  }
   const gate = $('parentGatePanel');
   const grid = $('parentToolGrid');
   const panel = $('parentToolPanel');
@@ -2125,7 +2331,22 @@ function showParentTools() {
   if (grid) grid.style.display = 'grid';
 }
 
-function openParentConsole() {
+function renderParentGate(hasParentCredentials) {
+  const gate = $('parentGatePanel');
+  if (!gate) return;
+  if (gate.dataset?.formKind === (hasParentCredentials ? 'login' : 'setup')) return;
+  if (gate.dataset) gate.dataset.formKind = hasParentCredentials ? 'login' : 'setup';
+  gate.innerHTML = `
+    <div class="parent-panel-head"><strong>${hasParentCredentials ? '家长验证' : '首次设置家长账号'}</strong><button type="button" onclick="closeParentConsole()" aria-label="关闭">×</button></div>
+    ${hasParentCredentials ? '' : '<div class="parent-inline-form"><input id="parentChildPasswordInput" type="password" autocomplete="off" aria-label="当前孩子登录密码" placeholder="当前孩子的登录密码" /></div>'}
+    <div class="parent-inline-form"><input id="parentUsernameInput" type="text" autocomplete="username" aria-label="家长用户名" placeholder="家长用户名" /></div>
+    <div class="parent-inline-form"><input id="parentPasswordInput" type="password" autocomplete="${hasParentCredentials ? 'current-password' : 'new-password'}" aria-label="家长密码" placeholder="家长密码（至少4位）" /></div>
+    ${hasParentCredentials ? '' : '<div class="parent-inline-form"><input id="parentPasswordConfirmInput" type="password" autocomplete="new-password" aria-label="再次输入家长密码" placeholder="再次输入家长密码" /></div>'}
+    <button class="btn btn-primary btn-small" type="button" onclick="${hasParentCredentials ? 'verifyParentPassword()' : 'submitParentSetup()'}">${hasParentCredentials ? '进入' : '设置并进入家长控制台'}</button>
+    <div class="parent-help">${hasParentCredentials ? '请输入当前孩子绑定的家长用户名和密码。' : '验证孩子密码后，为当前孩子设置家长账号。请妥善保管家长密码。'}</div>`;
+}
+
+async function openParentConsole() {
   if (!state.user) {
     showToast('请先登录用户', 'error');
     return;
@@ -2139,7 +2360,75 @@ function openParentConsole() {
   const gate = $('parentGatePanel');
   const grid = $('parentToolGrid');
   if (grid) grid.style.display = 'none';
-  if (gate) gate.style.display = 'block';
+  const user = state.user;
+  showLoading('正在查询家长账号...');
+  try {
+    const status = DEMO_MODE ? { hasParentCredentials: true } : await api('/api/auth/parent/status?user=' + encodeURIComponent(user));
+    if (state.user !== user || state.parentAccess) return;
+    renderParentGate(status.hasParentCredentials);
+    if (gate) gate.style.display = 'block';
+  } catch (error) {
+    showToast('家长账号查询失败，请重新打开重试：' + formatParentLoginError(error), 'error');
+  } finally { hideLoading(); }
+}
+
+async function exitParentMode() {
+  showLoading('正在退出家长模式...');
+  try {
+    if (!DEMO_MODE) {
+      const result = await api('/api/auth/parent/logout', { method: 'POST', body: '{}', resetOnUnauthorized: false });
+      if (!result.ok || normalizeUsername(result.user) !== normalizeUsername(state.user)) throw new Error('会话未确认');
+    }
+    state.parentAccess = false;
+    state.parentAuth = null;
+    for (const id of ['parentPasswordInput', 'parentChildPasswordInput', 'parentPasswordConfirmInput']) {
+      if ($(id)) $(id).value = '';
+    }
+    resetParentConsole();
+    navigateTo('home');
+  } catch {
+    showToast('未退出家长模式，请检查网络后重试', 'error');
+  } finally { hideLoading(); }
+}
+
+async function submitParentSetup() {
+  const user = state.user;
+  const parentUsername = normalizeUsername($('parentUsernameInput')?.value);
+  const parentPassword = $('parentPasswordInput')?.value || '';
+  const childPassword = $('parentChildPasswordInput')?.value || '';
+  if (!parentUsername || parentPassword.length < 4 || childPassword.length < 4) {
+    showToast('请输入孩子密码、家长用户名和至少4位的家长密码', 'error');
+    return;
+  }
+  if (parentPassword !== ($('parentPasswordConfirmInput')?.value || '')) {
+    showToast('两次家长密码不一致', 'error');
+    return;
+  }
+  if (state.parentSetupSubmitting) return;
+  state.parentSetupSubmitting = true;
+  showLoading('正在设置家长账号...');
+  try {
+    if (state.parentSetupCreatedFor !== user) {
+      await api('/api/auth/parent/setup', { method: 'POST', body: JSON.stringify({ user, childPassword, parentUsername, parentPassword }) });
+      if (state.user !== user) return;
+      state.parentSetupCreatedFor = user;
+    }
+    if (state.user !== user) return;
+    const result = await api('/api/auth/parent/login', { method: 'POST', body: JSON.stringify({ user, parentUsername, password: parentPassword }) });
+    if (state.user !== user || normalizeUsername(result.user) !== normalizeUsername(user)) throw new Error('家长账号不属于当前孩子');
+    state.parentAccess = true;
+    state.parentAuth = { parentUsername, password: parentPassword };
+    for (const id of ['parentPasswordInput', 'parentChildPasswordInput', 'parentPasswordConfirmInput']) {
+      if ($(id)) $(id).value = '';
+    }
+    showParentTools();
+    showToast('已设置并进入家长控制台', 'success');
+  } catch (error) {
+    showToast((state.parentSetupCreatedFor === user ? '家长账号已保存，登录未确认，请重试：' : '设置失败，请重试：') + formatParentLoginError(error), 'error');
+  } finally {
+    state.parentSetupSubmitting = false;
+    hideLoading();
+  }
 }
 
 function closeParentConsole() {
@@ -2150,7 +2439,7 @@ function closeParentConsole() {
 function ensureParentAccess() {
   if (state.parentAccess) return true;
   openParentConsole();
-  showToast('请先完成家长手机号和密码验证', 'info');
+  showToast('请先完成家长用户名和密码验证', 'info');
   return false;
 }
 
@@ -3069,7 +3358,7 @@ async function loadStats(user, { showOverlay = true } = {}) {
 async function startQuiz() {
   if (!state.user) { showToast('请先选择一个用户', 'error'); return; }
   state.quizReadinessRevealed = true;
-  showLoading('正在生成题目...');
+  showLoading('正在读取本次题目...');
   clearActiveReview();
   clearQuizDraft(state.mode);
   state.session = {
@@ -3150,7 +3439,8 @@ function renderQuestion(idx) {
     if (isSenseChoiceReviewQuestion(q)) {
       const optsHtml = q.options.map((option, index) => {
         const selected = state.answers[idx] === index ? 'selected' : '';
-        return `<button class="option-btn ${selected}" onclick="selectOption(${idx}, ${index})"><span class="letter">${String.fromCharCode(65 + index)}</span><span>${escapeHtml(option)}</span></button>`;
+        const pressed = state.answers[idx] === index ? 'true' : 'false';
+        return `<button class="option-btn ${selected}" type="button" aria-pressed="${pressed}" data-option-index="${index}" onclick="selectOption(${idx}, ${index})"><span class="letter">${String.fromCharCode(65 + index)}</span><span>${escapeHtml(option)}</span></button>`;
       }).join('');
       $('questionArea').innerHTML = `<div class="question-card meaning-review-card"><div class="question-type-badge type4">CN 释义选择</div><div class="question-text meaning-review-word">${escapeHtml(q.word || '')}</div><div class="options">${optsHtml}</div></div>`;
       const isLastQuestion = idx === total - 1;
@@ -3199,7 +3489,8 @@ function renderQuestion(idx) {
   const optsHtml = q.options.map((opt, i) => {
     const letter = String.fromCharCode(65 + i);
     const selected = state.answers[idx] === i ? 'selected' : '';
-    return `<button class="option-btn ${selected}" onclick="selectOption(${idx}, ${i})">
+    const pressed = state.answers[idx] === i ? 'true' : 'false';
+    return `<button class="option-btn ${selected}" type="button" aria-pressed="${pressed}" data-option-index="${i}" onclick="selectOption(${idx}, ${i})">
       <span class="letter">${letter}</span>
       <span>${escapeHtml(formatOptionDisplayText(opt.replace(/^[A-D]\.\s*/, ''), q.options, q))}</span>
     </button>`;
@@ -3230,9 +3521,14 @@ function setMeaningAnswer(qIdx, value) {
   $('submitBtn').disabled = !canContinue;
 }
 function selectOption(qIdx, optIdx) {
+  const restoreFocus = Boolean(document.activeElement?.classList?.contains('option-btn')
+    || document.activeElement?.closest?.('.option-btn'));
   state.answers[qIdx] = optIdx;
   saveCurrentSessionProgress();
   renderQuestion(state.currentQuestion);
+  if (restoreFocus) {
+    document.querySelector(`#questionArea .option-btn[data-option-index="${optIdx}"]`)?.focus();
+  }
 }
 
 function prevQuestion() {
@@ -3271,16 +3567,22 @@ function nextQuestion() {
 }
 
 async function submitWithTimeoutConfirmation(path, payload) {
+  const body = JSON.stringify(payload);
   const request = () => api(path, {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body
   });
   try {
     return await request();
   } catch (error) {
     if (error?.name === 'AbortError') {
       showLoading('提交时间较长，正在确认结果...');
-      throw error;
+      try {
+        return await request();
+      } catch (confirmationError) {
+        confirmationError.code = 'SUBMISSION_RESULT_UNKNOWN';
+        throw confirmationError;
+      }
     }
     throw error;
   }
@@ -3414,7 +3716,14 @@ async function submitQuiz() {
     navigateTo('results');
     renderResults(data);
   } catch(e) {
-    showToast('提交失败: ' + normalizeApiError(e).message, 'error');
+    if (e.code === 'SUBMISSION_RESULT_UNKNOWN') {
+      if (state.quiz) state.quiz.submissionUnknown = true;
+      if (state.session.kind === 'quiz') saveQuizDraft();
+      else saveCurrentSessionProgress();
+      showToast('提交结果尚未确认，后端可能已经保存；本机答案已保留。请联网后用当前答案重试确认，或查看考核历史。', 'error');
+    } else {
+      showToast('提交失败: ' + normalizeApiError(e).message, 'error');
+    }
   } finally {
     state.submitting = false;
     $('submitBtn').disabled = false;
@@ -3487,6 +3796,22 @@ function buildAnimalGardenRewardHtml(rewardSummary) {
 
 function renderResults(data) {
   const { correct, total, accuracy, masteredWords } = data;
+  const fullyMasteredWords = Array.isArray(masteredWords)
+    ? masteredWords.map(item => typeof item === 'string' ? item : String(item?.word || '')).filter(Boolean)
+    : [];
+  const hasMeaningFeedback = Array.isArray(data.newlyMasteredMeanings);
+  const newlyMasteredMeanings = hasMeaningFeedback ? data.newlyMasteredMeanings : [];
+  const masteryFeedbackHtml = hasMeaningFeedback
+    ? (newlyMasteredMeanings.length || fullyMasteredWords.length
+      ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">
+          ${newlyMasteredMeanings.length ? `✓ 本次新掌握 ${newlyMasteredMeanings.length} 个词义` : ''}
+          ${newlyMasteredMeanings.length ? `<ul style="margin:6px 0 0;padding-left:22px;text-align:left;">${newlyMasteredMeanings.map(item => `<li><strong>${escapeHtml(item?.word || '')}</strong>：${escapeHtml(item?.meaningZh || '')}</li>`).join('')}</ul>` : ''}
+          ${fullyMasteredWords.length ? `<div style="margin-top:6px;">其中 ${fullyMasteredWords.length} 个单词已全部掌握：${fullyMasteredWords.map(escapeHtml).join('、')}</div>` : ''}
+        </div>`
+      : '')
+    : (fullyMasteredWords.length
+      ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">✓ 新掌握 ${fullyMasteredWords.length} 个单词</div>`
+      : '');
   const pass = correct / total >= 0.6;
   const pct = Math.round(correct/total*100);
   const encourage = getEncourage(correct, total);
@@ -3602,7 +3927,7 @@ function renderResults(data) {
       <div style="font-size:16px;color:var(--text-secondary);margin-top:4px;">正确率 ${escapeHtml(accuracy)}</div>
       <div style="font-size:18px;font-weight:600;margin-top:12px;color:${pass ? 'var(--orange)' : 'var(--text-secondary)'};">${encourage}</div>
       ${data.mode === 'test' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">测试模式：不计入正式统计</div>' : ''}
-      ${masteredWords && masteredWords.length ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">✓ 新掌握 ${masteredWords.length} 个单词</div>` : ''}
+      ${masteryFeedbackHtml}
       ${rewardHtml}
       ${animalGardenHtml}
     </div>
@@ -3808,7 +4133,19 @@ function renderHistoryList(list) {
     const pct = item.total > 0 ? Math.round(item.correct / item.total * 100) : 0;
     const card = document.createElement('div');
     card.className = 'history-item';
-    card.addEventListener('click', () => openHistoryDetail(item));
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `查看 ${formatDate(item.time)} 的考核详情，答对 ${item.correct}/${item.total}`);
+    card.addEventListener('click', () => {
+      card.focus();
+      openHistoryDetail(item);
+    });
+    card.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        card.click();
+      }
+    });
 
     const top = document.createElement('div');
     top.className = 'top';
@@ -3862,7 +4199,12 @@ function optionTextByLetter(options, letter) {
   return match ? String(match).replace(/^[A-D]\.\s*/, '') : wanted;
 }
 
+let historyDetailOpener = null;
+
 function openHistoryDetail(item) {
+  historyDetailOpener = document.activeElement && document.activeElement !== document.body
+    ? document.activeElement
+    : null;
   const pass = item.correct / item.total >= 0.6;
   const pct = item.total > 0 ? Math.round(item.correct / item.total * 100) : 0;
   $('hdDate').textContent = formatDate(item.time);
@@ -3922,14 +4264,42 @@ function openHistoryDetail(item) {
     body.appendChild(card);
   });
   $('hdBackdrop').classList.add('active');
+  $('hdSheet').inert = false;
   $('hdSheet').classList.add('active');
   document.body.style.overflow = 'hidden';
+  $('hdClose')?.focus();
 }
 
 function closeHistoryDetail() {
   $('hdBackdrop').classList.remove('active');
   $('hdSheet').classList.remove('active');
+  $('hdSheet').inert = true;
   document.body.style.overflow = '';
+  const opener = historyDetailOpener;
+  historyDetailOpener = null;
+  if (opener?.isConnected !== false) opener?.focus?.();
+}
+
+function handleHistoryDetailKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeHistoryDetail();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const controls = Array.from($('hdSheet').querySelectorAll('button, a[href], input, select, textarea, [tabindex]'))
+    .filter(control => !control.disabled && !control.hidden && control.tabIndex !== -1);
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (!first) { event.preventDefault(); return; }
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 async function loadHistory() {

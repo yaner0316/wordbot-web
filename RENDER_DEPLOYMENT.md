@@ -30,8 +30,8 @@ as a repository secret:
 - Secret name: `RENDER_DEPLOY_HOOK_URL`
 - Secret value: the Render Deploy Hook URL
 
-After that, every push to `codex/frontend-engineering` or `main` triggers a
-Render deploy after the test job succeeds. Pull requests and manual runs only
-run tests. After a `main` deployment, the workflow polls the public
-`/release.json` marker for the exact triggering Git SHA. The marker and check
-use only public, read-only data.
+After that, only a push to `main` triggers the Render deploy hook, and only
+after the test job succeeds. Pushes to other branches, pull requests, and
+manual runs do not trigger a production deployment. After a `main` deployment,
+the workflow polls the public `/release.json` marker for the exact triggering
+Git SHA. The marker and check use only public, read-only data.

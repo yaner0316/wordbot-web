@@ -51,6 +51,7 @@ function loadQuizReadinessHelpers(stateOverrides = {}) {
     vm.runInContext([
         extractNamedFunction(app, 'getLevelCacheStatus'),
         extractNamedFunction(app, 'getLevelCacheReadyCount'),
+        extractNamedFunction(app, 'hasLevelCacheReadyCount'),
         extractNamedFunction(app, 'getQuizCacheReadiness'),
     ].join('\n'), context);
     return context;
@@ -750,7 +751,7 @@ test('quiz exhausted pool shows four in-app choices instead of generic failure',
     assert.match(styles, /\.pool-exhausted-overlay/);
     assert.match(styles, /\.pool-exhausted-actions/);
 });
-test('quiz submit keeps timeout recovery without automatic replay', () => {
+test('quiz submit confirms a timeout with one automatic idempotent replay', () => {
     assert.match(app, /async function submitQuizToBackend/);
     assert.match(app, /error\?\.name\s*===\s*'AbortError'/);
     assert.match(app, /提交时间较长，正在确认结果/);
@@ -764,8 +765,8 @@ test('quiz submit keeps timeout recovery without automatic replay', () => {
     const abortBranch = helperSource.slice(abortStart);
 
     assert.doesNotMatch(abortBranch, /waitForMs/);
-    assert.doesNotMatch(abortBranch, /return await request\(\)/);
-    assert.match(abortBranch, /throw error;/);
+    assert.match(abortBranch, /return await request\(\)/);
+    assert.match(abortBranch, /SUBMISSION_RESULT_UNKNOWN/);
 });
 test('word entry supports duplicate confirmation before adding same-word meanings', () => {
     assert.match(app, /function parseParentWordEntries/);
@@ -910,7 +911,7 @@ test('quiz readiness blocks seven and eight prepared questions until all ten are
     }
 });
 
-test('test mode keeps partial quiz readiness behavior unchanged', () => {
+test('test mode keeps partial readiness but requires a fresh status query after query failure', () => {
     const { getQuizCacheReadiness } = loadQuizReadinessHelpers({ mode: 'test' });
     const readiness = getQuizCacheReadiness({
         configured: true,
@@ -943,8 +944,8 @@ test('test mode uses ready questions despite rebuild or query blockers', () => {
         { queryError: 'network timeout' },
     ]) {
         const testResult = testReadiness({ ...readyStatus, ...blocker }, level);
-        assert.equal(testResult.disabled, false);
-        assert.equal(testResult.state, 'ready');
+        assert.equal(testResult.disabled, Boolean(blocker.queryError));
+        assert.equal(testResult.state, blocker.queryError ? 'query-error' : 'ready');
 
         const emptyResult = testReadiness({ ...blocker, eligibleReadyMeanings: 0 }, level);
         assert.equal(emptyResult.disabled, true);

@@ -9,7 +9,7 @@ const workflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 're
 test('frontend workflow tests pull requests without triggering the Render deploy hook', () => {
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /^  test:$/m);
-  assert.match(workflow, /^  deploy:\n    needs: test\n    if: github\.event_name == 'push'$/m);
+  assert.match(workflow, /^  deploy:\n    needs: test\n    if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'$/m);
 });
 
 test('main frontend deployment verifies the public static release marker', () => {

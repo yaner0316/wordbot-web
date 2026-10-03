@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>小龙戏单词</title>
   <link rel="preconnect" href="https://fonts.googleapis.cn" />
   <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin />
@@ -28,13 +28,14 @@
 
   <!-- History Detail Sheet -->
   <div class="hd-backdrop" id="hdBackdrop" onclick="closeHistoryDetail()"></div>
-  <div class="hd-sheet" id="hdSheet">
+  <div class="hd-sheet" id="hdSheet" role="dialog" aria-modal="true" aria-labelledby="hdTitle" inert onkeydown="handleHistoryDetailKeydown(event)">
     <div class="hd-header">
       <div class="hd-header-info">
+        <div class="hd-date" id="hdTitle">考核详情</div>
         <div class="hd-date" id="hdDate"></div>
         <div class="hd-score" id="hdScore"></div>
       </div>
-      <button class="hd-close" onclick="closeHistoryDetail()">✕</button>
+      <button class="hd-close" id="hdClose" type="button" aria-label="关闭考核详情" onclick="closeHistoryDetail()">✕</button>
     </div>
     <div class="hd-body" id="hdBody"></div>
   </div>
@@ -55,7 +56,7 @@
           <button class="auth-tab active" id="loginTab" onclick="setAuthMode('login')">登录</button>
           <button class="auth-tab" id="registerTab" onclick="setAuthMode('register')">注册</button>
         </div>
-<div class="auth-form">
+<div class="auth-form" id="authLoginForm">
           <label id="authUsernameWrap">
             <span id="authIdentifierLabel">用户名</span>
             <input type="text" id="authUsername" autocomplete="username" placeholder="用户名" />
@@ -73,6 +74,17 @@
 
         <div class="auth-hint" id="authHint">
           账号密码保存在服务端；注册一次后可在任意浏览器登录。
+        </div>
+        <button class="btn btn-secondary btn-small" type="button" id="authRecoveryEntry" onclick="openPasswordRecovery()">家长重置孩子密码</button>
+        <div class="auth-form" id="authPasswordRecoveryForm" style="display:none;">
+          <p class="auth-hint">忘记孩子密码时，可用该孩子已绑定的家长账号重置；无需先登录孩子账号。</p>
+          <label><span>孩子用户名</span><input id="recoveryChildUsername" type="text" autocomplete="username" placeholder="需要重置密码的孩子用户名" /></label>
+          <label><span>家长用户名</span><input id="recoveryParentUsername" type="text" autocomplete="username" placeholder="该孩子绑定的家长用户名" /></label>
+          <label><span>家长密码</span><input id="recoveryParentPassword" type="password" autocomplete="current-password" placeholder="家长登录密码" /></label>
+          <label><span>孩子新密码</span><input id="recoveryNewPassword" type="password" autocomplete="new-password" placeholder="至少 4 位" /></label>
+          <label><span>确认孩子新密码</span><input id="recoveryNewPasswordConfirm" type="password" autocomplete="new-password" placeholder="再次输入新密码" onkeydown="if(event.key==='Enter')submitPasswordRecovery()" /></label>
+          <button class="btn btn-primary" type="button" onclick="submitPasswordRecovery()">验证家长并重置密码</button>
+          <button class="btn btn-secondary btn-small" type="button" onclick="closePasswordRecovery()">返回登录</button>
         </div>
       </div>
     </div>
