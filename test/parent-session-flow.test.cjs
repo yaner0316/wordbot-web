@@ -14,7 +14,8 @@ function context(api) {
   const nodes = Object.fromEntries(['parentGatePanel', 'parentToolGrid', 'parentToolPanel', 'parentUsernameInput', 'parentPasswordInput', 'parentChildPasswordInput', 'parentPasswordConfirmInput'].map(id => [id, { style: {}, value: '' }]));
   const pages = [], messages = [];
   const c = { state: { user: 'kid', parentAccess: false, parentAuth: null }, DEMO_MODE: false, $: id => nodes[id], api,
-    normalizeUsername: x => String(x || '').trim().toLowerCase(), ensureParentPage() {}, navigateTo: x => pages.push(x),
+    parentExitPromise: null,
+    normalizeUsername: x => String(x || '').trim().toLowerCase(), ensureParentPage() {}, navigateTo: x => pages.push(x), performPageNavigation: x => pages.push(x), updateAppHistory() {},
     showLoading() {}, hideLoading() {}, showToast: x => messages.push(x), formatParentLoginError: x => x.message };
   vm.createContext(c);
   return { c, nodes, pages, messages };
@@ -40,16 +41,16 @@ test('failed parent exit retains access and credentials and asks for a retry', a
   assert.equal(c.state.parentAccess, true); assert.equal(c.state.parentAuth.password, 'secret');
   assert.deepEqual(pages, []); assert.match(messages[0], /未退出.*重试/);
 });
-test('an HTTP failure on explicit parent exit preserves the current panel until a downgrade is confirmed', async () => {
+test('an explicit unauthorized response on parent exit returns to login because no valid elevated session remains', async () => {
   const { c, pages, messages } = context();
   c.state.parentAccess = true; c.state.parentAuth = { password: 'secret' };
   Object.assign(c, { API_BASE: '', AbortController, setTimeout, clearTimeout, normalizeApiPayload: x => x,
     fetch: async () => ({ ok: false, status: 401, json: async () => ({ code: 'UNAUTHORIZED' }) }),
-    handleUnauthorizedSession() { c.state.parentAccess = false; c.state.parentAuth = null; pages.push('login'); } });
+    clearSessionUser() {}, showLoginPage: () => pages.push('login') });
+  vm.runInContext(fn('handleUnauthorizedSession'), c);
   vm.runInContext(fn('api') + '\n' + fn('resetParentConsole') + '\n' + fn('exitParentMode'), c);
   await c.exitParentMode();
-  assert.equal(c.state.parentAccess, true); assert.equal(c.state.parentAuth.password, 'secret'); assert.deepEqual(pages, []);
-  assert.match(messages[0], /未退出.*重试/);
+  assert.equal(c.state.parentAccess, false); assert.equal(c.state.parentAuth, null); assert.equal(c.state.user, null); assert.deepEqual(pages, ['login']);
 });
 test('opening parent mode selects initial setup or existing login from authenticated status', async () => {
   for (const configured of [false, true]) {

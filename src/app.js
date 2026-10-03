@@ -81,6 +81,7 @@ const ANIMAL_GARDEN_STATE_KEY_PREFIX = 'wordbot:animal-garden:';
 const REWARD_GAME_ASSET_MANIFEST = 'assets/reward-game/v1/manifest.json';
 const SEEDED_LOCAL_USERS = ['yusi', 'qiuqiu'];
 let remoteQuizSession = null;
+let parentExitPromise = null;
 
 const state = {
   user: null,
@@ -969,6 +970,11 @@ function formatParentLoginError(error) {
 }
 
 function navigateTo(page, options = {}) {
+  if (state.currentPage === 'parent' && page !== 'parent') return exitParentMode(page, options);
+  return performPageNavigation(page, options);
+}
+
+function performPageNavigation(page, options = {}) {
   if (!state.user && page !== 'login') {
     showLoginPage({ replace: true });
     return;
@@ -2372,26 +2378,48 @@ async function openParentConsole() {
   } finally { hideLoading(); }
 }
 
-async function exitParentMode() {
-  showLoading('正在退出家长模式...');
-  try {
-    if (!DEMO_MODE) {
-      const result = await api('/api/auth/parent/logout', { method: 'POST', body: '{}', resetOnUnauthorized: false });
-      if (!result.ok || normalizeUsername(result.user) !== normalizeUsername(state.user)) throw new Error('会话未确认');
-    }
-    state.parentAccess = false;
-    state.parentAuth = null;
-    for (const id of ['parentPasswordInput', 'parentChildPasswordInput', 'parentPasswordConfirmInput']) {
-      if ($(id)) $(id).value = '';
-    }
-    resetParentConsole();
-    navigateTo('home');
-  } catch {
-    showToast('未退出家长模式，请检查网络后重试', 'error');
-  } finally { hideLoading(); }
+async function exitParentMode(page = 'home', options = {}) {
+  if (parentExitPromise) return parentExitPromise;
+  const user = state.user;
+  const task = (async () => {
+    showLoading('正在退出家长模式...');
+    try {
+      if (state.parentAuthenticationPromise) {
+        await state.parentAuthenticationPromise;
+        if (state.user !== user) return false;
+        showLoading('正在退出家长模式...');
+      }
+      if (!DEMO_MODE) {
+        const result = await api('/api/auth/parent/logout', { method: 'POST', body: '{}', resetOnUnauthorized: false });
+        if (!result.ok || normalizeUsername(result.user) !== normalizeUsername(user)) throw new Error('会话未确认');
+      }
+      if (state.user !== user) return false;
+      state.parentAccess = false;
+      state.parentAuth = null;
+      resetParentConsole();
+      performPageNavigation(page, options);
+      return true;
+    } catch (error) {
+      if (state.user === user) {
+        if (error.code === 'UNAUTHORIZED') {
+          handleUnauthorizedSession({ status: 401 }, { code: 'UNAUTHORIZED' });
+          resetParentConsole();
+          showToast('登录已过期，请重新登录', 'info');
+          return false;
+        }
+        showToast('未退出家长模式，请检查网络后重试', 'error');
+        if (state.currentPage === 'parent') updateAppHistory('parent', { replace: true });
+      }
+      return false;
+    } finally { hideLoading(); }
+  })();
+  parentExitPromise = task;
+  try { return await task; }
+  finally { if (parentExitPromise === task) parentExitPromise = null; }
 }
 
 async function submitParentSetup() {
+  if (parentExitPromise || state.parentAuthenticationPromise) return;
   const user = state.user;
   const parentUsername = normalizeUsername($('parentUsernameInput')?.value);
   const parentPassword = $('parentPasswordInput')?.value || '';
@@ -2407,6 +2435,8 @@ async function submitParentSetup() {
   if (state.parentSetupSubmitting) return;
   state.parentSetupSubmitting = true;
   showLoading('正在设置家长账号...');
+  let finishAuthentication;
+  state.parentAuthenticationPromise = new Promise(resolve => { finishAuthentication = resolve; });
   try {
     if (state.parentSetupCreatedFor !== user) {
       await api('/api/auth/parent/setup', { method: 'POST', body: JSON.stringify({ user, childPassword, parentUsername, parentPassword }) });
@@ -2427,13 +2457,14 @@ async function submitParentSetup() {
     showToast((state.parentSetupCreatedFor === user ? '家长账号已保存，登录未确认，请重试：' : '设置失败，请重试：') + formatParentLoginError(error), 'error');
   } finally {
     state.parentSetupSubmitting = false;
+    state.parentAuthenticationPromise = null;
+    finishAuthentication();
     hideLoading();
   }
 }
 
 function closeParentConsole() {
-  resetParentConsole();
-  navigateTo('home');
+  return navigateTo('home');
 }
 
 function ensureParentAccess() {
@@ -2444,6 +2475,7 @@ function ensureParentAccess() {
 }
 
 async function verifyParentPassword() {
+  if (parentExitPromise || state.parentAuthenticationPromise) return;
   const parentUsername = normalizeUsername($('parentUsernameInput')?.value);
   const password = $('parentPasswordInput')?.value || '';
   if (!parentUsername || !password) {
@@ -2451,6 +2483,8 @@ async function verifyParentPassword() {
     return;
   }
   showLoading('正在验证...');
+  let finishAuthentication;
+  state.parentAuthenticationPromise = new Promise(resolve => { finishAuthentication = resolve; });
   try {
     const data = DEMO_MODE
       ? { user: state.user }
@@ -2468,6 +2502,8 @@ async function verifyParentPassword() {
   } catch (error) {
     showToast('验证失败: ' + formatParentLoginError(error), 'error');
   } finally {
+    state.parentAuthenticationPromise = null;
+    finishAuthentication();
     hideLoading();
   }
 }
@@ -4348,12 +4384,13 @@ function initApp() {
     state.user = savedUser;
     state.users = [savedUser];
     state.level = loadUserDifficulty(savedUser);
-    showAppPage();
+    ensureParentPage();
+    resetParentConsole();
+    activatePage('parent');
     applyEnvironmentControls();
     renderUsers(state.users);
     updateLevelButtons();
-    loadHome();
-    return;
+    return exitParentMode('home', { replace: true });
   }
   showLoginPage();
 }
