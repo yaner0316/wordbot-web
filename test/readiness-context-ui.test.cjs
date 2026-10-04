@@ -150,3 +150,33 @@ test('pending and retrying readiness keep the existing poll interval and ten-que
   assert.deepEqual(delays, [15000, 15000]);
   assert.equal(button.disabled, true);
 });
+
+test('invalid word backlog below ten ready meanings asks for correction without a rebuild action', () => {
+  const { c, inline, button } = readinessContext();
+  const readiness = c.renderQuizCacheReadiness({
+    eligibleReadyMeanings: 9,
+    generation: { counts: { blockedInvalidWord: 2, retrying: 1 }, failures: [{ wordId: 'invalid', status: 'blocked_invalid_word', lastErrorCode: 'INVALID_GENERATION_WORD' }] },
+    readiness: { status: 'needs_attention', queue: { blockedInvalidWordCount: 2 } },
+  });
+  assert.equal(button.disabled, true);
+  assert.match(inline.innerHTML, /有词义格式需修正，请家长在词库中检查/);
+  assert.match(inline.innerHTML, /正在重试/, 'legitimate retrying work remains separately explained');
+  assert.doesNotMatch(inline.innerHTML, /重建|rebuildQuestionCachePreparation/);
+  assert.notEqual(readiness.action, 'rebuild');
+});
+test('invalid word correction remains visible without preventing a challenge with ten ready meanings', () => {
+  const { c, inline, button } = readinessContext();
+  c.state.quizReadinessRevealed = false;
+  c.renderQuizCacheReadiness({ eligibleReadyMeanings: 10, generation: { counts: { blockedInvalidWord: 1, pending: 3 } } });
+  assert.equal(button.disabled, false);
+  assert.equal(inline.hidden, false);
+  assert.match(inline.innerHTML, /有词义格式需修正，请家长在词库中检查/);
+  assert.match(inline.innerHTML, /正在生成/);
+});
+test('invalid word backlog is distinct from cooling and cannot be hidden behind a wait message', () => {
+  const { c, inline } = readinessContext();
+  c.renderQuizCacheReadiness({ eligibleReadyMeanings: 0, generation: { counts: { blockedInvalidWord: 1 } },
+    learning: { totalMeanings: 11, masteredMeanings: 0, coolingMeanings: 10, availableMeanings: 0, nextCooldownEndsAt: '2026-10-05T05:00:00Z' } });
+  assert.match(inline.innerHTML, /有词义格式需修正，请家长在词库中检查/);
+  assert.doesNotMatch(inline.innerHTML, /重建|正在准备|准备中/);
+});
