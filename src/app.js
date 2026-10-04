@@ -1028,8 +1028,9 @@ function handleGlobalKeydown(event) {
 let deviceRefreshPromise = null;
 
 function preserveUnsyncedQuiz(user, quiz) {
-  if (!quiz?.syncFailed || state.quiz !== quiz || state.user !== user) return;
-  localStorage.setItem('wordbot_unsynced_quiz_' + user + '_' + quiz.testId, JSON.stringify({ quiz, answers: state.answers, currentQuestion: state.currentQuestion, savedAt: Date.now() }));
+  if (!(quiz?.syncFailed || quiz?.submissionUnknown) || state.quiz !== quiz || state.user !== user) return;
+  const answers = quiz.submissionUnknown ? quiz.submissionAnswers || state.answers : state.answers;
+  localStorage.setItem('wordbot_unsynced_quiz_' + user + '_' + quiz.testId, JSON.stringify({ quiz, answers, currentQuestion: state.currentQuestion, savedAt: Date.now() }));
 }
 
 async function refreshDeviceState() {
@@ -1050,6 +1051,11 @@ async function refreshDeviceState() {
     if (state.submitting || quiz?.result || state.user !== user || state.quiz !== quiz || !quiz?.testId || state.currentPage !== 'quiz') return;
     // Do not replace answers entered while the cloud read was in flight.
     if (localSnapshot !== JSON.stringify([state.currentQuestion, state.answers])) return;
+    if (quiz.submissionUnknown) {
+      preserveUnsyncedQuiz(user, quiz);
+      showToast('提交结果尚未确认；原答卷已保留在首页的本机备份中，可查看考核历史核对。', 'info');
+      if (remote?.testId === quiz.testId) return;
+    }
     if (remote?.testId === quiz.testId) {
       if ((remote.progress?.revision || 0) === (quiz.progressRevision || 0)) {
         if (quiz.syncFailed) {
@@ -1063,11 +1069,12 @@ async function refreshDeviceState() {
       }
     } else {
       preserveUnsyncedQuiz(user, quiz);
+      if (remote?.questions?.length && await restoreRemoteQuizSession()) return;
       clearQuizDraft(state.mode);
       state.quiz = null;
       state.session.kind = null;
       if (state.currentPage === 'quiz') navigateTo('home');
-      showToast('本次考核已在另一设备结束，请从首页继续', 'info');
+      if (!quiz.submissionUnknown) showToast('本次考核已在另一设备结束，请从首页继续', 'info');
     }
   })().catch(() => { if (state.user === user) showToast('跨设备同步失败，请联网后重新进入页面', 'error'); });
   deviceRefreshPromise = task;
@@ -1414,6 +1421,22 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
       canRetry: true,
     };
   }
+  const blockedCounts = status?.generation?.counts || {};
+  const blockedInvalidWord = Math.max(0, Number(blockedCounts.blockedInvalidWord ?? status?.readiness?.queue?.blockedInvalidWordCount) || 0);
+  if (blockedInvalidWord > 0 && readyCountKnown) {
+    const canStart = readyCount >= requiredCount || (state.mode === 'test' && readyCount > 0);
+    const progressText = Number(blockedCounts.retrying) > 0 ? '正在重试' : (Number(blockedCounts.pending) > 0 ? '正在生成' : '');
+    return {
+      readyCount,
+      disabled: !canStart,
+      buttonLabel: canStart ? '开始测试' : '有词义需要修正',
+      detail: [`当前可测试 ${readyCount} 题`, '有词义格式需修正，请家长在词库中检查', progressText].filter(Boolean).join(' · '),
+      state: canStart ? 'ready' : 'needs-attention',
+      action: canStart ? null : 'query',
+      canRetry: !canStart,
+      notice: true,
+    };
+  }
   if (hasTotalMeanings && totalMeanings === 0 && !(readyCountKnown && readyCount >= requiredCount)) {
     return {
       readyCount: readyCountKnown ? readyCount : null,
@@ -1583,7 +1606,7 @@ function renderQuizCacheReadiness(status, level = state.level) {
   button.disabled = readiness.disabled;
   label.textContent = (state.quizReadinessRevealed || readiness.disabled) ? readiness.buttonLabel : '开始单词挑战吧！';
   inlineStatus.className = `quiz-readiness-inline ${readiness.state}`;
-  inlineStatus.hidden = !state.quizReadinessRevealed && !readiness.disabled;
+  inlineStatus.hidden = !state.quizReadinessRevealed && !readiness.disabled && !readiness.notice;
   inlineStatus.innerHTML = `
     <span>${escapeHtml(readiness.detail)}</span>
     ${readiness.action === 'query'
@@ -1752,7 +1775,7 @@ function saveQuizDraft() {
     session: state.session,
     quiz: state.quiz,
     currentQuestion: state.currentQuestion,
-    answers: state.answers,
+    answers: state.quiz.submissionUnknown ? state.quiz.submissionAnswers || state.answers : state.answers,
     savedAt: Date.now(),
   }));
   renderStudentTools();
@@ -1866,14 +1889,14 @@ async function restoreQuizDraft(user = state.user) {
 let quizProgressSavePromise = Promise.resolve();
 
 function saveQuizProgressToServer() {
-  if (DEMO_MODE || !state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || !state.quiz?.testId) return Promise.resolve(false);
+  if (DEMO_MODE || !state.user || state.session.kind !== 'quiz' || !state.quiz?.questions?.length || !state.quiz?.testId || state.quiz.submissionUnknown) return Promise.resolve(false);
   const user = state.user;
   const quiz = state.quiz;
   const snapshot = { currentQuestion: state.currentQuestion, answers: JSON.parse(JSON.stringify(state.answers)) };
   quiz.syncPending = true;
   saveQuizDraft();
   const task = quizProgressSavePromise.then(async () => {
-    if (quiz.syncFailed || quiz.result) return false;
+    if (quiz.syncFailed || quiz.result || quiz.submissionUnknown) return false;
     try {
       const data = await api('/api/quiz/session/progress', {
         method: 'POST', body: JSON.stringify({ user, testId: quiz.testId, ...snapshot, baseRevision: quiz.progressRevision || 0 }),
@@ -2122,6 +2145,11 @@ async function restoreRemoteQuizSession() {
 async function recoverPendingQuizDraft() {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(activeQuizKey(state.user, state.mode)) || 'null'); } catch { return false; }
+  if (saved?.quiz?.submissionUnknown) {
+    localStorage.setItem('wordbot_unsynced_quiz_' + state.user + '_' + saved.quiz.testId, JSON.stringify(saved));
+    showToast('提交结果尚未确认；原答卷已保留在首页的本机备份中，可查看考核历史核对。', 'info');
+    return false;
+  }
   if (!saved?.quiz || !(saved.quiz.syncFailed || saved.quiz.syncPending)) return false;
   const remote = remoteQuizSession;
   if (remote?.testId === saved.quiz.testId && (remote.progress?.revision || 0) === (saved.quiz.progressRevision || 0)) {
@@ -2145,11 +2173,13 @@ async function handleContinueQuizEntry() {
     renderStudentTools();
     return false;
   }
+  let submissionUnknown = Boolean(state.quiz?.submissionUnknown);
+  try { submissionUnknown ||= Boolean(JSON.parse(localStorage.getItem(activeQuizKey(state.user, state.mode)) || 'null')?.quiz?.submissionUnknown); } catch { /* Keep the existing recovery handling for unreadable drafts. */ }
   if (await recoverPendingQuizDraft()) return true;
   preserveUnsyncedQuiz(state.user, state.quiz);
   if (await restoreRemoteQuizSession()) return true;
   clearQuizDraft(state.mode || 'real');
-  showToast('暂无未完成考核', 'info');
+  if (!submissionUnknown) showToast('暂无未完成考核', 'info');
   renderStudentTools();
   return false;
 }
@@ -2220,7 +2250,8 @@ function renderUnsyncedQuizBackups() {
       return '<li>' + escapeHtml(question.word || `第 ${index + 1} 题`) + '：本机 ' + escapeHtml(localAnswer)
         + (cloud ? '；云端 ' + escapeHtml(cloudAnswer) + (localAnswer === cloudAnswer ? '（相同）' : '（不同）') : '') + '</li>';
     }).join('');
-    return '<details><summary>' + escapeHtml(saved.quiz.testId) + ' · ' + escapeHtml(formatDate(saved.savedAt)) + '</summary><p>' + positions + '</p><ol>' + rows + '</ol></details>';
+    const resultStatus = saved.quiz.submissionUnknown ? '<p>提交结果尚未确认；以下为原答卷，仅供核对。请查看考核历史确认结果。</p>' : '';
+    return '<details><summary>' + escapeHtml(saved.quiz.testId) + ' · ' + escapeHtml(formatDate(saved.savedAt)) + '</summary>' + resultStatus + '<p>' + positions + '</p><ol>' + rows + '</ol></details>';
   }).join('') + '</details>';
 }
 function openStudentWordEntry() {
@@ -3396,6 +3427,7 @@ async function startQuiz() {
   state.quizReadinessRevealed = true;
   showLoading('正在读取本次题目...');
   clearActiveReview();
+  if (state.quiz?.submissionUnknown) preserveUnsyncedQuiz(state.user, state.quiz);
   clearQuizDraft(state.mode);
   state.session = {
     kind: 'quiz',
@@ -3708,7 +3740,7 @@ async function submitQuiz() {
           : { option: answer })
       });
     } else {
-      const payload = {
+      const payload = state.quiz.submissionUnknown && state.quiz.submissionPayload ? state.quiz.submissionPayload : {
         user: state.user,
         testId: state.quiz.testId,
         answers: state.answers.map((answer, i) => isSenseChoiceReviewQuestion(state.quiz.questions[i])
@@ -3717,6 +3749,10 @@ async function submitQuiz() {
           ? { text: String(answer ?? '').trim() }
           : { option: answer })
       };
+      if (!state.quiz.submissionUnknown || !state.quiz.submissionPayload) {
+        state.quiz.submissionPayload = JSON.parse(JSON.stringify(payload));
+        state.quiz.submissionAnswers = JSON.parse(JSON.stringify(state.answers));
+      }
       data = await submitQuizToBackend(payload);
     }
     if (state.session.kind === 'quiz' && data.code === 'FORMAL_QUESTION_REPLACED') {
@@ -3730,6 +3766,15 @@ async function submitQuiz() {
     state.quiz.result = data;
 
     if (state.session.kind === 'quiz') {
+      if (state.quiz.submissionUnknown) {
+        if (state.quiz.submissionAnswers) state.answers = JSON.parse(JSON.stringify(state.quiz.submissionAnswers));
+        const backupKey = 'wordbot_unsynced_quiz_' + state.user + '_' + state.quiz.testId;
+        try {
+          const backup = JSON.parse(localStorage.getItem(backupKey) || 'null');
+          if (backup?.quiz?.submissionUnknown && backup.quiz.testId === state.quiz.testId) localStorage.removeItem(backupKey);
+        } catch { /* An unrelated or unreadable backup is kept. */ }
+        state.quiz.submissionUnknown = false;
+      }
       clearQuizDraft(state.mode);
       if (DEMO_MODE) addGameRewardToBank(data.gameReward, state.user, state.quiz?.testId || data.testId);
       else if (data.gameState) applyServerGameState(data.gameState, state.user);
@@ -3756,7 +3801,7 @@ async function submitQuiz() {
       if (state.quiz) state.quiz.submissionUnknown = true;
       if (state.session.kind === 'quiz') saveQuizDraft();
       else saveCurrentSessionProgress();
-      showToast('提交结果尚未确认，后端可能已经保存；本机答案已保留。请联网后用当前答案重试确认，或查看考核历史。', 'error');
+      showToast('提交结果尚未确认，后端可能已经保存；原答卷已保留。重试会核对原提交答案，或可查看考核历史。', 'error');
     } else {
       showToast('提交失败: ' + normalizeApiError(e).message, 'error');
     }
