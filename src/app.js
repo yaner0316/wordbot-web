@@ -71,7 +71,7 @@ function isParentWordSubmissionSuccessful(result) {
 
 function buildParentWordCooldownNotice(count = 0) {
   const safeCount = Number.isFinite(Number(count)) ? Number(count) : 0;
-  return `已录入 ${safeCount} 个单词。新录入单词需要约 18 小时冷却，冷却结束后才会进入孩子的正式挑战。`;
+  return `已录入 ${safeCount} 个单词。系统会自动准备题目；首次挑战也需从录入起冷却满 18 小时，之后每次挑战同样需间隔至少 18 小时。`;
 }
 const SESSION_USER_KEY = 'wordbot:session-user';
 const LOCAL_AUTH_USERS_KEY = 'wordbot:local-auth-users';
@@ -975,6 +975,7 @@ function navigateTo(page, options = {}) {
 }
 
 function performPageNavigation(page, options = {}) {
+  if (page !== 'challenge' && typeof cancelChallengePreparation === 'function') cancelChallengePreparation();
   if (!state.user && page !== 'login') {
     showLoginPage({ replace: true });
     return;
@@ -995,7 +996,7 @@ function handleInAppBack() {
     showToast('\u5df2\u4fdd\u5b58\u8fdb\u5ea6\uff0c\u53ef\u4ece\u9996\u9875\u7ee7\u7eed', 'info');
     return true;
   }
-  if (['parent', 'history', 'results'].includes(state.currentPage)) {
+  if (['parent', 'history', 'results', 'challenge'].includes(state.currentPage)) {
     navigateTo('home', { replace: true });
     return true;
   }
@@ -1583,6 +1584,7 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
 function renderQuizCacheReadiness(status, level = state.level) {
   const button = document.querySelector('#pageHome .home-primary-cta');
   if (!button) return null;
+  if (button.dataset?.challengeMode === 'random') return getQuizCacheReadiness(status, level);
   let label = button.querySelector('.home-primary-cta-label');
   if (!label) {
     Array.from(button.childNodes).forEach(node => {
@@ -1815,6 +1817,7 @@ async function recoverFromFormalQuizBlock(issue) {
 function getFormalChallengeQuestionCountIssue(quiz, requiredCount = 10) {
   const questionCount = Array.isArray(quiz?.questions) ? quiz.questions.length : 0;
   if (quiz?.mode === 'test') return null;
+  if (questionCount > 0 && questionCount <= 10 && quiz.questions.every(q => q.challengeSize === questionCount)) return null;
   if (questionCount === requiredCount) return null;
   const remainingQuestionCount = Math.max(0, requiredCount - questionCount);
   return {
