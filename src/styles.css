@@ -2721,8 +2721,9 @@ button.hero-chip:active { transform: scale(.98); }
 #pageHome .home-v2-quick-text { min-width: 0; display: grid; gap: 4px; }
 #pageHome .home-v2-quick-text strong { color: var(--home-v2-ink); font-size: 13.5px; line-height: 1.1; font-weight: 660; white-space: nowrap; }
 #pageHome .home-v2-quick-text small { color: var(--home-v2-muted); font-size: 11.2px; line-height: 1.16; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#pageHome .home-cta-wrap { margin: 16px 0 4px; }
+#pageHome .home-cta-wrap { flex-direction: column; gap: 0; margin: 16px 0 4px; }
 #pageHome .home-primary-cta {
+  flex: none;
   width: 100%;
   min-height: 62px;
   border: 0;
@@ -2738,6 +2739,7 @@ button.hero-chip:active { transform: scale(.98); }
   line-height: 1;
   font-weight: 700;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 #pageHome .home-primary-cta::before,
 #pageHome .home-primary-cta::after { content: none; }
@@ -2751,6 +2753,7 @@ button.hero-chip:active { transform: scale(.98); }
   min-height: 24px;
   margin: 9px 8px 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
