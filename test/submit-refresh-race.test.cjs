@@ -38,6 +38,6 @@ test('sense selection renders only Chinese labels and rejects English-only resul
   const c = { $: () => ({ value: 'bank' }), parseParentWordEntries: () => [{ word: 'bank' }], showLoading() {}, hideLoading() {},
     api: async () => ({ senses: [{ cnMeaning: '银行', definition: 'a financial institution', partOfSpeech: 'noun' }, { definition: 'English only' }] }),
     getWordEntryDuplicatePanel: () => host, escapeHtml: x => x, showToast: x => messages.push(x) };
-  vm.createContext(c); vm.runInContext(fn('renderDictionarySenseOption') + '\n' + fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
+  vm.createContext(c); vm.runInContext(fn('validateWordEntryFormat') + '\n' + fn('renderDictionarySenseOption') + '\n' + fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
   assert.match(host.innerHTML, /银行/); assert.doesNotMatch(host.innerHTML, /financial|noun|English only/); assert.equal(host._dictionarySenses.length, 1);
 });
