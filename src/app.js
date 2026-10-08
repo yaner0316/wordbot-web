@@ -2762,9 +2762,21 @@ function shouldChooseDictionarySenses(entries) {
   return Array.isArray(entries) && entries.length === 1 && !entries[0]?.meaning && !entries[0]?.cnMeaning;
 }
 
+function validateWordEntryFormat(entries) {
+  const invalid = entries.filter(entry => {
+    const word = String(entry?.word || '');
+    return !/^(?:[a-z]+(?:[ '-][a-z]+)*|-[a-z]+)$/i.test(word);
+  });
+  if (!invalid.length) return true;
+  const examples = invalid.slice(0, 3).map(entry => String(entry.word).slice(0, 30)).join('、');
+  showToast(`“${examples}”不是有效的英文输入。请填写英文单词；中文释义可写在 | 后，例如 solid | 固体。`, 'warn');
+  return false;
+}
+
 async function submitWordEntry() {
   const input = $('parentWordsInput') || $('studentWordsInput');
   const entries = parseParentWordEntries(input?.value);
+  if (!validateWordEntryFormat(entries)) return;
   if (shouldChooseDictionarySenses(entries)) return lookupSelectedSenses();
   return submitParentWords();
 }
@@ -2772,6 +2784,7 @@ async function submitWordEntry() {
 async function lookupSelectedSenses() {
   const input = $('parentWordsInput') || $('studentWordsInput');
   const entries = parseParentWordEntries(input?.value);
+  if (!validateWordEntryFormat(entries)) return;
   if (entries.length !== 1 || entries[0].meaning || entries[0].cnMeaning) {
     showToast('选择释义时请先只输入一个英文单词', 'info');
     return;
@@ -2806,6 +2819,7 @@ async function submitSelectedSenses() {
   const word = host?.querySelector('[data-selected-sense-word]')?.dataset.selectedSenseWord;
   const indexes = Array.from(host?.querySelectorAll('[data-selected-sense]:checked') || []).map(node => Number(node.dataset.selectedSense));
   const entries = buildSelectedSenseEntries(word, host?._dictionarySenses, indexes);
+  if (!validateWordEntryFormat(entries)) return;
   if (!entries.length) {
     showToast('请至少选择一个释义', 'info');
     return;
@@ -2832,6 +2846,7 @@ async function submitSelectedSenses() {
 async function submitParentWords(options = {}) {
   const input = $('parentWordsInput') || $('studentWordsInput');
   const entries = parseParentWordEntries(input?.value);
+  if (!validateWordEntryFormat(entries)) return;
   if (!entries.length) {
     showToast('请先输入至少一个单词', 'warn');
     return;
