@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.cn" crossorigin />
   <link href="https://fonts.googleapis.cn/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="src/styles.css" />
+  <link rel="stylesheet" href="src/custom-challenge.css" />
 </head>
 <body>
 
@@ -180,10 +181,16 @@
     </section>
 
 
-    <div class="actions home-cta-wrap">
-      <button class="btn btn-primary home-primary-cta" onclick="startQuiz()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        开始单词挑战吧！
+    <div class="home-cta-wrap challenge-entry-pair">
+      <button class="challenge-entry challenge-entry-random home-primary-cta" type="button" data-challenge-mode="random" onclick="startRandomChallenge()">
+        <span class="challenge-entry-top"><span class="challenge-eyebrow">交给幸运 · RANDOM</span><span class="challenge-entry-symbol" aria-hidden="true">⚄</span></span>
+        <strong>开始随机挑战我吧！</strong>
+        <span class="challenge-entry-bottom"><span>系统选词，惊喜开场</span><span class="challenge-arrow" aria-hidden="true">↗</span></span>
+      </button>
+      <button class="challenge-entry challenge-entry-custom" type="button" onclick="openCustomChallenge()">
+        <span class="challenge-entry-top"><span class="challenge-eyebrow">由你出招 · YOUR PICK</span><span class="challenge-entry-symbol" aria-hidden="true">◎</span></span>
+        <strong>这些单词，放马过来！</strong>
+        <span class="challenge-entry-bottom"><span>自己挑几个，剩下的交给系统</span><span class="challenge-arrow" aria-hidden="true">↗</span></span>
       </button>
     </div>
 
@@ -191,6 +198,26 @@
       上次考核：<span id="lastTestTime"></span>
     </div>
   </div>
+
+  <section class="page" id="pageChallenge" aria-labelledby="challengeTitle">
+    <div class="challenge-page-top"><button class="challenge-back" type="button" onclick="navigateTo('home')">← 返回首页</button><span>你的专属挑战</span></div>
+    <div class="challenge-picker-heading"><span class="challenge-eyebrow">YOUR WORDS. YOUR CHALLENGE.</span><h1 id="challengeTitle">今天，想挑战谁？</h1><p>挑几个想练的词义，剩下的交给系统。</p></div>
+    <label class="challenge-search"><span aria-hidden="true">⌕</span><input id="challengeSearch" type="search" placeholder="搜英文单词或中文释义" aria-label="搜索单词或释义" oninput="renderChallengePicker()"></label>
+    <div class="challenge-filters" aria-label="学习状态筛选">
+      <button type="button" data-challenge-filter="all" aria-pressed="true" onclick="setChallengeFilter('all')">全部</button>
+      <button type="button" data-challenge-filter="consolidating" aria-pressed="false" onclick="setChallengeFilter('consolidating')">巩固中</button>
+      <button type="button" data-challenge-filter="recognized" aria-pressed="false" onclick="setChallengeFilter('recognized')">已认识</button>
+      <button type="button" data-challenge-filter="pending" aria-pressed="false" onclick="setChallengeFilter('pending')">未开始</button>
+    </div>
+    <div class="challenge-list-heading"><span id="challengePoolCount"></span><button id="challengeRefresh" type="button" onclick="refreshChallengeCandidates()">刷新词库</button></div>
+    <div id="challengeWordList" class="challenge-word-list"></div>
+    <div class="challenge-selection-bar">
+      <div class="challenge-counts"><strong id="challengeSelectionCount">已选 0 / 10</strong><span id="challengeAutoCount">系统补齐 10 个</span></div>
+      <p id="challengeShortNote"></p><p id="challengeStatus" role="status" aria-live="polite"></p>
+      <button id="challengeStart" class="btn btn-primary" type="button" onclick="beginSelectedChallenge()">就考这些，开始挑战！</button>
+      <button id="challengeCancel" class="challenge-cancel" type="button" hidden onclick="stopChallengeWaiting()">先不等了，调整选择</button>
+    </div>
+  </section>
 
   <!-- ===== PAGE: QUIZ ===== -->
   <div class="page" id="pageQuiz">
@@ -268,6 +295,7 @@
 <script src="src/review-flow.js"></script>
 <script src="config.js"></script>
 <script src="src/app.js"></script>
+<script src="src/custom-challenge.js"></script>
 </body>
 </html>
 
