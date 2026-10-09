@@ -924,6 +924,11 @@ async function api(path, opts = {}) {
     try {
       data = await response.json();
     } catch {
+      if (response.ok) {
+        const error = new Error('服务器响应未能读取，请重试确认结果。');
+        error.code = 'RESPONSE_UNREADABLE';
+        throw error;
+      }
       data = {};
     }
     if (!response.ok) {
@@ -3601,6 +3606,10 @@ function renderQuestion(idx) {
 }
 
 function setMeaningAnswer(qIdx, value) {
+  if (state.submitting || state.quiz?.submissionUnknown) {
+    showToast('提交结果尚未确认，原答卷已保留，请重试提交以确认结果。', 'info');
+    return;
+  }
   state.answers[qIdx] = value;
   saveCurrentSessionProgress();
   const canContinue = String(value || '').trim().length > 0;
@@ -3608,6 +3617,10 @@ function setMeaningAnswer(qIdx, value) {
   $('submitBtn').disabled = !canContinue;
 }
 function selectOption(qIdx, optIdx) {
+  if (state.submitting || state.quiz?.submissionUnknown) {
+    showToast('提交结果尚未确认，原答卷已保留，请重试提交以确认结果。', 'info');
+    return;
+  }
   const restoreFocus = Boolean(document.activeElement?.classList?.contains('option-btn')
     || document.activeElement?.closest?.('.option-btn'));
   state.answers[qIdx] = optIdx;
@@ -3662,8 +3675,8 @@ async function submitWithTimeoutConfirmation(path, payload) {
   try {
     return await request();
   } catch (error) {
-    if (error?.name === 'AbortError') {
-      showLoading('提交时间较长，正在确认结果...');
+    if (error?.name === 'AbortError' || !error?.status || error.status >= 500) {
+      showLoading('正在确认提交结果...');
       try {
         return await request();
       } catch (confirmationError) {
@@ -3750,14 +3763,19 @@ async function submitQuiz() {
         stats: { total: 42, mastered: 18, pending: 24 }
       };
     } else if (state.session.kind === 'review') {
-      data = await submitReviewToBackend(state.session.reviewId, {
+      const payload = state.quiz.submissionUnknown && state.quiz.submissionPayload ? state.quiz.submissionPayload : {
         user: state.user,
         answers: state.answers.map((answer, i) => isSenseChoiceReviewQuestion(state.quiz.questions[i])
           ? { text: String.fromCharCode(65 + answer) }
           : isMeaningReviewQuestion(state.quiz.questions[i])
           ? { text: String(answer ?? '').trim() }
           : { option: answer })
-      });
+      };
+      if (!state.quiz.submissionUnknown || !state.quiz.submissionPayload) {
+        state.quiz.submissionPayload = JSON.parse(JSON.stringify(payload));
+        state.quiz.submissionAnswers = JSON.parse(JSON.stringify(state.answers));
+      }
+      data = await submitReviewToBackend(state.session.reviewId, payload);
     } else {
       const payload = state.quiz.submissionUnknown && state.quiz.submissionPayload ? state.quiz.submissionPayload : {
         user: state.user,
@@ -3783,6 +3801,10 @@ async function submitQuiz() {
       return;
     }
     state.quiz.result = data;
+    if (state.session.kind === 'review' && state.quiz.submissionUnknown) {
+      if (state.quiz.submissionAnswers) state.answers = JSON.parse(JSON.stringify(state.quiz.submissionAnswers));
+      state.quiz.submissionUnknown = false;
+    }
 
     if (state.session.kind === 'quiz') {
       if (state.quiz.submissionUnknown) {
@@ -4065,9 +4087,7 @@ function updateResultActions() {
     analysisViewed: state.session.analysisViewed,
     remainingRecordIds: state.session.remainingRecordIds,
   });
-  if (_showAnalysis) {
-    panel.innerHTML = '<button class="btn btn-primary" onclick="toggleAnalysis()">收起答案解析</button>';
-  } else if (actions.primary === 'show-analysis') {
+  if (actions.primary === 'show-analysis') {
     panel.innerHTML = '<button class="btn btn-primary" onclick="toggleAnalysis()">查看答案解析</button>';
   } else if (actions.primary === 'start-review') {
     panel.innerHTML = `<button class="btn btn-primary" onclick="startWrongAnswerReview()">开始错题复习（${state.session.remainingRecordIds.length} 个词）</button>`;
@@ -4077,6 +4097,9 @@ function updateResultActions() {
       <button class="btn btn-secondary" onclick="deferWrongAnswerReview()">下次复习</button>`;
   } else {
     panel.innerHTML = '<button class="btn btn-primary" onclick="showFinalReviewSummary()">完成测验</button>';
+  }
+  if (_showAnalysis) {
+    panel.innerHTML += '<button class="btn btn-secondary" onclick="toggleAnalysis()">收起答案解析</button>';
   }
 }
 

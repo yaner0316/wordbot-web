@@ -50,3 +50,22 @@ test('a service error after the first timeout cannot prove that the first submis
   await assert.rejects(c.submitWithTimeoutConfirmation('/api/submit', { testId: 'real-confirm', answers: [0] }), error => error.code === 'SUBMISSION_RESULT_UNKNOWN');
   assert.equal(requests, 2);
 });
+
+for (const [name, makeError] of [
+  ['network response loss', () => new TypeError('Failed to fetch')],
+  ['unreadable response', () => Object.assign(new Error('Invalid response'), {code:'RESPONSE_UNREADABLE'})],
+  ['gateway error', () => Object.assign(new Error('Bad gateway'), {status:502})],
+]) test(name + ' confirms using identical payload and preserves uncertainty', async () => {
+  const requests=[];
+  const c={api:async(p,o)=>{requests.push(o.body);throw makeError();},showLoading(){}};
+  vm.createContext(c);vm.runInContext(fn('submitWithTimeoutConfirmation'),c);
+  await assert.rejects(c.submitWithTimeoutConfirmation('/api/submit',{testId:'real',answers:[0]}),e=>e.code==='SUBMISSION_RESULT_UNKNOWN');
+  assert.equal(requests.length,2);assert.equal(requests[0],requests[1]);
+});
+test('explicit validation rejection is not retried or marked unknown', async()=>{
+  let calls=0;const rejection=Object.assign(new Error('Invalid answer'),{status:400,code:'INVALID_ANSWER'});
+  const c={api:async()=>{calls++;throw rejection;},showLoading(){}};
+  vm.createContext(c);vm.runInContext(fn('submitWithTimeoutConfirmation'),c);
+  await assert.rejects(c.submitWithTimeoutConfirmation('/api/submit',{}),e=>e===rejection);
+  assert.equal(calls,1);
+});
