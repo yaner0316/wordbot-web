@@ -126,3 +126,19 @@ test('persistent network failure stops after bounded retries and keeps the selec
   let calls=0;const h=loadChallengeFlow({setTimeout:callback=>{callback();return 1;},api:async()=>{calls++;throw new TypeError('Failed to fetch');}});
   await h.c.beginSelectedChallenge();assert.equal(calls,3);assert.equal(h.selected().join(','),'meaning-one');
 });
+
+test('manual retry of a failed random challenge keeps random priority',async()=>{
+  const sent=[];const h=loadChallengeFlow({setTimeout:cb=>{cb();return 1;},api:async(p,o)=>{
+    sent.push(JSON.parse(o.body).selection);if(sent.length<=3)throw new TypeError('Failed to fetch');return {questions:[]};
+  }});
+  await h.c.beginSelectedChallenge('random');await h.c.beginSelectedChallenge();
+  assert.deepEqual(sent.map(x=>x.mode),['random','random','random','random']);
+  assert.ok(sent.every(x=>x.meaningIds.length===0));
+});
+test('changing the word choice after a random failure explicitly switches to custom',async()=>{
+  const h=pickerHarness();h.c.setTimeout=cb=>{cb();return 1;};h.c.api=async()=>{throw new TypeError('Failed to fetch');};
+  await h.c.beginSelectedChallenge('random');h.c.toggleChallengeWord('a');
+  let selection;h.c.api=async(p,o)=>{selection=JSON.parse(o.body).selection;return {questions:[]};};
+  h.c.clearActiveReview=()=>{};h.c.enterFormalQuiz=async()=>true;await h.c.beginSelectedChallenge();
+  assert.deepEqual(selection,{mode:'custom',meaningIds:['a','b']});
+});

@@ -754,14 +754,14 @@ test('quiz exhausted pool shows four in-app choices instead of generic failure',
 test('quiz submit confirms a timeout with one automatic idempotent replay', () => {
     assert.match(app, /async function submitQuizToBackend/);
     assert.match(app, /error\?\.name\s*===\s*'AbortError'/);
-    assert.match(app, /提交时间较长，正在确认结果/);
+    assert.match(app, /正在确认提交结果/);
     const submitSource = app.slice(app.indexOf('async function submitQuiz()'), app.indexOf('// ========== Results =========='));
     assert.match(submitSource, /submitQuizToBackend\(payload\)/);
     assert.doesNotMatch(submitSource, /timeoutMs:\s*90000/);
     const helperStart = app.indexOf('async function submitWithTimeoutConfirmation');
     const helperEnd = app.indexOf('async function submitQuizToBackend', helperStart);
     const helperSource = app.slice(helperStart, helperEnd);
-    const abortStart = helperSource.indexOf("if (error?.name === 'AbortError')");
+    const abortStart = helperSource.indexOf("if (error?.name === 'AbortError'");
     const abortBranch = helperSource.slice(abortStart);
 
     assert.doesNotMatch(abortBranch, /waitForMs/);

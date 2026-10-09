@@ -1,5 +1,5 @@
 'use strict';
-const challengePicker = { user: null, candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, pendingIds: null };
+const challengePicker = { user: null, mode: 'custom', candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, pendingIds: null };
 const challengeStatusLabels = { pending: '未开始', recognized: '已认识', consolidating: '巩固中' };
 
 function filterChallengeWords(words, search = '', status = 'all') {
@@ -51,9 +51,11 @@ async function requestChallengeApi(path, options, token) {
     }
   }
 }
-async function openCustomChallenge() {
+async function openCustomChallenge(mode = 'custom') {
   if (!state.user) { showToast('请先登录', 'info'); return; }
   cancelChallengePreparation();
+  challengePicker.mode = mode;
+  if (mode === 'random') challengePicker.selected.clear();
   if (challengePicker.user !== state.user) {
     challengePicker.user = state.user;
     challengePicker.selected = new Set();
@@ -96,6 +98,7 @@ function toggleChallengeWord(id) {
   const word = groupChallengeWords(challengePicker.candidates).find(w => w.senses.some(sense => sense.meaningId === id));
   if (!word?.eligible) return;
   challengePicker.pendingIds = null;
+  challengePicker.mode = 'custom';
   const ids = word.senses.map(sense => sense.meaningId);
   if (ids.every(meaningId => challengePicker.selected.has(meaningId))) ids.forEach(meaningId => challengePicker.selected.delete(meaningId));
   else if (new Set([...challengePicker.selected, ...ids]).size <= 10) ids.forEach(meaningId => challengePicker.selected.add(meaningId));
@@ -139,15 +142,16 @@ function renderChallengePicker() {
 }
 async function startRandomChallenge() {
   if (DEMO_MODE) return startQuiz();
-  await openCustomChallenge();
+  await openCustomChallenge('random');
   const summary = challengeSelectionSummary(challengePicker.candidates, new Set());
   if (state.currentPage === 'challenge' && !challengePicker.loading && summary.total && summary.available >= summary.total) {
     challengePicker.selected.clear();
     await beginSelectedChallenge('random');
   }
 }
-async function beginSelectedChallenge(mode = 'custom') {
+async function beginSelectedChallenge(mode = challengePicker.mode) {
   if (challengePicker.busy) return;
+  challengePicker.mode = mode;
   challengePicker.busy = true;
   const token = ++challengePicker.token;
   const user = state.user;
