@@ -37,6 +37,20 @@ function challengeStatus(message) {
   const el = $('challengeStatus');
   if (el) el.textContent = message;
 }
+async function requestChallengeApi(path, options, token) {
+  const user = state.user;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (state.user !== user || token !== challengePicker.token) throw new Error('CHALLENGE_CANCELLED');
+    try { return await api(path, options); }
+    catch (error) {
+      const transient = error.code === 'REQUEST_TIMEOUT' || [502,503,504].includes(error.status)
+        || /failed to fetch|fetch failed|networkerror|load failed/i.test(error.message || '');
+      if (!transient || attempt === 2) throw error;
+      challengeStatus('连接暂时中断，正在自动重连，你的选择会保留…');
+      await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+    }
+  }
+}
 async function openCustomChallenge() {
   if (!state.user) { showToast('请先登录', 'info'); return; }
   cancelChallengePreparation();
@@ -59,7 +73,7 @@ async function refreshChallengeCandidates() {
     if (DEMO_MODE) {
       challengePicker.demoQuiz = generateDemoQuiz(state.level);
       data = { candidates: challengePicker.demoQuiz.questions.map((q, i) => ({meaningId:q.meaningId || `demo-${i}`, word:q.word, meaning:q.correctMeaning || '演示词义', status:'pending', eligible:true})) };
-    } else data = await api(`/api/quiz/candidates?user=${encodeURIComponent(user)}`);
+    } else data = await requestChallengeApi(`/api/quiz/candidates?user=${encodeURIComponent(user)}`, {timeoutMs:20000}, token);
     if (state.user !== user || token !== challengePicker.token) return;
     challengePicker.candidates = data.candidates || [];
     // Refresh must not silently turn a whole-word choice into a partial choice.
@@ -155,7 +169,7 @@ async function beginSelectedChallenge(mode = 'custom') {
     if (token !== challengePicker.token || state.user !== user || state.currentPage !== 'challenge') return;
     try {
       const selection = challengePicker.pendingIds ? {mode:'custom', meaningIds:challengePicker.pendingIds} : {mode, meaningIds:ids};
-      const data = await api('/api/quiz', {method:'POST', timeoutMs:70000, body:JSON.stringify({user, mode:'real', selection})});
+      const data = await requestChallengeApi('/api/quiz', {method:'POST', timeoutMs:30000, body:JSON.stringify({user, mode:'real', selection})}, token);
       if (token !== challengePicker.token || state.user !== user || state.currentPage !== 'challenge') return;
       if (data.pending) {
         challengePicker.pendingIds = data.meaningIds;

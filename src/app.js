@@ -929,6 +929,7 @@ async function api(path, opts = {}) {
     if (!response.ok) {
       if (resetOnUnauthorized) handleUnauthorizedSession(response, data);
       const error = new Error(data.error || ('请求失败（HTTP ' + response.status + '）'));
+      error.status = response.status;
       error.code = data.code || 'HTTP_ERROR';
       error.source = data.source;
       error.diagnostics = data.diagnostics;

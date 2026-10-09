@@ -112,3 +112,17 @@ test('a successful challenge does not make its selected words the next challenge
   await h.c.beginSelectedChallenge();
   assert.equal(h.selected().length,0);
 });
+
+test('a transient network error retries the identical choice and resumes the server quiz', async () => {
+  const sent=[];const h=loadChallengeFlow({setTimeout:callback=>{callback();return 1;},api:async(url,options)=>{
+    sent.push(options.body);if(sent.length===1)throw new TypeError('Failed to fetch');
+    return {testId:'real-recovered',questions:[]};
+  }});
+  await h.c.beginSelectedChallenge();
+  assert.equal(sent.length,2);assert.equal(sent[0],sent[1]);
+  assert.equal(h.c.state.quiz.testId,'real-recovered');
+});
+test('persistent network failure stops after bounded retries and keeps the selection', async () => {
+  let calls=0;const h=loadChallengeFlow({setTimeout:callback=>{callback();return 1;},api:async()=>{calls++;throw new TypeError('Failed to fetch');}});
+  await h.c.beginSelectedChallenge();assert.equal(calls,3);assert.equal(h.selected().join(','),'meaning-one');
+});
