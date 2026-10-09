@@ -201,8 +201,8 @@
 
   <section class="page" id="pageChallenge" aria-labelledby="challengeTitle">
     <div class="challenge-page-top"><button class="challenge-back" type="button" onclick="navigateTo('home')">← 返回首页</button><span>你的专属挑战</span></div>
-    <div class="challenge-picker-heading"><span class="challenge-eyebrow">YOUR WORDS. YOUR CHALLENGE.</span><h1 id="challengeTitle">今天，想挑战谁？</h1><p>挑几个想练的词义，剩下的交给系统。</p></div>
-    <label class="challenge-search"><span aria-hidden="true">⌕</span><input id="challengeSearch" type="search" placeholder="搜英文单词或中文释义" aria-label="搜索单词或释义" oninput="renderChallengePicker()"></label>
+    <div class="challenge-picker-heading"><span class="challenge-eyebrow">YOUR WORDS. YOUR CHALLENGE.</span><h1 id="challengeTitle">今天，想挑战谁？</h1><p>挑几个想练的单词；同一单词的待考释义会一起考。</p></div>
+    <label class="challenge-search"><span aria-hidden="true">⌕</span><input id="challengeSearch" type="search" placeholder="搜英文单词" aria-label="搜索英文单词" oninput="renderChallengePicker()"></label>
     <div class="challenge-filters" aria-label="学习状态筛选">
       <button type="button" data-challenge-filter="all" aria-pressed="true" onclick="setChallengeFilter('all')">全部</button>
       <button type="button" data-challenge-filter="consolidating" aria-pressed="false" onclick="setChallengeFilter('consolidating')">巩固中</button>

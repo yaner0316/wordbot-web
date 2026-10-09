@@ -5,7 +5,20 @@ const challengeStatusLabels = { pending: '未开始', recognized: '已认识', c
 function filterChallengeWords(words, search = '', status = 'all') {
   const query = search.trim().toLocaleLowerCase();
   return words.filter(w => (status === 'all' || w.status === status)
-    && (!query || `${w.word} ${w.meaning}`.toLocaleLowerCase().includes(query)));
+    && (!query || w.word.toLocaleLowerCase().includes(query)));
+}
+function groupChallengeWords(words) {
+  const groups = new Map();
+  for (const word of words) {
+    const key = word.word.trim().toLocaleLowerCase();
+    if (!groups.has(key)) groups.set(key, {word:word.word, meaningId:word.meaningId, senses:[]});
+    groups.get(key).senses.push(word);
+  }
+  return [...groups.values()].map(group => ({...group,
+    eligible:group.senses.every(sense => sense.eligible),
+    cooldownEndsAt:group.senses.some(sense => !sense.eligible && !sense.cooldownEndsAt) ? null
+      : group.senses.map(sense => sense.cooldownEndsAt).filter(Boolean).sort((a,b)=>Date.parse(b)-Date.parse(a))[0],
+  }));
 }
 function challengeSelectionSummary(words, selected) {
   const available = words.filter(w => w.eligible);
@@ -49,8 +62,10 @@ async function refreshChallengeCandidates() {
     } else data = await api(`/api/quiz/candidates?user=${encodeURIComponent(user)}`);
     if (state.user !== user || token !== challengePicker.token) return;
     challengePicker.candidates = data.candidates || [];
-    const eligible = new Set(challengePicker.candidates.filter(w => w.eligible).map(w => w.meaningId));
-    challengePicker.selected = new Set([...challengePicker.selected].filter(id => eligible.has(id)));
+    // Refresh must not silently turn a whole-word choice into a partial choice.
+    challengePicker.selected = new Set(groupChallengeWords(challengePicker.candidates)
+      .filter(word => word.eligible && word.senses.every(sense => challengePicker.selected.has(sense.meaningId)))
+      .flatMap(word => word.senses.map(sense => sense.meaningId)));
     challengeStatus('');
   } catch (error) {
     if (state.user === user && token === challengePicker.token) challengeStatus('词库暂时没能加载，请点「刷新词库」再试。');
@@ -64,12 +79,13 @@ function setChallengeFilter(filter) {
 }
 function toggleChallengeWord(id) {
   if (challengePicker.busy || challengePicker.loading) return;
-  const word = challengePicker.candidates.find(w => w.meaningId === id);
+  const word = groupChallengeWords(challengePicker.candidates).find(w => w.senses.some(sense => sense.meaningId === id));
   if (!word?.eligible) return;
   challengePicker.pendingIds = null;
-  if (challengePicker.selected.has(id)) challengePicker.selected.delete(id);
-  else if (challengePicker.selected.size < 10) challengePicker.selected.add(id);
-  else { showToast('已经选好 10 个啦，取消一个就能换词。', 'info'); return; }
+  const ids = word.senses.map(sense => sense.meaningId);
+  if (ids.every(meaningId => challengePicker.selected.has(meaningId))) ids.forEach(meaningId => challengePicker.selected.delete(meaningId));
+  else if (new Set([...challengePicker.selected, ...ids]).size <= 10) ids.forEach(meaningId => challengePicker.selected.add(meaningId));
+  else { showToast(`这个单词需要 ${ids.length} 题，选入后会超过 10 题，请先取消其他单词。`, 'info'); return; }
   renderChallengePicker();
   $('challengeWordList')?.querySelectorAll('[data-meaning-id]').forEach(button => { if (button.dataset.meaningId === id) button.focus(); });
 }
@@ -77,14 +93,15 @@ function renderChallengePicker() {
   const list = $('challengeWordList');
   if (!list) return;
   const summary = challengeSelectionSummary(challengePicker.candidates, challengePicker.selected);
-  const words = filterChallengeWords(challengePicker.candidates, $('challengeSearch')?.value || '', challengePicker.filter);
-  $('challengeSelectionCount').textContent = `已选 ${summary.selected} / ${summary.total}`;
-  $('challengeAutoCount').textContent = summary.total ? `系统补齐 ${summary.automatic} 个` : '暂时没有可挑战的单词';
+  const matching = new Set(filterChallengeWords(challengePicker.candidates, $('challengeSearch')?.value || '', challengePicker.filter).map(word => word.meaningId));
+  const words = groupChallengeWords(challengePicker.candidates).filter(word => word.senses.some(sense => matching.has(sense.meaningId)));
+  $('challengeSelectionCount').textContent = `已选 ${summary.selected} / ${summary.total} 题`;
+  $('challengeAutoCount').textContent = summary.total ? `系统补齐 ${summary.automatic} 题` : '暂时没有可挑战的单词';
   $('challengePoolCount').textContent = `${summary.available} 个词义可挑战`;
   $('challengeShortNote').textContent = summary.available < summary.total
     ? `本次需要 ${summary.total} 个词义，目前 ${summary.available} 个已满 18 小时，请等冷却结束后开考。`
     : summary.total > 0 && summary.total < 10
-      ? `词库只有 ${summary.total} 个待考词义，这次考 ${summary.total} 题，不增减游戏时长。` : '每次最多 10 个词义，没选满也没关系。';
+      ? `词库只有 ${summary.total} 个待考词义，这次考 ${summary.total} 题，不增减游戏时长。` : '每次最多 10 题；选中单词后，它的待考释义会一起考。';
   const start = $('challengeStart');
   start.disabled = challengePicker.busy || challengePicker.loading || !summary.total || summary.available < summary.total;
   start.textContent = challengePicker.busy ? '正在准备题目…' : `就考这些，开始挑战！`;
@@ -95,15 +112,15 @@ function renderChallengePicker() {
   });
   if (challengePicker.loading && !words.length) { list.innerHTML = '<div class="challenge-empty">正在打开你的词库…</div>'; return; }
   list.innerHTML = words.map(word => {
-    const checked = challengePicker.selected.has(word.meaningId);
+    const checked = word.senses.every(sense => challengePicker.selected.has(sense.meaningId));
     const minutes = Math.max(1, Math.ceil((Date.parse(word.cooldownEndsAt) - Date.now()) / 60000));
     const cooling = !word.eligible ? (word.cooldownEndsAt ? `再等 ${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟` : '暂不可选，请刷新词库') : '';
     return `<button type="button" class="challenge-word ${checked ? 'is-selected' : ''}" data-meaning-id="${escapeHtml(word.meaningId)}" aria-pressed="${checked}" ${!word.eligible || challengePicker.busy ? 'disabled' : ''}>
       <span class="challenge-check" aria-hidden="true">${checked ? '✓' : ''}</span>
-      <span class="challenge-word-content"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaning)}</span></span>
-      <span class="challenge-word-meta"><span class="challenge-tag ${escapeHtml(word.status)}">${challengeStatusLabels[word.status] || '未开始'}</span>${cooling ? `<small>${cooling}</small>` : ''}</span>
+      <span class="challenge-word-content"><strong>${escapeHtml(word.word)}</strong>${word.senses.length > 1 ? `<span>${word.senses.length} 个待考释义 · 一起考</span>` : ''}</span>
+      <span class="challenge-word-meta">${[...new Set(word.senses.map(sense => sense.status))].map(status => `<span class="challenge-tag ${escapeHtml(status)}">${challengeStatusLabels[status] || '未开始'}</span>`).join('')}${cooling ? `<small>${cooling}</small>` : ''}</span>
     </button>`;
-  }).join('') || '<div class="challenge-empty">没有找到匹配的词义<br><small>试试英文、中文释义，或换一个筛选。</small></div>';
+  }).join('') || '<div class="challenge-empty">没有找到匹配的单词<br><small>试试英文单词，或换一个筛选。</small></div>';
   list.querySelectorAll('[data-meaning-id]').forEach(button => { button.onclick = () => toggleChallengeWord(button.dataset.meaningId); });
 }
 async function startRandomChallenge() {
