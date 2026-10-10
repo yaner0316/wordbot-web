@@ -1,5 +1,6 @@
 'use strict';
-const challengePicker = { user: null, mode: 'custom', candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, pendingIds: null };
+const challengePicker = { user: null, mode: 'custom', candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, pendingIds: null, missingWords: [] };
+const CHALLENGE_WAIT_MS = 120000;
 const challengeStatusLabels = { pending: '未开始', recognized: '已认识', consolidating: '巩固中' };
 
 function filterChallengeWords(words, search = '', status = 'all') {
@@ -32,22 +33,24 @@ function cancelChallengePreparation() {
   challengePicker.timer = null;
   challengePicker.busy = false;
   challengePicker.pendingIds = null;
+  challengePicker.missingWords = [];
 }
 function challengeStatus(message) {
   const el = $('challengeStatus');
   if (el) el.textContent = message;
 }
-async function requestChallengeApi(path, options, token) {
+async function requestChallengeApi(path, options, token, deadline = Infinity) {
   const user = state.user;
   for (let attempt = 0; attempt < 3; attempt++) {
     if (state.user !== user || token !== challengePicker.token) throw new Error('CHALLENGE_CANCELLED');
-    try { return await api(path, options); }
+    if (Date.now() >= deadline) throw new Error('CHALLENGE_WAIT_EXPIRED');
+    try { return await api(path, {...options, timeoutMs:Math.min(options.timeoutMs, deadline - Date.now())}); }
     catch (error) {
       const transient = error.code === 'REQUEST_TIMEOUT' || [502,503,504].includes(error.status)
         || /failed to fetch|fetch failed|networkerror|load failed/i.test(error.message || '');
       if (!transient || attempt === 2) throw error;
       challengeStatus('连接暂时中断，正在自动重连，你的选择会保留…');
-      await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      await new Promise(resolve => setTimeout(resolve, Math.min(1500 * (attempt + 1), Math.max(0, deadline - Date.now()))));
     }
   }
 }
@@ -98,6 +101,7 @@ function toggleChallengeWord(id) {
   const word = groupChallengeWords(challengePicker.candidates).find(w => w.senses.some(sense => sense.meaningId === id));
   if (!word?.eligible) return;
   challengePicker.pendingIds = null;
+  challengePicker.missingWords = [];
   challengePicker.mode = 'custom';
   const ids = word.senses.map(sense => sense.meaningId);
   if (ids.every(meaningId => challengePicker.selected.has(meaningId))) ids.forEach(meaningId => challengePicker.selected.delete(meaningId));
@@ -109,6 +113,7 @@ function toggleChallengeWord(id) {
 function renderChallengePicker() {
   const list = $('challengeWordList');
   if (!list) return;
+  renderChallengeMissingWords();
   const summary = challengeSelectionSummary(challengePicker.candidates, challengePicker.selected);
   const matching = new Set(filterChallengeWords(challengePicker.candidates, $('challengeSearch')?.value || '', challengePicker.filter).map(word => word.meaningId));
   const words = groupChallengeWords(challengePicker.candidates).filter(word => word.senses.some(sense => matching.has(sense.meaningId)));
@@ -154,6 +159,7 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
   challengePicker.mode = mode;
   challengePicker.busy = true;
   const token = ++challengePicker.token;
+  const deadline = Date.now() + CHALLENGE_WAIT_MS;
   const user = state.user;
   const ids = mode === 'random' ? [] : [...challengePicker.selected];
   if (state.quiz?.submissionUnknown) preserveUnsyncedQuiz(user, state.quiz);
@@ -169,16 +175,29 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
   }
   renderChallengePicker();
   challengeStatus('正在准备你的挑战…');
+  function stopAtDeadline() {
+    if (challengePicker.pendingIds) challengePicker.selected = new Set(challengePicker.pendingIds);
+    challengePicker.busy = false;
+    challengePicker.token++;
+    clearTimeout(challengePicker.timer);
+    challengePicker.timer = null;
+    renderChallengePicker();
+    challengeStatus('这套题暂时未能备齐，已停止自动等待。你的选择还在，可以换词，或稍后点开始重试。');
+  }
   async function attempt() {
     if (token !== challengePicker.token || state.user !== user || state.currentPage !== 'challenge') return;
+    if (Date.now() >= deadline) { stopAtDeadline(); return; }
     try {
       const selection = challengePicker.pendingIds ? {mode:'custom', meaningIds:challengePicker.pendingIds} : {mode, meaningIds:ids};
-      const data = await requestChallengeApi('/api/quiz', {method:'POST', timeoutMs:30000, body:JSON.stringify({user, mode:'real', selection})}, token);
+      const data = await requestChallengeApi('/api/quiz', {method:'POST', timeoutMs:30000, body:JSON.stringify({user, mode:'real', selection})}, token, deadline);
       if (token !== challengePicker.token || state.user !== user || state.currentPage !== 'challenge') return;
       if (data.pending) {
         challengePicker.pendingIds = data.meaningIds;
-        challengeStatus(`已准备 ${data.readyCount} / ${data.requiredCount} 题，准备好后会自动开始。你的选择会保留。`);
-        challengePicker.timer = setTimeout(attempt, 5000);
+        challengePicker.missingWords = data.missingWords || [];
+        renderChallengeMissingWords();
+        if (Date.now() >= deadline) { stopAtDeadline(); return; }
+        challengeStatus(`已准备 ${data.readyCount} / ${data.requiredCount} 题，准备好后会自动开始，最多自动等 2 分钟。也可以现在换词，你的其他选择会保留。`);
+        challengePicker.timer = setTimeout(attempt, Math.min(5000, Math.max(0, deadline - Date.now())));
         return;
       }
       if (data.code === 'CHALLENGE_NO_ELIGIBLE_WORDS' || data.code === 'CHALLENGE_COOLDOWN') {
@@ -197,6 +216,7 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
       else { renderChallengePicker(); challengeStatus('这套题暂时未能打开，请重试。'); }
     } catch (error) {
       if (token !== challengePicker.token || state.user !== user) return;
+      if (Date.now() >= deadline || error.message === 'CHALLENGE_WAIT_EXPIRED') { stopAtDeadline(); return; }
       if (String(error.code || '').startsWith('CHALLENGE_SELECTION_')) {
         cancelChallengePreparation();
         await refreshChallengeCandidates();
@@ -210,5 +230,24 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
   }
   await attempt();
 }
-function stopChallengeWaiting() { cancelChallengePreparation(); renderChallengePicker(); challengeStatus('已停止等待，可以调整选择。'); }
+function renderChallengeMissingWords() {
+  const panel = $('challengeMissingWords');
+  if (!panel) return;
+  const labels = {queued:'正在排队补题',generating:'正在准备题目',retry_wait:'这次还没备好，后台会继续尝试',unavailable:'暂时未能备好'};
+  panel.innerHTML = challengePicker.missingWords.map(word => `<div class="challenge-missing-word"><strong>${escapeHtml(word.word)}</strong><span>${labels[word.state] || labels.unavailable}</span><button type="button" data-replace-meaning="${escapeHtml(word.meaningId)}">换掉这个词</button></div>`).join('');
+  panel.querySelectorAll('[data-replace-meaning]').forEach(button => { button.onclick = () => replaceChallengeWord(button.dataset.replaceMeaning); });
+}
+function stopChallengeWaiting() {
+  if (challengePicker.pendingIds) challengePicker.selected = new Set(challengePicker.pendingIds);
+  challengePicker.mode = 'custom';
+  cancelChallengePreparation(); renderChallengePicker(); challengeStatus('已停止等待，可以调整选择。');
+}
+function replaceChallengeWord(id) {
+  const word = groupChallengeWords(challengePicker.candidates).find(word => word.senses.some(sense => sense.meaningId === id));
+  if (!word) return;
+  stopChallengeWaiting();
+  word.senses.forEach(sense => challengePicker.selected.delete(sense.meaningId));
+  renderChallengePicker();
+  challengeStatus('其他选择已保留，请选择替换的单词，再点开始挑战。');
+}
 if (typeof module !== 'undefined' && module.exports) module.exports = {filterChallengeWords, challengeSelectionSummary};

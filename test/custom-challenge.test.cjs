@@ -142,3 +142,17 @@ test('changing the word choice after a random failure explicitly switches to cus
   h.c.clearActiveReview=()=>{};h.c.enterFormalQuiz=async()=>true;await h.c.beginSelectedChallenge();
   assert.deepEqual(selection,{mode:'custom',meaningIds:['a','b']});
 });
+
+function waitingPicker(){const h=pickerHarness(Array.from({length:11},(_,i)=>({meaningId:'m'+i,word:'word'+i,meaning:'隐藏释义',status:'pending',eligible:true})));let now=1000;const timers=[];h.c.Date={now:()=>now,parse:Date.parse};h.c.setTimeout=(cb)=>{timers.push(cb);return timers.length;};h.c.clearActiveReview=()=>{};h.c.enterFormalQuiz=async()=>true;h.c.api=async()=>({pending:true,meaningIds:Array.from({length:10},(_,i)=>'m'+i),readyCount:9,requiredCount:10,missingWords:[{meaningId:'m9',word:'word9',state:'retry_wait',retryAt:new Date(3601000).toISOString()}]});return {...h,timers,advance:ms=>{now+=ms;},value:code=>vm.runInContext(code,h.c)};}
+test('9 of 10 waiting names the missing word without leaking definitions',async()=>{const h=waitingPicker();await h.c.beginSelectedChallenge();assert.match(h.get('challengeMissingWords').innerHTML,/word9/);assert.doesNotMatch(h.get('challengeMissingWords').innerHTML,/隐藏释义/);assert.match(h.get('challengeMissingWords').innerHTML,/换/);});
+test('persistent preparation stops after two minutes and keeps the selected list for manual recovery',async()=>{const h=waitingPicker();await h.c.beginSelectedChallenge();h.advance(120001);await h.timers.at(-1)();assert.equal(h.value('challengePicker.busy'),false);assert.match(h.get('challengeStatus').textContent,/暂时|未能|稍后/);assert.equal(h.value('challengePicker.pendingIds.length'),10);});
+test('replacing a missing word preserves the other nine and cancels stale polling',async()=>{const h=waitingPicker();await h.c.beginSelectedChallenge();const oldToken=h.value('challengePicker.token');h.c.replaceChallengeWord('m9');assert.deepEqual(h.selected(),Array.from({length:9},(_,i)=>'m'+i));assert.equal(h.value('challengePicker.busy'),false);assert.ok(h.value('challengePicker.token')>oldToken);h.c.toggleChallengeWord('m10');let selection;h.c.api=async(p,o)=>{selection=JSON.parse(o.body).selection;return {questions:[]};};await h.c.beginSelectedChallenge();assert.ok(selection.meaningIds.includes('m10'));assert.ok(!selection.meaningIds.includes('m9'));assert.equal(selection.meaningIds.length,10);});
+
+test('swapping a multi-meaning word removes all its senses and a late response cannot reopen the old quiz',async()=>{
+ const h=waitingPicker();h.c.words=[...bankSenses,...Array.from({length:8},(_,i)=>({meaningId:'m'+i,word:'word'+i,status:'pending',eligible:true}))];
+ vm.runInContext("challengePicker.candidates=words;challengePicker.pendingIds=words.map(w=>w.meaningId)",h.c);
+ let resolve;h.c.api=()=>new Promise(r=>{resolve=r;});let entered=false;h.c.enterFormalQuiz=async()=>{entered=true;};
+ const preparing=h.c.beginSelectedChallenge();h.c.replaceChallengeWord('a');
+ assert.deepEqual(h.selected(),Array.from({length:8},(_,i)=>'m'+i));
+ resolve({questions:[]});await preparing;assert.equal(entered,false);
+});
