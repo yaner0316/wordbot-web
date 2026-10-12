@@ -36,6 +36,10 @@ const parentWordLibraryState = {
   loading: false,
   loadedPages: new Set(),
   scrollAttached: false,
+  selectedIds: new Set(),
+  deleting: false,
+  paginationDirty: false,
+  demoDeletedIds: new Set(),
 };
 function formatLearningLevel(level) {
   return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
@@ -2973,6 +2977,8 @@ function parentWordStatusOptions(currentStatus) {
 }
 
 function resetParentWordLibraryState() {
+  parentWordLibraryState.selectedIds = new Set();
+  parentWordLibraryState.paginationDirty = false;
   parentWordLibraryState.page = 1;
   parentWordLibraryState.total = 0;
   parentWordLibraryState.totalPages = 1;
@@ -2989,7 +2995,7 @@ function attachParentWordLibraryScroll() {
 
 function handleParentWordLibraryScroll() {
   const libraryEl = $('parentWordLibrary');
-  if (!libraryEl || parentWordLibraryState.loading || !parentWordLibraryState.hasMore) return;
+  if (!libraryEl || parentWordLibraryState.loading || parentWordLibraryState.deleting || parentWordLibraryState.paginationDirty || !parentWordLibraryState.hasMore) return;
   const viewportBottom = window.scrollY + window.innerHeight;
   const documentBottom = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
   if (viewportBottom < documentBottom - 320) return;
@@ -3001,7 +3007,7 @@ async function loadParentWordLibrary(page = 1, options = {}) {
   if (!libraryEl) return;
   const append = Boolean(options.append);
   const reset = options.reset !== undefined ? Boolean(options.reset) : !append && Number(page) <= 1;
-  if (parentWordLibraryState.loading) return;
+  if (parentWordLibraryState.loading || parentWordLibraryState.deleting) return;
   if (reset) resetParentWordLibraryState();
   if (!reset && (!parentWordLibraryState.hasMore || parentWordLibraryState.loadedPages.has(Number(page)))) return;
   if (!append) libraryEl.textContent = '正在加载词库...';
@@ -3020,7 +3026,8 @@ async function loadParentWordLibrary(page = 1, options = {}) {
             context: item.context,
             status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
           }));
-          const words = statusFilter ? allWords.filter(item => item.status === statusFilter) : allWords;
+          const visibleWords = allWords.filter(item => !parentWordLibraryState.demoDeletedIds.has(item.recordId));
+          const words = statusFilter ? visibleWords.filter(item => item.status === statusFilter) : visibleWords;
           const total = words.length;
           const totalPages = Math.max(1, Math.ceil(total / pageSize));
           const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
@@ -3040,6 +3047,7 @@ async function loadParentWordLibrary(page = 1, options = {}) {
     parentWordLibraryState.hasMore = loadedPage < parentWordLibraryState.totalPages && incomingWords.length > 0;
     parentWordLibraryState.loadedPages.add(loadedPage);
     parentWordLibraryState.words = mergedWords;
+    parentWordLibraryState.loading = false;
     renderParentWordLibrary({ ...data, page: loadedPage, words: mergedWords, total: parentWordLibraryState.total, totalPages: parentWordLibraryState.totalPages });
   } catch (error) {
     if (!append) libraryEl.innerHTML = `<div class="parent-result-empty">加载词库失败：${escapeHtml(normalizeApiError(error).message)}</div>`;
@@ -3047,6 +3055,100 @@ async function loadParentWordLibrary(page = 1, options = {}) {
     if (editorEl && !append) editorEl.innerHTML = '';
   } finally {
     parentWordLibraryState.loading = false;
+  }
+}
+function formatParentWordEnteredAt(item) {
+  const raw = item?.entered_at || item?.recordTime || item?.Record_Time;
+  if (!raw) return '时间未知';
+  const date = new Date(raw);
+  if (!Number.isFinite(date.getTime())) return '时间未知';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date);
+  const value = type => parts.find(part => part.type === type)?.value || '';
+  return '录入于 ' + value('year') + '-' + value('month') + '-' + value('day') + ' ' + value('hour') + ':' + value('minute');
+}
+function updateParentWordSelectionControls() {
+  const selected = parentWordLibraryState.selectedIds || new Set();
+  const busy = parentWordLibraryState.deleting;
+  const count = $('parentWordSelectionCount');
+  if (count) count.textContent = '已选 ' + selected.size + ' 个词义';
+  const remove = $('parentWordBulkDelete');
+  if (remove) remove.disabled = busy || selected.size === 0;
+  const all = $('parentWordSelectAll');
+  const ids = parentWordLibraryState.words.map(parentWordRecordId).filter(Boolean);
+  if (all) {
+    all.checked = ids.length > 0 && ids.every(id => selected.has(id));
+    all.indeterminate = selected.size > 0 && !all.checked;
+    all.disabled = busy || ids.length === 0;
+  }
+  const library = $('parentWordLibrary');
+  library?.querySelectorAll?.('[data-parent-word-select]').forEach(input => {
+    input.checked = selected.has(input.dataset.parentWordSelect);
+    input.disabled = busy;
+  });
+  library?.querySelectorAll?.('button, select').forEach(control => {
+    control.disabled = busy || (control.id === 'parentWordBulkDelete' && selected.size === 0);
+  });
+  const filter = $('parentWordStatusFilter');
+  if (filter) filter.disabled = busy;
+}
+function toggleParentWordSelection(recordId, checked) {
+  if (parentWordLibraryState.deleting) return;
+  if (!parentWordLibraryState.words.some(item => parentWordRecordId(item) === recordId)) return;
+  if (!parentWordLibraryState.selectedIds) parentWordLibraryState.selectedIds = new Set();
+  if (checked) parentWordLibraryState.selectedIds.add(recordId);
+  else parentWordLibraryState.selectedIds.delete(recordId);
+  updateParentWordSelectionControls();
+}
+function selectAllLoadedParentWords(checked) {
+  if (parentWordLibraryState.deleting) return;
+  parentWordLibraryState.selectedIds = checked
+    ? new Set(parentWordLibraryState.words.map(parentWordRecordId).filter(Boolean)) : new Set();
+  updateParentWordSelectionControls();
+}
+async function deleteSelectedParentWords() {
+  if (parentWordLibraryState.deleting || parentWordLibraryState.loading) return;
+  const ids = [...(parentWordLibraryState.selectedIds || [])];
+  if (!ids.length) return;
+  if (!window.confirm('确定删除所选 ' + ids.length + ' 个词义吗？删除后不再出新题，历史成绩和答题记录会保留。')) return;
+  const owner = state.user;
+  parentWordLibraryState.deleting = true;
+  updateParentWordSelectionControls();
+  showLoading('正在删除所选词义...');
+  let completed = 0;
+  try {
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const recordIds = ids.slice(offset, offset + 100);
+      if (state.user !== owner) throw new Error('账号已切换，请刷新词库');
+      if (!DEMO_MODE) {
+        const response = await api('/api/admin/words/delete', {
+          method: 'POST', body: JSON.stringify({userId: owner, recordIds}),
+        });
+        if (response?.success !== true) throw new Error('删除未确认，请重试');
+        if (state.user !== owner) throw new Error('账号已切换，请刷新词库');
+      } else {
+        recordIds.forEach(id => parentWordLibraryState.demoDeletedIds.add(id));
+      }
+      recordIds.forEach(id => parentWordLibraryState.selectedIds.delete(id));
+      parentWordLibraryState.words = parentWordLibraryState.words.filter(item => !recordIds.includes(parentWordRecordId(item)));
+      parentWordLibraryState.total = Math.max(0, parentWordLibraryState.total - recordIds.length);
+      parentWordLibraryState.paginationDirty = true;
+      completed += recordIds.length;
+    }
+    parentWordLibraryState.deleting = false;
+    // Deletion changes server page offsets; restart instead of skipping records.
+    await loadParentWordLibrary(1, {reset: true});
+    showToast('已删除 ' + completed + ' 个词义，历史记录已保留', 'success');
+    loadStats(owner);
+  } catch (error) {
+    if (completed) renderParentWordLibrary({...parentWordLibraryState});
+    showToast((completed ? '已删除 ' + completed + ' 个，其余未完成：' : '删除失败：') + normalizeApiError(error).message, 'error');
+  } finally {
+    parentWordLibraryState.deleting = false;
+    updateParentWordSelectionControls();
+    hideLoading();
   }
 }
 function renderParentWordLibrary(data) {
@@ -3074,9 +3176,10 @@ function renderParentWordLibrary(data) {
     const actionArg = escapeHtml(JSON.stringify(recordId));
     return `
       <div class="parent-word-list-item" data-record-id="${escapeHtml(recordId)}">
+        <input class="parent-word-checkbox" type="checkbox" data-parent-word-select="${escapeHtml(recordId)}" aria-label="选择 ${escapeHtml(word)}：${escapeHtml(item.cnMeaning || item.meaning || '')}" onchange="toggleParentWordSelection(${actionArg}, this.checked)" ${parentWordLibraryState.selectedIds?.has(recordId) ? 'checked' : ''}>
         <button class="parent-word-list-main" type="button" onclick="openParentWordEditor(${actionArg}, ${page})">
           <div class="parent-word-main">
-            <strong>${escapeHtml(word)}</strong>
+            <div class="parent-word-title"><strong>${escapeHtml(word)}</strong><span class="parent-word-entered-at">${escapeHtml(formatParentWordEnteredAt(item))}</span></div>
             <small>${escapeHtml(item.cnMeaning || item.CN_Meaning || item.meaning || item.Meaning || '暂无释义')}</small>
           </div>
         </button>
@@ -3096,10 +3199,17 @@ function renderParentWordLibrary(data) {
         <strong>共 ${escapeHtml(total)} 个单词</strong>
         <span>${parentWordLibraryState.loading ? '正在加载...' : (parentWordLibraryState.hasMore ? '向下滚动加载更多' : '已加载全部')}</span>
       </div>
+      <div class="parent-word-bulk-toolbar">
+        <label><input id="parentWordSelectAll" type="checkbox" onchange="selectAllLoadedParentWords(this.checked)"> 全选已加载</label>
+        <span id="parentWordSelectionCount" aria-live="polite">已选 0 个词义</span>
+        <button id="parentWordBulkDelete" class="btn btn-danger btn-small" type="button" onclick="deleteSelectedParentWords()" disabled>删除所选</button>
+        <button class="btn btn-secondary btn-small" type="button" onclick="loadParentWordLibrary(1, {reset:true})">刷新列表</button>
+      </div>
       ${rows}
       <div class="parent-word-load-status" aria-live="polite">${parentWordLibraryState.loading ? '正在加载更多单词...' : (parentWordLibraryState.hasMore ? '继续向下拖动以加载更多' : '没有更多单词')}</div>
     </div>
   `;
+  updateParentWordSelectionControls();
 }
 
 
@@ -3238,14 +3348,20 @@ async function deleteParentWord(recordId) {
     showToast('缺少单词释义记录编号，无法删除', 'error');
     return;
   }
-  if (!window.confirm('确定删除这个单词释义吗？其他同拼写释义不会受影响。')) return;
+  if (parentWordLibraryState.deleting || parentWordLibraryState.loading) return;
+  if (!window.confirm('确定删除这个单词释义吗？其他同拼写释义不会受影响，历史成绩和答题记录会保留。')) return;
+  parentWordLibraryState.deleting = true;
+  updateParentWordSelectionControls();
   showLoading('正在删除单词释义...');
   try {
     if (!DEMO_MODE) {
       await api(`/api/word?recordId=${encodeURIComponent(stableRecordId)}&userId=${encodeURIComponent(state.user || '')}`, {
         method: 'DELETE',
       });
+    } else {
+      parentWordLibraryState.demoDeletedIds.add(stableRecordId);
     }
+    parentWordLibraryState.selectedIds?.delete(stableRecordId);
     parentWordLibraryState.words = parentWordLibraryState.words.filter(item => parentWordRecordId(item) !== stableRecordId);
     parentWordLibraryState.total = Math.max(0, parentWordLibraryState.total - 1);
     renderParentWordLibrary({
@@ -3255,11 +3371,15 @@ async function deleteParentWord(recordId) {
       total: parentWordLibraryState.total,
       totalPages: parentWordLibraryState.totalPages,
     });
-    showToast('单词释义已删除', 'success');
+    parentWordLibraryState.deleting = false;
+    await loadParentWordLibrary(1, {reset: true});
+    showToast('单词释义已删除，历史记录已保留', 'success');
     loadStats(state.user);
   } catch (error) {
     showToast('删除失败：' + normalizeApiError(error).message, 'error');
   } finally {
+    parentWordLibraryState.deleting = false;
+    updateParentWordSelectionControls();
     hideLoading();
   }
 }
