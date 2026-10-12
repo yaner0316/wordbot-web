@@ -2283,9 +2283,9 @@ function openStudentWordEntry() {
     </div>
     <label class="parent-field">
       <span>批量单词</span>
-      <textarea id="studentWordsInput" rows="6" placeholder="可以用换行、逗号或分号分隔，例如&#10;resilient, genuine&#10;promotion | 促销活动"></textarea>
+      <textarea id="studentWordsInput" rows="6" placeholder="一行一个单词或短语，也可用逗号、分号分隔；空格不会拆词，例如&#10;up to&#10;carry the banner&#10;promotion | 促销活动"></textarea>
     </label>
-    <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库；释义、例句和检查由后端生成。</div>
+    <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库。一行一个单词或短语，也可用逗号、分号分隔；短语内部空格会保留。带中文释义时请单独一行写成 word | 中文释义。</div>
     <div id="studentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
     <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
@@ -2569,9 +2569,9 @@ function openParentTool(tool) {
       </div>
       <label class="parent-field">
         <span>批量单词</span>
-        <textarea id="parentWordsInput" rows="6" placeholder="一行一个英文单词；新义项可写 word | 中文释义，例如&#10;resilient&#10;promotion | 促销活动"></textarea>
+        <textarea id="parentWordsInput" rows="6" placeholder="一行一个单词或短语，也可用逗号、分号分隔；空格不会拆词，例如&#10;up to&#10;carry the banner&#10;promotion | 促销活动"></textarea>
       </label>
-      <div class="parent-help">当前会把单词加入 ${escapeHtml(state.user)} 的词库；英文释义、中文释义、例句和干扰项由后端生成。</div>
+      <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库。一行一个单词或短语，也可用逗号、分号分隔；短语内部空格会保留。带中文释义时请单独一行写成 word | 中文释义。</div>
       <div id="parentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
       <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
@@ -2704,12 +2704,12 @@ function parseParentWordEntries(value) {
   const raw = String(value || '');
   return Array.from(new Map(raw
     .split(/\n+/)
-    .flatMap(line => line.includes('|') ? [line] : line.split(/[,，;；\s]+/))
+    .flatMap(line => line.includes('|') ? [line] : line.split(/[,，;；]+/))
     .map(item => item.trim())
     .filter(Boolean)
     .map(item => {
       const [wordPart, ...meaningParts] = item.split('|');
-      const word = String(wordPart || '').trim().toLowerCase();
+      const word = String(wordPart || '').trim().replace(/\s+/g, ' ').toLowerCase();
       const cnMeaning = meaningParts.join('|').trim();
       return { word, cnMeaning };
     })

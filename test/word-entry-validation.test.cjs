@@ -71,6 +71,35 @@ test('valid English with a Chinese meaning still reaches the normal save flow', 
   }
 });
 
+test('entry parser preserves phrases and only splits explicit list separators', () => {
+  const h = loadEntry('');
+  const parse = value => JSON.parse(JSON.stringify(h.context.parseParentWordEntries(value)));
+  assert.deepEqual(parse('up to\ncarrying the banner'), [
+    { word: 'up to', cnMeaning: '' }, { word: 'carrying the banner', cnMeaning: '' },
+  ]);
+  assert.deepEqual(parse('  Up   to, look\tafter；carry on;ice-cream，don\'t\napple'), [
+    { word: 'up to', cnMeaning: '' }, { word: 'look after', cnMeaning: '' },
+    { word: 'carry on', cnMeaning: '' }, { word: 'ice-cream', cnMeaning: '' },
+    { word: "don't", cnMeaning: '' }, { word: 'apple', cnMeaning: '' },
+  ]);
+  assert.deepEqual(parse('up to | 多达，直到\nup   to | 多达，直到'), [{ word: 'up to', cnMeaning: '多达，直到' }]);
+  assert.deepEqual(parse('the\nto').map(entry => entry.word), ['the', 'to']);
+});
+
+for (const parent of [false, true]) {
+  test(`${parent ? 'parent' : 'child'} submits two intact phrases and looks up a single intact phrase`, async () => {
+    const h = loadEntry('up to\ncarrying the banner', parent);
+    await h.context.submitWordEntry();
+    const request = h.calls.find(call => call[0] === (parent ? '/api/admin/addWords' : '/api/words'));
+    assert.ok(request);
+    assert.deepEqual(JSON.parse(request[1].body).words.map(entry => entry.word), ['up to', 'carrying the banner']);
+    const single = loadEntry('up to', parent);
+    await single.context.submitWordEntry();
+    assert.ok(single.calls.some(call => call[0] === '/api/word-senses?word=up%20to'));
+    assert.ok(!single.calls.some(call => call[1]?.method === 'POST'));
+  });
+}
+
 test('suffix spelling is not classified as malformed English by the new UI guard', () => {
   const h = loadEntry('-ish');
   assert.equal(typeof h.context.validateWordEntryFormat, 'function');
