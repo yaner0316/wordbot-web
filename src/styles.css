@@ -2836,3 +2836,18 @@ button.hero-chip:active { transform: scale(.98); }
   #pageHome .home-v2-quick-text small { font-size: 10.5px; }
   #pageHome .home-primary-cta { font-size: 19px; }
 }
+
+/* Parent library: checkbox and entry time remain readable on small screens. */
+.parent-word-list-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+.parent-word-checkbox { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; accent-color: #547a65; }
+.parent-word-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.parent-word-entered-at { color: #66756d; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.parent-word-bulk-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+.parent-word-bulk-toolbar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.parent-word-bulk-toolbar input { width: 18px; height: 18px; }
+.parent-word-bulk-toolbar button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 520px) {
+  .parent-word-list-item { grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+  .parent-word-list-main { min-width: 0; flex: 1; }
+  .parent-word-list-actions { grid-column: 2; width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+}
