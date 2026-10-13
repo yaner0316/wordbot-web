@@ -2213,16 +2213,22 @@ function renderStudentTools() {
   section.className = 'home-v2-quick-card student-tools';
   const hasDraft = hasActiveQuizDraft(state.user);
   const bankedMinutes = getBankedGameMinutes(state.user);
-  section.innerHTML = [
+  const quickToolsHtml = [
     '<div class="home-v2-quick-grid">',
     '<button class="home-v2-quick-item home-v2-quick-continue" type="button" onclick="handleContinueQuizEntry()" aria-disabled="' + (!hasDraft) + '"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m8 5 10 7-10 7z"/></svg></span><span class="home-v2-quick-text"><strong>继续上次练习</strong><small>' + (hasDraft ? '回到未完成练习' : '暂无未完成练习') + '</small></span></button>',
     '<button class="home-v2-quick-item home-v2-quick-bank" type="button" onclick="startBankedGameNow()"><span class="home-v2-quick-icon green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8h8v8H8z"/><path d="M9 4h6"/><path d="M9 20h6"/></svg></span><span class="home-v2-quick-text"><strong>已存游戏时间</strong><small>' + escapeHtml(bankedMinutes) + ' 分钟</small></span></button>',
     '<button class="home-v2-quick-item home-v2-quick-add" type="button" onclick="openStudentWordEntry()"><span class="home-v2-quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span><span class="home-v2-quick-text"><strong>录入单词</strong><small>添加新词</small></span></button>',
     '<button class="home-v2-quick-item home-v2-quick-history" type="button" onclick="navigateTo(\'history\')"><span class="home-v2-quick-icon blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5v4.8l3.1 1.7"/></svg></span><span class="home-v2-quick-text"><strong>考核历史</strong><small>查看记录</small></span></button>',
-    '</div>',
-    renderUnsyncedQuizBackups(),
-    '<div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>'
+    '</div>'
   ].join('');
+  if (section.dataset.studentToolsUser === state.user && section.querySelector('#studentToolPanel')) {
+    section.querySelector('.home-v2-quick-grid').outerHTML = quickToolsHtml;
+    section.querySelector('#studentBackupPanel').innerHTML = renderUnsyncedQuizBackups();
+  } else {
+    section.innerHTML = quickToolsHtml + '<div id="studentBackupPanel">' + renderUnsyncedQuizBackups()
+      + '</div><div class="parent-tool-panel student-tool-panel" id="studentToolPanel" style="display:none;"></div>';
+    section.dataset.studentToolsUser = state.user;
+  }
 }
 function readUnsyncedQuizBackups() {
   if (!state.user) return [];
@@ -2800,6 +2806,8 @@ async function submitWordEntry() {
 
 async function lookupSelectedSenses() {
   const input = $('parentWordsInput') || $('studentWordsInput');
+  const lookupUser = state.user;
+  const host = getWordEntryDuplicatePanel();
   const entries = parseParentWordEntries(input?.value);
   if (!validateWordEntryFormat(entries)) return;
   if (entries.length !== 1 || entries[0].meaning || entries[0].cnMeaning) {
@@ -2810,13 +2818,14 @@ async function lookupSelectedSenses() {
   try {
     const word = entries[0].word;
     const data = await api(`/api/word-senses?word=${encodeURIComponent(word)}`);
+    if (state.user !== lookupUser || getWordEntryDuplicatePanel() !== host) return;
     const senses = (Array.isArray(data?.senses) ? data.senses : []).filter(sense => /^[\u3400-\u9fff，、；（）·]{1,20}$/.test(String(sense?.cnMeaning || '').trim()));
     if (!senses.length) throw new Error('没有找到可选择的释义');
-    const host = getWordEntryDuplicatePanel();
     if (!host) return;
     host.innerHTML = `<div class="duplicate-word-confirmation sense-picker" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>选择要学习的意思；相近释义可展开说明确认区别。</p><div class="sense-options">${senses.map(renderDictionarySenseOption).join('')}</div><div class="sense-picker-actions"><button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div></div>`;
     host._dictionarySenses = senses;
   } catch (error) {
+    if (state.user !== lookupUser || getWordEntryDuplicatePanel() !== host) return;
     showToast('暂时未查到中文释义，请稍后重试，或输入“单词 | 中文释义”录入。', 'error');
   } finally {
     hideLoading();

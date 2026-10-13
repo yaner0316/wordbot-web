@@ -16,7 +16,7 @@ test('home exposes a bounded read-only backup comparison without changing cloud 
   map.set('wordbot_unsynced_quiz_kid_bad', '{broken');
   const before = [...map];
   const remote = { testId: 'real-6', progress: { revision: 2, answers: [2, null], currentQuestion: 0 } };
-  const remoteBefore = JSON.stringify(remote), host = {};
+  const remoteBefore = JSON.stringify(remote), host = { dataset: {} };
   const c = { state: { user: 'kid', mode: 'real' }, remoteQuizSession: remote,
     localStorage: { get length() { return map.size; }, key: i => [...map.keys()][i], getItem: k => map.get(k), setItem() { throw Error('must be read only'); }, removeItem() { throw Error('must keep backups'); } },
     $: () => host, getBankedGameMinutes: () => 0, hasActiveQuizDraft: () => true,

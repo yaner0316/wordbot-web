@@ -35,7 +35,7 @@ for (const timing of ['before submit', 'during submit', 'after submit']) {
 }
 test('sense selection renders only Chinese labels and rejects English-only results', async () => {
   const host = {}, messages = [];
-  const c = { $: () => ({ value: 'bank' }), parseParentWordEntries: () => [{ word: 'bank' }], showLoading() {}, hideLoading() {},
+  const c = { state: { user: 'child' }, $: () => ({ value: 'bank' }), parseParentWordEntries: () => [{ word: 'bank' }], showLoading() {}, hideLoading() {},
     api: async () => ({ senses: [{ cnMeaning: '银行', definition: 'a financial institution', partOfSpeech: 'noun' }, { definition: 'English only' }] }),
     getWordEntryDuplicatePanel: () => host, escapeHtml: x => x, showToast: x => messages.push(x) };
   vm.createContext(c); vm.runInContext(fn('validateWordEntryFormat') + '\n' + fn('renderDictionarySenseOption') + '\n' + fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
