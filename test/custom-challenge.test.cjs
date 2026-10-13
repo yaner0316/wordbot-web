@@ -4,6 +4,22 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const file = path.join(__dirname, '../src/custom-challenge.js');
+test('custom entry asks for practice candidates and keeps the server practice identity',async()=>{
+ const h=pickerHarness(); const requests=[];
+ h.c.api=async(url,options)=>{requests.push({url,body:options?.body&&JSON.parse(options.body)});return options?.body?{testId:'practice-new',mode:'practice',questions:[]}:{candidates:bankSenses};};
+ h.c.clearActiveReview=()=>{};h.c.enterFormalQuiz=async()=>true;
+ await h.c.refreshChallengeCandidates();
+ assert.match(requests[0].url,/mode=practice/);
+ h.c.toggleChallengeWord('a');await h.c.beginSelectedChallenge();
+ assert.equal(h.c.state.mode,'practice');
+ assert.match(h.get('challengeShortNote').textContent,/不计掌握/);
+});
+test('automatic retry of random preparation never supplies a child-chosen list',async()=>{
+ const sent=[];let next;
+ const h=loadChallengeFlow({setTimeout:callback=>{next=callback;return 1;},api:async(url,options)=>{sent.push(JSON.parse(options.body).selection);return sent.length===1?{pending:true,meaningIds:['server-choice'],readyCount:0,requiredCount:1}:{mode:'real',questions:[]};}});
+ await h.c.beginSelectedChallenge('random');await next();
+ assert.deepEqual(sent,[{mode:'random',meaningIds:[]},{mode:'random',meaningIds:[]}]);
+});
 test('selection searches English only so hidden meanings cannot be inferred through search', () => {
   assert.ok(fs.existsSync(file), 'self-selection module exists');
   const { filterChallengeWords, challengeSelectionSummary } = require(file);
@@ -46,6 +62,13 @@ function pickerHarness(words = bankSenses) {
   c.words=words;vm.runInContext('challengePicker.candidates=words',c);
   return {c,get,selected:()=>Array.from(vm.runInContext('[...challengePicker.selected]',c))};
 }
+
+test('switching a random wait to practice removes formal cooldown from the picker', () => {
+ const {c,get}=pickerHarness([{meaningId:'a',word:'bank',eligible:true},{meaningId:'b',word:'river',eligible:false,cooldownEndsAt:'2099-01-01T00:00:00Z'}]);
+ vm.runInContext("challengePicker.mode='random';toggleChallengeWord('a')",c);
+ assert.equal(get('challengeStart').disabled,false);
+ assert.equal(vm.runInContext('challengePicker.candidates[1].eligible',c),true);
+});
 test('picker hides meanings and merges the word even under a single-status filter', () => {
   const h=pickerHarness();h.c.setChallengeFilter('pending');
   const html=h.get('challengeWordList').innerHTML;

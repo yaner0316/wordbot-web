@@ -876,7 +876,7 @@ function applyEnvironmentControls() {
   const historyWrap = $('historyModeSelectorWrap');
   const gamePreviewBtn = $('gamePreviewBtn');
   if (modeWrap) modeWrap.style.display = URL_PARAMS.get('dev') === '1' ? 'block' : 'none';
-  if (historyWrap) historyWrap.style.display = DEV_MODE ? 'flex' : 'none';
+  if (historyWrap) historyWrap.style.display = 'flex';
   if (gamePreviewBtn) gamePreviewBtn.style.display = 'none';
   if (!DEV_MODE && state.mode === 'test') state.mode = 'real';
   if (!DEV_MODE && state.historyMode === 'test') state.historyMode = 'real';
@@ -1768,7 +1768,7 @@ async function ensureLevelCacheReadyForQuiz(user, level) {
 }
 
 function activeQuizKey(user, mode = state.mode || 'real') {
-  return `wordbot:active-quiz:${user}${mode === 'test' ? ':test' : ''}`;
+  return `wordbot:active-quiz:${user}${mode === 'test' ? ':test' : mode === 'practice' ? ':practice' : ''}`;
 }
 
 function hasActiveQuizDraft(user) {
@@ -1806,6 +1806,7 @@ function clearAllQuizDrafts() {
   if (state.user) {
     localStorage.removeItem(activeQuizKey(state.user, 'real'));
     localStorage.removeItem(activeQuizKey(state.user, 'test'));
+    localStorage.removeItem(activeQuizKey(state.user, 'practice'));
   }
   renderStudentTools();
 }
@@ -3657,6 +3658,8 @@ function meaningAnswerValue(index) {
   return String(state.answers[index] ?? '');
 }
 function renderQuestion(idx) {
+  const modeTitle = $('quizModeTitle');
+  if (modeTitle) modeTitle.textContent = state.quiz?.mode === 'practice' ? '自选练习 · 不计掌握或游戏时间' : '单词考核';
   const q = state.quiz.questions[idx];
   const total = state.quiz.questions.length;
   $('quizProgressFill').style.width = ((idx+1)/total*100) + '%';
@@ -4187,6 +4190,7 @@ function renderResults(data) {
       <div style="font-size:16px;color:var(--text-secondary);margin-top:4px;">正确率 ${escapeHtml(accuracy)}</div>
       <div style="font-size:18px;font-weight:600;margin-top:12px;color:${pass ? 'var(--orange)' : 'var(--text-secondary)'};">${encourage}</div>
       ${data.mode === 'test' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">测试模式：不计入正式统计</div>' : ''}
+      ${data.mode === 'practice' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">自选练习：不计掌握、不增减游戏时间，不影响正式冷却。</div>' : ''}
       ${masteryFeedbackHtml}
       ${rewardHtml}
       ${animalGardenHtml}
@@ -4387,7 +4391,7 @@ function renderHistoryList(list) {
     const message = document.createElement('p');
     message.textContent = state.historyMode === 'test'
       ? '还没有测试模式记录'
-      : '还没有正式考核记录';
+      : state.historyMode === 'practice' ? '还没有自选练习记录' : '还没有正式考核记录';
     empty.appendChild(message);
     content.appendChild(empty);
     return;
@@ -4440,7 +4444,7 @@ function renderHistoryList(list) {
 
     const detailHint = document.createElement('div');
     detailHint.className = 'history-detail-hint';
-    detailHint.textContent = '查看题目 · ' + (item.questions?.length || item.total || 0) + ' 题';
+    detailHint.textContent = (item.mode === 'practice' ? '自选练习 · 不计掌握或游戏时间 · ' : '查看题目 · ') + (item.questions?.length || item.total || 0) + ' 题';
     card.append(top, bottom, detailHint);
     const review = document.createElement('button');
     review.type = 'button';

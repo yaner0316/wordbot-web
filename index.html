@@ -189,8 +189,8 @@
       </button>
       <button class="challenge-entry challenge-entry-custom" type="button" onclick="openCustomChallenge()">
         <span class="challenge-entry-top"><span class="challenge-eyebrow">由你出招 · YOUR PICK</span><span class="challenge-entry-symbol" aria-hidden="true">◎</span></span>
-        <strong>这些单词，放马过来！</strong>
-        <span class="challenge-entry-bottom"><span>自己挑几个，剩下的交给系统</span><span class="challenge-arrow" aria-hidden="true">↗</span></span>
+        <strong>自选单词，练一练</strong>
+        <span class="challenge-entry-bottom"><span>不计掌握，不增减游戏时间</span><span class="challenge-arrow" aria-hidden="true">↗</span></span>
       </button>
     </div>
 
@@ -229,7 +229,7 @@
       <div class="quiz-header-row">
         <div class="header-title">
           <div class="logo">📝</div>
-          单词考核
+          <span id="quizModeTitle">单词考核</span>
         </div>
         <button class="quiz-home-btn" type="button" onclick="navigateTo('home')" aria-label="返回首页">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
@@ -286,6 +286,7 @@
     </div>
     <div id="historyModeSelectorWrap" style="display:flex;gap:8px;margin:0 0 16px;">
       <button class="level-btn level-active history-mode-btn" data-mode="real" onclick="selectHistoryMode(this,'real')" style="flex:1;">正式记录</button>
+      <button class="level-btn history-mode-btn" data-mode="practice" onclick="selectHistoryMode(this,'practice')" style="flex:1;">练习记录</button>
       <button class="level-btn history-mode-btn" data-mode="test" onclick="selectHistoryMode(this,'test')" style="flex:1;">测试记录</button>
     </div>
     <div id="historyContent"><!-- Filled by JS --></div>
