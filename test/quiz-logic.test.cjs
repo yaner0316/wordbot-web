@@ -25,6 +25,19 @@ const {
 } = context.WordBotQuizLogic;
 
 const escapeHtml = value => String(value);
+test('teaching reasons follow word identity after option letters change and legacy stays transparent',()=>{
+    const q={type:1,context:'We borrowed books from the _____ yesterday.',options:['A. cafeteria','B. library','C. gymnasium','D. auditorium'],answer:'B',teachingAnalysis:{schemaVersion:1,clue:'borrowed books',clueReason:'借阅图书是关键线索。',correctWord:'library',correctReason:'图书馆提供图书借阅。',options:[
+      {word:'library',fits:true,meaning:'图书馆',reason:'图书馆可以借阅图书。'},
+      {word:'gymnasium',fits:false,meaning:'体育馆',reason:'体育馆提供运动场地，未提供借书线索。'},
+      {word:'auditorium',fits:false,meaning:'礼堂',reason:'礼堂主要用于演出和集会，不能满足借书用途。'},
+      {word:'cafeteria',fits:false,meaning:'食堂',reason:'食堂提供就餐服务，不能满足借书用途。'},
+    ]}};
+    const html=buildQuestionExplanation(q,{your:'D',correct:false},escapeHtml);
+    assert.match(html,/句中线索/);
+    assert.match(html,/A\. cafeteria[^]*食堂提供就餐服务/);
+    assert.match(html,/D\. auditorium[^]*礼堂主要用于/);
+    assert.match(buildQuestionExplanation({...q,teachingAnalysis:null},{your:'D',correct:false},escapeHtml),/当时未保存完整教学解析/);
+});
 
 function makeFormalQuiz(overrides = {}) {
     const questions = Array.from({ length: 10 }, (_, index) => ({

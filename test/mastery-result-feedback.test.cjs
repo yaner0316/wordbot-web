@@ -23,6 +23,7 @@ function render(data) {
     buildContextTranslationHtml: () => '',
     formatOptionDisplayText: value => value,
     buildMeaningReviewExplanation: () => '',
+    buildTeachingAnalysisHtml: require('../src/quiz-logic.js').buildTeachingAnalysisHtml,
     updateResultActions() {},
     launchConfetti() {},
     $: id => id === 'resultContent' ? result : null,
@@ -32,6 +33,16 @@ function render(data) {
   c.renderResults(data);
   return result.innerHTML;
 }
+test('actual result rendering includes stored teaching analysis and transparent legacy missing state',()=>{
+ const data={correct:0,total:1,accuracy:'0%',masteredWords:[],results:[{type:1,word:'library',context:'We borrowed books from the _____ yesterday.',options:['A. library','B. cafeteria','C. gymnasium','D. auditorium'],answer:'A',your:'D',correct:false,teachingAnalysis:{schemaVersion:1,clue:'borrowed books',clueReason:'借阅图书是关键线索。',correctWord:'library',correctReason:'图书馆提供图书借阅服务。',options:[
+ {word:'library',fits:true,meaning:'图书馆',reason:'图书馆提供借阅图书的服务。'},
+ {word:'cafeteria',fits:false,meaning:'食堂',reason:'食堂提供饭菜，没有借书用途。'},
+ {word:'gymnasium',fits:false,meaning:'体育馆',reason:'体育馆用于运动，没有借书用途。'},
+ {word:'auditorium',fits:false,meaning:'礼堂',reason:'礼堂用于集会，没有借书用途。'},
+ ]}}]};
+ assert.match(render(data),/句中线索/);assert.match(render(data),/礼堂用于集会/);
+ assert.match(render({...data,results:[{...data.results[0],teachingAnalysis:null}]}),/当时未保存完整教学解析/);
+});
 
 test('results show newly mastered meanings with escaped meaning text and fully mastered word count', () => {
   const html = render({

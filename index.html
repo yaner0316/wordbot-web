@@ -194,6 +194,8 @@
       </button>
     </div>
 
+    <div id="homeChallengeAvailability" class="quiz-readiness-inline" role="status" aria-live="polite">正在确认本场开考条件…</div>
+    <button type="button" class="btn btn-secondary btn-small" onclick="navigateTo('history')">先复习历史错题</button>
     <div id="recentStatus" style="margin-top:12px;text-align:center;font-size:13px;color:var(--text-secondary);display:none;">
       上次考核：<span id="lastTestTime"></span>
     </div>
@@ -217,6 +219,7 @@
         <div id="challengeMissingWords" class="challenge-missing-words" aria-live="polite"></div>
       <button id="challengeStart" class="btn btn-primary" type="button" onclick="beginSelectedChallenge()">就考这些，开始挑战！</button>
       <button id="challengeCancel" class="challenge-cancel" type="button" hidden onclick="stopChallengeWaiting()">先不等了，调整选择</button>
+      <button class="challenge-cancel" type="button" onclick="navigateTo('history')">先复习历史错题</button>
     </div>
   </section>
 

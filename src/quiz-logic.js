@@ -255,9 +255,8 @@
     const correctWord = optionWord(question, question.answer);
     const selectedWord = optionWord(question, result.your);
     const correctLine = `<div class="detail-line" style="margin-top:8px;"><strong>正确选项：</strong>${escape(question.answer)}. "${escape(correctWord)}"</div>`;
-    const comparison = !result.correct && selectedWord
-      ? `<div class="detail-line" style="margin-top:4px;">你选择的 "${escape(selectedWord)}" 与本题给出的语境或释义不匹配；应重点区分它和 "${escape(correctWord)}" 的含义。</div>`
-      : '';
+    const comparison = Number(question.type) !== 1 && !result.correct && selectedWord
+      ? `<div class="detail-line" style="margin-top:4px;">你选择的 "${escape(selectedWord)}" 与本题给出的语境或释义不匹配；应重点区分它和 "${escape(correctWord)}" 的含义。</div>` : '';
 
     let reason = '';
     if (question.type === 1) {
@@ -270,7 +269,27 @@
 
     }
 
-    return correctLine + reason + comparison;
+    return correctLine + reason + buildTeachingAnalysisHtml(question,escape) + comparison;
+  }
+  function buildTeachingAnalysisHtml(question, escapeHtml) {
+    const escape = escapeHtml || (value=>String(value ?? ''));
+    const analysis = question?.teachingAnalysis;
+    const words = (question?.options || []).map(option=>String(option).replace(/^[A-D]\.\s*/, '').toLowerCase());
+    const evidence = Array.isArray(analysis?.options) ? analysis.options : [];
+    const correct = optionWord(question,question.answer || question.correctAnswer).toLowerCase();
+    const valid = analysis?.schemaVersion === 1 && analysis.clue && analysis.clueReason && analysis.correctReason
+      && String(question.context || question.question || '').toLowerCase().includes(String(analysis.clue).toLowerCase())
+      && evidence.length === 4 && new Set(evidence.map(item=>String(item.word).toLowerCase())).size === 4
+      && evidence.every(item=>words.includes(String(item.word).toLowerCase()) && item.meaning && item.reason)
+      && evidence.filter(item=>item.fits === true).length === 1
+      && evidence.find(item=>item.fits === true)?.word.toLowerCase() === correct;
+    if (!valid) return '<div class="detail-line analysis-unavailable">当时未保存完整教学解析。原题、答案和成绩仍按原记录显示；若认为还有合理答案，请与家长一起核对。</div>';
+    const lines = (question.options || []).map(option=>{
+      const word=String(option).replace(/^[A-D]\.\s*/, '');
+      const item=evidence.find(item=>String(item.word).toLowerCase()===word.toLowerCase());
+      return `<div class="detail-line"><strong>${escape(option)} · ${escape(item.meaning)}：</strong>${escape(item.reason)}</div>`;
+    }).join('');
+    return `<div class="teaching-analysis"><div class="detail-line"><strong>句中线索：</strong>${escape(analysis.clue)} — ${escape(analysis.clueReason)}</div><div class="detail-line"><strong>正确项理由：</strong>${escape(analysis.correctReason)}</div>${lines}</div>`;
   }
   function buildMeaningReviewExplanation(question, result, escapeHtml) {
     const escape = escapeHtml || (value => String(value ?? ''));
@@ -290,6 +309,7 @@
     buildContextTranslationHtml,
     buildOptionMeaningsExplanation,
     buildQuestionExplanation,
+    buildTeachingAnalysisHtml,
     buildMeaningReviewExplanation,
     formatOptionDisplayText,
     normalizeApiPayload,

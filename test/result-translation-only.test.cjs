@@ -88,6 +88,7 @@ test('result translations stay bound to their own question when result order cha
       return value ? '<div class="opt-translation">' + escape(value) + '</div>' : '';
     },
     buildOptionMeaningsExplanation: () => '',
+    buildTeachingAnalysisHtml: require('../src/quiz-logic.js').buildTeachingAnalysisHtml,
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',
@@ -133,6 +134,7 @@ function renderResultTranslations(questions, results) {
     escapeHtml: String,
     buildContextTranslationHtml: question => question?.contextCN ? '<div class="opt-translation">' + question.contextCN + '</div>' : '',
     buildOptionMeaningsExplanation: () => '',
+    buildTeachingAnalysisHtml: require('../src/quiz-logic.js').buildTeachingAnalysisHtml,
     buildMeaningReviewExplanation: () => '',
     buildAnimalGardenRewardHtml: () => '',
     getEncourage: () => '',

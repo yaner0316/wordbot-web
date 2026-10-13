@@ -4,6 +4,7 @@ const {
   buildContextTranslationHtml,
   buildOptionMeaningsExplanation,
   buildQuestionExplanation,
+  buildTeachingAnalysisHtml,
   buildMeaningReviewExplanation,
   formatOptionDisplayText,
   normalizeApiPayload,
@@ -1594,7 +1595,10 @@ function getQuizCacheReadiness(status, level = state.level, requiredCount = 10) 
 function renderQuizCacheReadiness(status, level = state.level) {
   const button = document.querySelector('#pageHome .home-primary-cta');
   if (!button) return null;
-  if (button.dataset?.challengeMode === 'random') return getQuizCacheReadiness(status, level);
+  if (button.dataset?.challengeMode === 'random') {
+    if (typeof renderHomeChallengeAvailability === 'function') void renderHomeChallengeAvailability(status, level);
+    return getQuizCacheReadiness(status, level);
+  }
   let label = button.querySelector('.home-primary-cta-label');
   if (!label) {
     Array.from(button.childNodes).forEach(node => {
@@ -2282,10 +2286,10 @@ function openStudentWordEntry() {
       <button type="button" onclick="closeStudentTool()" aria-label="关闭">×</button>
     </div>
     <label class="parent-field">
-      <span>批量单词</span>
-      <textarea id="studentWordsInput" rows="6" placeholder="一行一个单词或短语，也可用逗号、分号分隔；空格不会拆词，例如&#10;up to&#10;carry the banner&#10;promotion | 促销活动"></textarea>
+      <span>英文单词或短语</span>
+      <textarea id="studentWordsInput" rows="2" placeholder="例如 take care of"></textarea>
     </label>
-    <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库。一行一个单词或短语，也可用逗号、分号分隔；短语内部空格会保留。带中文释义时请单独一行写成 word | 中文释义。</div>
+    <details class="parent-help"><summary>批量输入与指定释义</summary><p>一行一个单词或短语，也可用逗号、分号分隔。短语内部空格会保留。指定释义请单独一行写成 word | 中文释义，例如 promotion | 促销活动。</p></details>
     <div id="studentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
     <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
@@ -2568,10 +2572,10 @@ function openParentTool(tool) {
         <button type="button" onclick="closeParentTool()" aria-label="关闭">×</button>
       </div>
       <label class="parent-field">
-        <span>批量单词</span>
-        <textarea id="parentWordsInput" rows="6" placeholder="一行一个单词或短语，也可用逗号、分号分隔；空格不会拆词，例如&#10;up to&#10;carry the banner&#10;promotion | 促销活动"></textarea>
+        <span>英文单词或短语</span>
+        <textarea id="parentWordsInput" rows="2" placeholder="例如 take care of"></textarea>
       </label>
-      <div class="parent-help">会加入 ${escapeHtml(state.user)} 的词库。一行一个单词或短语，也可用逗号、分号分隔；短语内部空格会保留。带中文释义时请单独一行写成 word | 中文释义。</div>
+      <details class="parent-help"><summary>批量输入与指定释义</summary><p>一行一个单词或短语，也可用逗号、分号分隔。短语内部空格会保留。指定释义请单独一行写成 word | 中文释义，例如 promotion | 促销活动。</p></details>
       <div id="parentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
       <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
@@ -2824,7 +2828,10 @@ function renderDictionarySenseOption(sense, index) {
   const note = String(sense.usageNote || '').trim();
   const chineseNote = /^[\u3400-\u9fff，。、“”；：（）·？！\s]{1,60}$/.test(note) ? note : '';
   const explanation = [posLabels[sense.partOfSpeech], chineseNote].filter(Boolean).join(' · ');
-  return `<div class="sense-option-row"><label class="sense-option"><input type="checkbox" data-selected-sense="${index}" /><span>${escapeHtml(sense.cnMeaning)}</span></label>${explanation ? `<details class="sense-explanation"><summary>查看义项说明</summary><p>${escapeHtml(explanation)}</p></details>` : ''}</div>`;
+  const example = sense.example && sense.exampleCN
+    ? `<p class="sense-example">${escapeHtml(sense.example)}<br>${escapeHtml(sense.exampleCN)}</p>`
+    : '<p class="sense-example">此义项暂未提供例句。</p>';
+  return `<div class="sense-option-row"><label class="sense-option"><input type="checkbox" data-selected-sense="${index}" /><span>${escapeHtml(sense.cnMeaning)}</span></label>${example}${explanation ? `<details class="sense-explanation"><summary>查看义项说明</summary><p>${escapeHtml(explanation)}</p></details>` : ''}</div>`;
 }
 
 async function submitSelectedSenses() {
@@ -4154,6 +4161,8 @@ function renderResults(data) {
             ${translationHtml}
           </div>
 
+          ${q?.type === 1 ? `<div class="explain-box"><div class="explain-label">教学解析：</div>${buildTeachingAnalysisHtml(q,escapeHtml)}</div>` : ''}
+
           ${isMeaningReview ? `<div class="explain-box">
             <div class="explain-label">解析：</div>
             ${explanationHtml}
@@ -4264,6 +4273,12 @@ async function startWrongAnswerReview(parentReviewId = '') {
             parentReviewId,
           })
         });
+    if (data.complete || !data.questions?.length) {
+      clearActiveReview();
+      showToast(data.reason === 'archived_words' ? '可复习的词义已归档，原成绩保留。' : '本次错题复习已完成，原成绩保留。','info');
+      showFinalReviewSummary();
+      return;
+    }
     state.session.kind = 'review';
     state.session.reviewId = data.reviewId;
     state.session.parentReviewId = data.parentReviewId || '';
@@ -4384,6 +4399,7 @@ function renderHistoryList(list) {
       openHistoryDetail(item);
     });
     card.addEventListener('keydown', event => {
+      if (event.target !== card) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         card.click();
@@ -4417,11 +4433,46 @@ function renderHistoryList(list) {
     detailHint.className = 'history-detail-hint';
     detailHint.textContent = '查看题目 · ' + (item.questions?.length || item.total || 0) + ' 题';
     card.append(top, bottom, detailHint);
+    const review = document.createElement('button');
+    review.type = 'button';
+    review.className = 'btn btn-secondary btn-small';
+    review.textContent = item.correct === item.total ? '本次没有错题' : '复习这次错题';
+    review.disabled = item.correct === item.total;
+    review.addEventListener('click',event=>{event.stopPropagation();void startHistoryReview(item,review);});
+    card.appendChild(review);
     container.appendChild(card);
   });
   content.appendChild(container);
 }
 
+async function startHistoryReview(item, button = null) {
+  if (button?.disabled) return;
+  if (button) { button.disabled = true; button.textContent = '正在准备错题复习…'; }
+  showLoading('正在准备错题复习…');
+  try {
+    const sourceTestId = item.sourceTestId || item.testId;
+    const data = await api('/api/reviews',{method:'POST',timeoutMs:30000,body:JSON.stringify({user:state.user,sourceTestId})});
+    if (data.complete || !data.questions?.length) {
+      const message = data.reason === 'archived_words' ? '可复习的词义已归档，原成绩保留。'
+        : data.reason === 'no_wrong_answers' ? '本次没有错题。' : '本次错题复习已完成，原成绩保留。';
+      if (button) button.textContent = message;
+      showToast(message,'info');
+      return;
+    }
+    closeHistoryDetail();
+    state.mode = data.mode || item.mode || 'real';
+    state.session = {kind:'review',sourceTestId,reviewId:data.reviewId,parentReviewId:data.parentReviewId || '',round:data.round || 1,
+      firstResult:item.firstResult || {correct:item.correct,total:item.total},reviewRounds:[],remainingRecordIds:[],deferredRecordIds:[],analysisViewed:false};
+    state.quiz = {testId:data.reviewId,mode:state.mode,questions:data.questions};
+    state.currentQuestion = 0;
+    state.answers = new Array(data.questions.length).fill(null);
+    saveCurrentSessionProgress();
+    navigateTo('quiz'); renderQuestion(0);
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = '准备失败，点击重试'; }
+    showToast('错题复习暂未准备好：'+normalizeApiError(error).message,'error');
+  } finally { hideLoading(); }
+}
 
 function historyTypeLabel(type) {
   if (type === 1) return '语境填空';
@@ -4503,9 +4554,17 @@ function openHistoryDetail(item) {
       '<div class="hd-q-stem">' + stemHtml + '</div>' +
       '<div class="hd-opts">' + (optsHtml || '<div class="hd-opt muted">历史题目细节不完整</div>') + '</div>' +
       contextTranslationHtml +
+      (q.type === 1 ? buildTeachingAnalysisHtml({...q,context:q.question,answer:q.correctAnswer},escapeHtml) : '') +
       answerSummary;
     body.appendChild(card);
   });
+  const action = document.createElement('button');
+  action.type = 'button'; action.className = 'btn btn-primary btn-small';
+  action.textContent = item.correct === item.total ? '本次没有错题' : '复习这次错题';
+  action.disabled = item.correct === item.total;
+  action.onclick = ()=>startHistoryReview(item,action);
+  body.appendChild(action);
+  const note=document.createElement('p');note.className='parent-help';note.textContent='复习保留原首次成绩，不增减游戏时间。已归档词义不再纳入复习。';body.appendChild(note);
   $('hdBackdrop').classList.add('active');
   $('hdSheet').inert = false;
   $('hdSheet').classList.add('active');

@@ -17,6 +17,23 @@ const bankSenses = [
   {meaningId:'a',word:'bank',meaning:'银行',status:'pending',eligible:true},
   {meaningId:'b',word:'bank',meaning:'河岸',status:'consolidating',eligible:true},
 ];
+test('one time-qualified meaning cannot promise a complete three-question challenge', () => {
+  const { challengeAvailability } = require(file);
+  const ends = '2026-10-14T10:00:00Z';
+  const result = challengeAvailability([{eligible:true},{eligible:false,cooldownEndsAt:ends},{eligible:false,cooldownEndsAt:ends}]);
+  assert.equal(result.canStart, false);
+  assert.equal(result.required, 3);
+  assert.equal(result.cooldownEndsAt, ends);
+  assert.match(result.message, /1 个词义已符合时间条件/);
+  assert.match(result.message, /暂不能开始/);
+});
+test('estimated cooldown waits until enough meanings qualify rather than only the first one', () => {
+  const { challengeAvailability } = require(file);
+  const result = challengeAvailability([{eligible:true},{eligible:false,cooldownEndsAt:'2026-10-14T09:00:00Z'},{eligible:false,cooldownEndsAt:'2026-10-14T10:00:00Z'}]);
+  assert.equal(result.cooldownEndsAt,'2026-10-14T10:00:00Z');
+  assert.equal(challengeAvailability([{eligible:true}],{ready:0}).canStart,false);
+  assert.match(challengeAvailability([{eligible:true}],{ready:0}).message,/题目正在准备/);
+});
 function pickerHarness(words = bankSenses) {
   const nodes = new Map();
   const get = id => {

@@ -151,7 +151,8 @@ test('history cards can be opened with the keyboard and become the focus return 
   assert.equal(card.tabIndex, 0);
   assert.equal(card.attrs.role, 'button');
   let prevented = 0;
-  for (const key of ['Enter', ' ']) card.events.keydown({ key, preventDefault() { prevented++; } });
+  for (const key of ['Enter', ' ']) card.events.keydown({ target:card, key, preventDefault() { prevented++; } });
+  card.events.keydown({target:card.children.at(-1),key:'Enter',preventDefault(){prevented++;}});
   assert.equal(prevented, 2);
   assert.equal(opened.length, 2);
   assert.equal(opened[0][1], card);
