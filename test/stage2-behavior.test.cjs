@@ -354,7 +354,7 @@ test('login home becomes interactive before stats, cache, and session finish loa
     assert.doesNotMatch(homeSource, /showLoading\(/);
     assert.match(homeSource, /loadStats\(state\.user,\s*\{\s*showOverlay:\s*false\s*\}\)/);
     assert.match(homeSource, /loadQuizCacheReadiness\(state\.user\)/);
-    assert.match(homeSource, /loadRemoteQuizSession\(state\.user\)/);
+    assert.match(homeSource, /loadRemoteQuizSession\(state\.user,\s*state\.mode \|\| 'real',\s*\{ includePractice: true \}\)/);
     assert.match(loginSource, /showAppPage\(\);[\s\S]*loadHome\(\)/);
     assert.doesNotMatch(loginSource, /await\s+loadHome\(/);
 });

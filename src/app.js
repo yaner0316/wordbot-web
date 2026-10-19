@@ -2052,7 +2052,7 @@ async function loadHome() {
       showToast('当前为演示模式，数据不会写入服务器', 'info');
       return;
     }
-    await loadRemoteQuizSession(state.user);
+    await loadRemoteQuizSession(state.user, state.mode || 'real', { includePractice: true });
   } catch(e) {
     showToast('加载用户失败: ' + e.message, 'error');
     $('statsContent').innerHTML = '<div style="text-align:center;padding:20px 0;color:var(--text-secondary);font-size:15px;">后端连接异常，当前仅可查看登录后的本地预览</div>';
@@ -2122,13 +2122,25 @@ function manualSelectUser() {
   selectUser(name);
 }
 
-async function loadRemoteQuizSession(user = state.user, mode = state.mode || 'real') {
+async function loadRemoteQuizSession(user = state.user, mode = state.mode || 'real', options) {
   if (DEMO_MODE || !user) return null;
+  const includePractice = options?.includePractice === true;
   const requestedMode = mode || 'real';
-  const data = await api('/api/quiz/session?user=' + encodeURIComponent(user) + '&mode=' + encodeURIComponent(requestedMode));
+  let data = await api('/api/quiz/session?user=' + encodeURIComponent(user) + '&mode=' + encodeURIComponent(requestedMode));
   if (state.user !== user || (state.mode || 'real') !== requestedMode) return null;
+  let unresolvedDraft = false;
+  try {
+    const draft = JSON.parse(localStorage.getItem(activeQuizKey(user, requestedMode)) || 'null');
+    unresolvedDraft = Boolean(draft?.quiz?.submissionUnknown || draft?.quiz?.syncPending || draft?.quiz?.syncFailed);
+  } catch { unresolvedDraft = true; }
+  if (includePractice && requestedMode === 'real' && state.currentPage === 'home' && !data?.active && !unresolvedDraft) {
+    data = await api('/api/quiz/session?user=' + encodeURIComponent(user) + '&mode=practice');
+    if (state.user !== user || (state.mode || 'real') !== requestedMode || state.currentPage !== 'home') return null;
+    if (data?.active && data.mode === 'practice') state.mode = 'practice';
+  }
+  const effectiveMode = state.mode || 'real';
   const sessionMode = data?.mode || 'real';
-  remoteQuizSession = data?.active && sessionMode === requestedMode
+  remoteQuizSession = data?.active && sessionMode === effectiveMode
     ? { ...data, mode: sessionMode }
     : null;
   renderStudentTools();
@@ -2185,7 +2197,7 @@ async function handleContinueQuizEntry() {
   if (DEMO_MODE && await restoreQuizDraft()) return true;
   await quizProgressSavePromise;
   try {
-    await loadRemoteQuizSession(state.user, state.mode || 'real');
+    await loadRemoteQuizSession(state.user, state.mode || 'real', { includePractice: true });
   } catch (error) {
     showToast('未能查询上次测试：' + normalizeApiError(error).message, 'error');
     renderStudentTools();
