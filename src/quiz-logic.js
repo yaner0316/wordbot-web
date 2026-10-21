@@ -31,8 +31,12 @@
   }
 
   function optionWord(question, letter) {
-    return question?.options?.find(option => option.startsWith(letter + '.'))
-      ?.replace(/^[A-D]\.\s*/, '') || '';
+    const options = Array.isArray(question?.options) ? question.options : [];
+    const code = String(letter || '').trim().toUpperCase();
+    const labeled = options.find(option => String(option).startsWith(code + '.'));
+    const raw = /^[A-D]$/.test(code) && options.every(option => !/^[A-D]\./.test(String(option)))
+      ? options['ABCD'.indexOf(code)] : '';
+    return String(labeled || raw || '').replace(/^[A-D]\.\s*/, '');
   }
 
   const calendarProperNouns = new Map([
@@ -293,10 +297,16 @@
   }
   function buildMeaningReviewExplanation(question, result, escapeHtml) {
     const escape = escapeHtml || (value => String(value ?? ''));
-    const your = String(result?.your || '').trim();
-    const expected = String(result?.answer || question?.correctMeaning || question?.context || '').trim();
+    const senseChoice = (Number(question?.type) === 4 || question?.answerMode === 'sense_choice') && question?.options?.length === 4;
+    const answerText = value => {
+      const text = String(value || '').trim();
+      const meaning = senseChoice ? optionWord(question, text) : '';
+      return meaning ? `${text}. ${meaning}` : text;
+    };
+    const your = answerText(result?.your);
+    const expected = answerText(result?.answer || question?.answer || question?.correctMeaning || question?.context);
     const verdict = result?.correct
-      ? '这次写对了，说明你已经能主动回忆这个中文释义。'
+      ? senseChoice ? '这次选对了，说明你已辨认出这个单词的中文释义。' : '这次写对了，说明你已经能主动回忆这个中文释义。'
       : '这次还没有完全对上，复习时重点记住参考释义里的核心意思。';
     return '<div class="detail-line" style="margin-top:4px;"><strong>你的答案：</strong>' + escape(your || '（未作答）') + '</div>' +
       '<div class="detail-line" style="margin-top:4px;"><strong>参考释义：</strong>' + escape(expected || '暂无参考释义') + '</div>' +

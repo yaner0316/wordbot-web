@@ -9,6 +9,19 @@ const source = fs.readFileSync(
     'utf8'
 );
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
+test('demo review shuffles while preserving the words and their answer identities', () => {
+    const start = appSource.indexOf('function generateDemoReviewQuiz(');
+    const end = appSource.indexOf('\nasync function startWrongAnswerReview', start);
+    const original = ['apple','pear','desk'].map(word=>({word,recordId:word}));
+    const c = {state:{quiz:{questions:original},session:{remainingRecordIds:['apple','pear','desk'],round:0}},
+      DEMO_WORDS:original.map(q=>({...q,cn:q.word+'释义'})),shuffle:values=>[...values]};
+    vm.createContext(c);vm.runInContext(appSource.slice(start,end),c);
+    const result = c.generateDemoReviewQuiz();
+    assert.notDeepEqual(Array.from(result.questions,q=>q.recordId),original.map(q=>q.recordId));
+    assert.deepEqual(Array.from(result.questions,q=>q.recordId).sort(),original.map(q=>q.recordId).sort());
+    assert.ok(result.questions.every(q=>q.correctMeaning===q.recordId+'释义'));
+    assert.deepEqual(original.map(q=>q.recordId),['apple','pear','desk']);
+});
 const context = { globalThis: {} };
 vm.runInNewContext(source, context);
 const {

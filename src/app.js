@@ -4114,13 +4114,14 @@ function renderResults(data) {
       const q = questionData;
       const typeNames = {1:'语境填空', 2:'英英释义', 3:'中文选词', 4:'中文释义回忆'};
       const isMeaningReview = isMeaningReviewQuestion(q);
+      const isSenseChoice = isMeaningReview && q?.options?.length === 4;
 
       // 构建完整题干展示
       let contextDisplay = '';
       let explanationHtml = '';
 
       if (isMeaningReview) {
-        contextDisplay = '请写出这个单词的中文释义';
+        contextDisplay = isSenseChoice ? '请选择这个单词对应的中文释义' : '请写出这个单词的中文释义';
         explanationHtml = buildMeaningReviewExplanation(q, r, escapeHtml);
       } else if (q?.type === 1 && (q?.context || q?.question)) {
         // Type 1: 显示上下文，空白处用 ___ 占位
@@ -4139,12 +4140,12 @@ function renderResults(data) {
       const translationHtml = !isMeaningReview
         ? buildContextTranslationHtml(q, escapeHtml)
         : '';
-      if (isMeaningReview) {
+      if (isMeaningReview && !isSenseChoice) {
         optionsHtml = `<div class="detail-line"><strong>你的答案：</strong>${escapeHtml(r.your || '（未作答）')}</div>
           <div class="detail-line"><strong>参考释义：</strong>${escapeHtml(r.answer || q?.correctMeaning || '暂无参考释义')}</div>`;
       } else if (questionData?.options && questionData.options.length > 0) {
-        optionsHtml = q.options.map(opt => {
-          const letter = opt[0];
+        optionsHtml = q.options.map((opt, index) => {
+          const letter = isSenseChoice ? 'ABCD'[index] : opt[0];
           const isCorrect = letter === q.answer;
           const isUserChoice = letter === r.your;
           let cls = 'opt-item';
@@ -4169,8 +4170,8 @@ function renderResults(data) {
             <span class="status-badge ${r.correct ? 'correct' : 'wrong'}">${r.correct ? '✓ 正确' : '× 错误'}</span>
           </div>
           <div class="row" style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
-            <span>${typeNames[q?.type] || ''} · 第 ${i+1} 题</span>
-            <span>${isMeaningReview ? '中文释义回忆' : '选择题作答'}</span>
+            <span>${isSenseChoice ? '中文释义选择' : typeNames[q?.type] || ''} · 第 ${i+1} 题</span>
+            <span>${isMeaningReview ? isSenseChoice ? '中文释义选择' : '中文释义回忆' : '选择题作答'}</span>
           </div>
 
           <div class="ctx-box">
@@ -4179,7 +4180,7 @@ function renderResults(data) {
           </div>
 
           <div class="opts-box">
-            <div class="opts-label">${isMeaningReview ? '答案：' : '选项：'}</div>
+            <div class="opts-label">${isMeaningReview && !isSenseChoice ? '答案：' : '选项：'}</div>
             ${optionsHtml}
             ${optionMeaningsHtml}
             ${translationHtml}
@@ -4262,7 +4263,9 @@ function generateDemoReviewQuiz() {
   const sourceQuestions = state.quiz.questions.filter(question =>
     wrongWords.has(question.word) || wrongWords.has(question.recordId)
   );
-  const questions = sourceQuestions.map(source => {
+  const ordered = shuffle(sourceQuestions);
+  if (ordered.length > 1 && ordered.every((question, index) => question === sourceQuestions[index])) ordered.push(ordered.shift());
+  const questions = ordered.map(source => {
     const info = DEMO_WORDS.find(word => word.word === source.word) || {};
     return {
       type: 4,
@@ -4499,11 +4502,11 @@ async function startHistoryReview(item, button = null) {
   } finally { hideLoading(); }
 }
 
-function historyTypeLabel(type) {
+function historyTypeLabel(type, senseChoice = false) {
   if (type === 1) return '语境填空';
   if (type === 2) return '英英释义';
   if (type === 3) return '中文选词';
-  if (type === 4) return '中文释义回忆';
+  if (type === 4) return senseChoice ? '中文释义选择' : '中文释义回忆';
   return '题目';
 }
 
@@ -4512,10 +4515,10 @@ function optionLetter(value) {
 }
 
 function optionTextByLetter(options, letter) {
+  if (!options?.length) return String(letter || '未作答');
   const wanted = optionLetter(letter);
   if (!wanted) return '未作答';
-  const match = (options || []).find(opt => optionLetter(opt) === wanted);
-  return match ? String(match).replace(/^[A-D]\.\s*/, '') : wanted;
+  return optionWord({options}, wanted) || String(letter || '未作答');
 }
 
 let historyDetailOpener = null;
@@ -4544,13 +4547,15 @@ function openHistoryDetail(item) {
     const card = document.createElement('div');
     card.className = 'hd-q';
     const legacyIncomplete = q.contentState === 'legacy_incomplete';
+    const senseChoice = Number(q.type) === 4 && q.options?.length === 4;
+    const meaningRecall = Number(q.type) === 4 && !q.options?.length;
     const incompleteMessage = '这是一条早期考核记录，当时没有保存完整题目。答题结果仍然保留。';
     const rawStem = escapeHtml((legacyIncomplete && !q.question) ? incompleteMessage : (q.question || q.word || ''));
     const stemHtml = q.type === 1
       ? rawStem.replace(/_____/g, '<span class="blank"></span>')
       : rawStem;
     const optsHtml = (q.options || []).length ? (q.options || []).map((opt, index) => {
-      const letter = optionLetter(opt);
+      const letter = senseChoice ? 'ABCD'[index] : optionLetter(opt);
       const word = String(opt).replace(/^[A-D]\.\s*/, '');
       const meaning = String(q?.optionMeanings?.[index] || '').trim();
       let cls = 'hd-opt';
@@ -4572,12 +4577,12 @@ function openHistoryDetail(item) {
     card.innerHTML =
       '<div class="hd-q-head">' +
         '<span class="hd-q-num">第 ' + (i + 1) + ' 题</span>' +
-        '<span class="hd-q-type">' + historyTypeLabel(q.type) + '</span>' +
+        '<span class="hd-q-type">' + historyTypeLabel(q.type, senseChoice) + '</span>' +
         '<span class="hd-q-result ' + (q.isCorrect ? 'pass' : 'fail') + '">' + (q.isCorrect ? '答对' : '答错') + '</span>' +
       '</div>' +
       '<div class="hd-q-word">' + escapeHtml(q.word || '') + '</div>' +
       '<div class="hd-q-stem">' + stemHtml + '</div>' +
-      '<div class="hd-opts">' + (optsHtml || '<div class="hd-opt muted">历史题目细节不完整</div>') + '</div>' +
+      '<div class="hd-opts">' + (optsHtml || (meaningRecall && !legacyIncomplete ? '' : '<div class="hd-opt muted">历史题目细节不完整</div>')) + '</div>' +
       contextTranslationHtml +
       (q.type === 1 ? buildTeachingAnalysisHtml({...q,context:q.question,answer:q.correctAnswer},escapeHtml) : '') +
       answerSummary;

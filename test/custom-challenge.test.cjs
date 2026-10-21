@@ -33,6 +33,56 @@ const bankSenses = [
   {meaningId:'a',word:'bank',meaning:'银行',status:'pending',eligible:true},
   {meaningId:'b',word:'bank',meaning:'河岸',status:'consolidating',eligible:true},
 ];
+test('cached word buttons are disabled during refresh and explicit selections survive loading',async()=>{
+ const h=pickerHarness();h.c.toggleChallengeWord('a');let resolve;
+ h.c.api=()=>new Promise(r=>{resolve=r;});
+ const loading=h.c.refreshChallengeCandidates();
+ const buttons=h.get('challengeWordList').innerHTML.match(/<button[^>]*data-meaning-id[^>]*>/g)||[];
+ assert.equal(buttons.length,1);assert.ok(buttons.every(tag=>/\sdisabled(?:\s|>)/.test(tag)));
+ assert.deepEqual(h.selected(),['a','b']);
+ resolve({candidates:bankSenses});await loading;
+ assert.deepEqual(h.selected(),['a','b']);
+ assert.doesNotMatch(h.get('challengeWordList').innerHTML.match(/<button[^>]*>/)[0],/\sdisabled/);
+});
+test('random entry hides selection controls and starts with a system-only choice', async () => {
+  const h = pickerHarness(); const sent = [];
+  h.c.navigateTo = async page => { h.c.state.currentPage = page; };
+  h.c.api = async (url, options) => {
+    if (!options.body) return {candidates:bankSenses};
+    sent.push(JSON.parse(options.body).selection);
+    return {mode:'real',questions:[]};
+  };
+  h.c.clearActiveReview = () => {}; h.c.enterFormalQuiz = async () => true;
+  await h.c.startRandomChallenge();
+  assert.equal(h.get('challengeWordPicker').hidden, true);
+  assert.equal(h.get('challengeCounts').hidden, true);
+  assert.doesNotMatch(h.get('challengeDescription').textContent, /挑|选/);
+  assert.deepEqual(sent, [{mode:'random',meaningIds:[]}]);
+  await h.c.openCustomChallenge();
+  assert.equal(h.get('challengeWordPicker').hidden, false);
+  assert.equal(h.get('challengeCounts').hidden, false);
+});
+
+test('random waiting offers no word replacement and cancellation keeps random mode', async () => {
+  const h = waitingPicker();
+  await h.c.beginSelectedChallenge('random');
+  assert.doesNotMatch(h.get('challengeMissingWords').innerHTML, /换掉|data-replace/);
+  assert.doesNotMatch(h.get('challengeStatus').textContent, /换词|选择/);
+  h.c.navigateTo = page => { h.c.state.currentPage = page; };
+  h.c.stopChallengeWaiting();
+  assert.equal(h.value('challengePicker.mode'), 'random');
+  assert.equal(h.c.state.currentPage, 'home');
+  assert.deepEqual(h.selected(), []);
+});
+
+test('random preparation deadline keeps retry random and never populates chosen words', async () => {
+  const h = waitingPicker();
+  await h.c.beginSelectedChallenge('random');
+  h.advance(120001); await h.timers.at(-1)();
+  assert.equal(h.value('challengePicker.busy'), false);
+  assert.deepEqual(h.selected(), []);
+  assert.doesNotMatch(h.get('challengeStatus').textContent, /换词|选择/);
+});
 test('one time-qualified meaning cannot promise a complete three-question challenge', () => {
   const { challengeAvailability } = require(file);
   const ends = '2026-10-14T10:00:00Z';

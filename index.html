@@ -203,7 +203,8 @@
 
   <section class="page" id="pageChallenge" aria-labelledby="challengeTitle">
     <div class="challenge-page-top"><button class="challenge-back" type="button" onclick="navigateTo('home')">← 返回首页</button><span>你的专属挑战</span></div>
-    <div class="challenge-picker-heading"><span class="challenge-eyebrow">YOUR WORDS. YOUR CHALLENGE.</span><h1 id="challengeTitle">今天，想挑战谁？</h1><p>挑几个想练的单词；同一单词的待考释义会一起考。</p></div>
+    <div class="challenge-picker-heading"><span class="challenge-eyebrow">YOUR WORDS. YOUR CHALLENGE.</span><h1 id="challengeTitle">今天，想挑战谁？</h1><p id="challengeDescription">挑几个想练的单词；同一单词的待考释义会一起考。</p></div>
+    <div id="challengeWordPicker">
     <label class="challenge-search"><span aria-hidden="true">⌕</span><input id="challengeSearch" type="search" placeholder="搜英文单词" aria-label="搜索英文单词" oninput="renderChallengePicker()"></label>
     <div class="challenge-filters" aria-label="学习状态筛选">
       <button type="button" data-challenge-filter="all" aria-pressed="true" onclick="setChallengeFilter('all')">全部</button>
@@ -213,8 +214,9 @@
     </div>
     <div class="challenge-list-heading"><span id="challengePoolCount"></span><button id="challengeRefresh" type="button" onclick="refreshChallengeCandidates()">刷新词库</button></div>
     <div id="challengeWordList" class="challenge-word-list"></div>
+    </div>
     <div class="challenge-selection-bar">
-      <div class="challenge-counts"><strong id="challengeSelectionCount">已选 0 / 10</strong><span id="challengeAutoCount">系统补齐 10 个</span></div>
+      <div id="challengeCounts" class="challenge-counts"><strong id="challengeSelectionCount">已选 0 / 10</strong><span id="challengeAutoCount">系统补齐 10 个</span></div>
       <p id="challengeShortNote"></p><p id="challengeStatus" role="status" aria-live="polite"></p>
         <div id="challengeMissingWords" class="challenge-missing-words" aria-live="polite"></div>
       <button id="challengeStart" class="btn btn-primary" type="button" onclick="beginSelectedChallenge()">就考这些，开始挑战！</button>
