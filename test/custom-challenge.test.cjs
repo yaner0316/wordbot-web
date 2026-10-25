@@ -204,7 +204,7 @@ test('a successful challenge does not make its selected words the next challenge
 });
 
 test('a transient network error retries the identical choice and resumes the server quiz', async () => {
-  const sent=[];const h=loadChallengeFlow({setTimeout:callback=>{callback();return 1;},api:async(url,options)=>{
+  const sent=[];const h=loadChallengeFlow({setTimeout:(callback,delay)=>{if(delay<120000)callback();return 1;},api:async(url,options)=>{
     sent.push(options.body);if(sent.length===1)throw new TypeError('Failed to fetch');
     return {testId:'real-recovered',questions:[]};
   }});
@@ -213,12 +213,12 @@ test('a transient network error retries the identical choice and resumes the ser
   assert.equal(h.c.state.quiz.testId,'real-recovered');
 });
 test('persistent network failure stops after bounded retries and keeps the selection', async () => {
-  let calls=0;const h=loadChallengeFlow({setTimeout:callback=>{callback();return 1;},api:async()=>{calls++;throw new TypeError('Failed to fetch');}});
+  let calls=0;const h=loadChallengeFlow({setTimeout:(callback,delay)=>{if(delay<120000)callback();return 1;},api:async()=>{calls++;throw new TypeError('Failed to fetch');}});
   await h.c.beginSelectedChallenge();assert.equal(calls,3);assert.equal(h.selected().join(','),'meaning-one');
 });
 
 test('manual retry of a failed random challenge keeps random priority',async()=>{
-  const sent=[];const h=loadChallengeFlow({setTimeout:cb=>{cb();return 1;},api:async(p,o)=>{
+  const sent=[];const h=loadChallengeFlow({setTimeout:(cb,delay)=>{if(delay<120000)cb();return 1;},api:async(p,o)=>{
     sent.push(JSON.parse(o.body).selection);if(sent.length<=3)throw new TypeError('Failed to fetch');return {questions:[]};
   }});
   await h.c.beginSelectedChallenge('random');await h.c.beginSelectedChallenge();
@@ -226,7 +226,7 @@ test('manual retry of a failed random challenge keeps random priority',async()=>
   assert.ok(sent.every(x=>x.meaningIds.length===0));
 });
 test('changing the word choice after a random failure explicitly switches to custom',async()=>{
-  const h=pickerHarness();h.c.setTimeout=cb=>{cb();return 1;};h.c.api=async()=>{throw new TypeError('Failed to fetch');};
+  const h=pickerHarness();h.c.setTimeout=(cb,delay)=>{if(delay<120000)cb();return 1;};h.c.api=async()=>{throw new TypeError('Failed to fetch');};
   await h.c.beginSelectedChallenge('random');h.c.toggleChallengeWord('a');
   let selection;h.c.api=async(p,o)=>{selection=JSON.parse(o.body).selection;return {questions:[]};};
   h.c.clearActiveReview=()=>{};h.c.enterFormalQuiz=async()=>true;await h.c.beginSelectedChallenge();
@@ -245,4 +245,51 @@ test('swapping a multi-meaning word removes all its senses and a late response c
  const preparing=h.c.beginSelectedChallenge();h.c.replaceChallengeWord('a');
  assert.deepEqual(h.selected(),Array.from({length:8},(_,i)=>'m'+i));
  resolve({questions:[]});await preparing;assert.equal(entered,false);
+});
+
+function deadlineHarness() {
+ const h=waitingPicker(); const timers=new Map();let id=0;
+ h.c.setTimeout=(callback,delay)=>{timers.set(++id,{callback,delay});return id;};
+ h.c.clearTimeout=timer=>timers.delete(timer);
+ const fire=async delay=>{const entry=[...timers].find(([,timer])=>timer.delay===delay);assert.ok(entry,'expected timer '+delay);timers.delete(entry[0]);return entry[1].callback();};
+ return {...h,timers,fire};
+}
+test('a stalled preparation request unlocks at the deadline, and retry ignores the old response',async()=>{
+ const h=deadlineHarness();let resolveOld;let calls=0;
+ h.c.api=()=>{calls++;return new Promise(resolve=>{resolveOld=resolve;});};
+ const first=h.c.beginSelectedChallenge('random');
+ assert.equal(h.value('challengePicker.busy'),true);
+ h.advance(120001);await h.fire(120000);
+ assert.equal(h.value('challengePicker.busy'),false);
+ assert.equal(h.get('challengeStart').disabled,false);
+ assert.match(h.get('challengeStatus').textContent,/停止自动等待/);
+ h.c.api=async()=>{calls++;return {pending:true,meaningIds:['new-choice'],readyCount:6,requiredCount:10};};
+ await h.c.beginSelectedChallenge();
+ assert.equal(h.value('challengePicker.busy'),true);
+ resolveOld({mode:'real',testId:'old-late-response',questions:[]});await first;
+ assert.equal(h.value('challengePicker.busy'),true);
+ assert.ok(h.get('challengeStatus').textContent.includes('6 / 10'));
+ h.advance(120001);await h.fire(120000);
+ assert.equal(h.value('challengePicker.busy'),false);
+ assert.equal(calls,2);
+});
+test('a pending response arriving exactly at the deadline cannot keep retry busy',async()=>{
+ const h=deadlineHarness();await h.c.beginSelectedChallenge('random');
+ let resolve;h.c.api=()=>new Promise(r=>{resolve=r;});
+ h.advance(5000);const polling=h.fire(5000);
+ h.advance(115001);await h.fire(120000);
+ assert.equal(h.value('challengePicker.busy'),false);
+ resolve({pending:true,readyCount:6,requiredCount:10,meaningIds:['stale']});await polling;
+ assert.equal(h.value('challengePicker.busy'),false);
+ assert.match(h.get('challengeStatus').textContent,/停止自动等待/);
+ assert.equal(h.timers.size,0);
+});
+test('successful entry and cancellation clear the independent preparation deadline',async()=>{
+ for(const cancel of [true,false]) {
+  const h=deadlineHarness();
+  if(!cancel) h.c.api=async()=>({mode:'real',questions:[]});
+  await h.c.beginSelectedChallenge('random');
+  if(cancel) {h.c.navigateTo=()=>{};h.c.stopChallengeWaiting();}
+  assert.equal(h.timers.size,0);
+ }
 });

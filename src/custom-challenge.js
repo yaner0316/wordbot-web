@@ -1,5 +1,5 @@
 'use strict';
-const challengePicker = { user: null, mode: 'custom', candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, pendingIds: null, missingWords: [] };
+const challengePicker = { user: null, mode: 'custom', candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, deadlineTimer: null, pendingIds: null, missingWords: [] };
 const CHALLENGE_WAIT_MS = 120000;
 const challengeStatusLabels = { pending: '未开始', recognized: '已认识', consolidating: '巩固中' };
 
@@ -51,7 +51,9 @@ function challengeSelectionSummary(words, selected) {
 function cancelChallengePreparation() {
   challengePicker.token++;
   clearTimeout(challengePicker.timer);
+  clearTimeout(challengePicker.deadlineTimer);
   challengePicker.timer = null;
+  challengePicker.deadlineTimer = null;
   challengePicker.busy = false;
   challengePicker.pendingIds = null;
   challengePicker.missingWords = [];
@@ -227,11 +229,14 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
   renderChallengePicker();
   challengeStatus('正在准备你的挑战…');
   function stopAtDeadline() {
+    if (token !== challengePicker.token || state.user !== user || state.currentPage !== 'challenge') return;
     if (mode === 'custom' && challengePicker.pendingIds) challengePicker.selected = new Set(challengePicker.pendingIds);
     challengePicker.busy = false;
     challengePicker.token++;
     clearTimeout(challengePicker.timer);
+    clearTimeout(challengePicker.deadlineTimer);
     challengePicker.timer = null;
+    challengePicker.deadlineTimer = null;
     renderChallengePicker();
     challengeStatus(mode === 'random'
       ? '随机挑战暂时未能备齐，已停止自动等待。可以稍后重试，或先复习历史错题。'
@@ -260,6 +265,8 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
         challengeStatus(data.code === 'CHALLENGE_COOLDOWN' ? '还需等待词义冷却满 18 小时，不会因为冷却而缩短试卷。' : '词库里暂时没有待考词义，可以先添加单词。');
         return;
       }
+      clearTimeout(challengePicker.deadlineTimer);
+      challengePicker.deadlineTimer = null;
       challengePicker.busy = false;
       state.mode = data.mode || (mode === 'custom' ? 'practice' : 'real');
       if (data.level) state.level = data.level;
@@ -276,12 +283,16 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
         await refreshChallengeCandidates();
         challengeStatus(mode === 'random' ? '开考条件刚刚发生变化，请稍后重试随机挑战。' : '有单词刚刚进入冷却或已掌握，请确认刷新后的选择。');
       } else {
+        clearTimeout(challengePicker.deadlineTimer);
+        challengePicker.deadlineTimer = null;
         challengePicker.busy = false;
         challengeStatus(mode === 'random' ? '连接暂时中断，请点「开始随机挑战」重试。' : '连接暂时中断，你的选择还在。请点开始按钮重试。');
         renderChallengePicker();
       }
     }
   }
+  // This deadline must not depend on an in-flight request settling.
+  challengePicker.deadlineTimer = setTimeout(stopAtDeadline, Math.max(0, deadline - Date.now()));
   await attempt();
 }
 function renderChallengeMissingWords() {
