@@ -2449,12 +2449,12 @@ async function exitParentMode(page = 'home', options = {}) {
   if (parentExitPromise) return parentExitPromise;
   const user = state.user;
   const task = (async () => {
-    showLoading('正在退出家长模式...');
+    showLoading(options.startup ? '正在加载...' : '正在退出家长模式...');
     try {
       if (state.parentAuthenticationPromise) {
         await state.parentAuthenticationPromise;
         if (state.user !== user) return false;
-        showLoading('正在退出家长模式...');
+        showLoading(options.startup ? '正在加载...' : '正在退出家长模式...');
       }
       if (!DEMO_MODE) {
         const result = await api('/api/auth/parent/logout', { method: 'POST', body: '{}', resetOnUnauthorized: false });
@@ -2474,7 +2474,7 @@ async function exitParentMode(page = 'home', options = {}) {
           showToast('登录已过期，请重新登录', 'info');
           return false;
         }
-        showToast('未退出家长模式，请检查网络后重试', 'error');
+        showToast(options.startup ? '加载失败，请检查网络后重试' : '未退出家长模式，请检查网络后重试', 'error');
         if (state.currentPage === 'parent') updateAppHistory('parent', { replace: true });
       }
       return false;
@@ -4686,7 +4686,7 @@ function initApp() {
     applyEnvironmentControls();
     renderUsers(state.users);
     updateLevelButtons();
-    return exitParentMode('home', { replace: true });
+    return exitParentMode('home', { replace: true, startup: true });
   }
   showLoginPage();
 }

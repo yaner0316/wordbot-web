@@ -112,3 +112,18 @@ test('leaving during parent login waits for the late parent cookie then downgrad
   assert.deepEqual(calls, ['/api/auth/parent/login', '/api/auth/parent/logout']);
   assert.equal(cookieRole, 'user'); assert.equal(c.state.parentAccess, false); assert.equal(c.state.currentPage, 'home');
 });
+
+test('startup uses neutral loading and failure text while explicit exit keeps parent wording', async () => {
+  for (const startup of [true, false]) {
+    const { c, events } = fixture(async () => { throw Error('offline'); });
+    const loading = []; c.showLoading = text => loading.push(text);
+    if (startup) {
+      Object.assign(c, { updateAuthMode() {}, initializeAppHistory() {}, GAME_PREVIEW_MODE: false, getSessionUser: () => 'kid' });
+      vm.runInContext(fn('initApp'), c); await c.initApp();
+    } else await c.exitParentMode();
+    assert.deepEqual(loading, [startup ? '正在加载...' : '正在退出家长模式...']);
+    assert.equal(events.find(e => e[0] === 'toast')[1], startup ? '加载失败，请检查网络后重试' : '未退出家长模式，请检查网络后重试');
+    assert.equal(c.state.currentPage, 'parent');
+    assert.equal(events.filter(e => e[0] === 'load').length, 0);
+  }
+});
