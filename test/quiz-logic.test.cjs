@@ -466,3 +466,9 @@ test('renders Chinese meaning review feedback without multiple-choice wording', 
     assert.match(html, /小猫；幼猫/);
     assert.doesNotMatch(html, /正确选项/);
 });
+
+test('preserves audited country-name spelling in question and result option displays',()=>{
+ const options=['A. Cambodia','B. Laos','C. Tanzania','D. Indonesia'];
+ const question={type:1,context:'They travelled to _____.',options,teachingAnalysis:{surface:{policy:'english-surface-v1'}}};
+ for(const option of options) assert.equal(formatOptionDisplayText(option,options,question),option.slice(3));
+});
