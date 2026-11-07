@@ -68,6 +68,7 @@
 
   function formatOptionDisplayText(value, allOptions = [], question = null) {
     const word = cleanOptionDisplayWord(value);
+    if (question?.teachingAnalysis?.surface?.policy === 'english-surface-v1') return word;
     const key = word.toLowerCase();
     const optionWords = (allOptions || []).map(cleanOptionDisplayWord);
     const calendarCount = optionWords.filter(item => calendarProperNouns.has(item.toLowerCase())).length;
