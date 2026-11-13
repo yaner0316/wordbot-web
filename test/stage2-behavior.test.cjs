@@ -768,12 +768,12 @@ test('quiz submit confirms a timeout with one automatic idempotent replay', () =
     assert.match(abortBranch, /return await request\(\)/);
     assert.match(abortBranch, /SUBMISSION_RESULT_UNKNOWN/);
 });
-test('word entry supports duplicate confirmation before adding same-word meanings', () => {
+test('word entry requires offered senses instead of handwritten duplicate meanings', () => {
     assert.match(app, /function parseParentWordEntries/);
-    assert.match(app, /promotion \| 促销活动/);
-    assert.match(app, /DUPLICATE_WORD_CONFIRMATION_REQUIRED/);
-    assert.match(app, /confirmNewMeanings/);
-    assert.match(app, /skipDuplicateWords/);
+    assert.doesNotMatch(app, /promotion \| 促销活动/);
+    assert.match(app, /SELECTED_SENSE_REQUIRED/);
+    assert.match(app, /selectionToken/);
+    assert.match(app, /每个单词至少选择一个/);
     assert.match(app, /function renderDuplicateWordConfirmation/);
     assert.match(app, /error\.payload\s*=\s*data/);
 });

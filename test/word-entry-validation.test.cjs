@@ -16,7 +16,7 @@ function loadEntry(value, parent = false) {
     state: { user: 'test-user' }, DEMO_MODE: false,
     $: id => id === (parent ? 'parentWordsInput' : 'studentWordsInput') ? input : null,
     getWordEntryDuplicatePanel: () => panel,
-    api: async (...args) => { calls.push(args); return { success: true, count: 1, senses: [] }; },
+    api: async (...args) => { calls.push(args); return { success: true, count: 1, senses: [{definition:'a sense',cnMeaning:'释义',partOfSpeech:'noun',selectionToken:'offered-token'}] }; },
     showToast: message => notices.push(message), showLoading: () => calls.push(['loading']), hideLoading() {},
     clearDuplicateWordConfirmation() {}, loadStats() {}, escapeHtml: value => value,
     normalizeApiError: e => e, buildParentWordCooldownNotice: () => '已录入',
@@ -25,14 +25,30 @@ function loadEntry(value, parent = false) {
   vm.createContext(context);
   for (const name of ['parseParentWordEntries', 'validateWordEntryFormat', 'shouldChooseDictionarySenses',
     'getWordEntryEndpoint', 'buildSelectedSenseEntries', 'submitWordEntry', 'lookupSelectedSenses',
-    'submitParentWords', 'submitSelectedSenses']) {
+    'submitParentWords', 'submitSelectedSenses', 'renderEntrySenseBatch', 'renderDictionarySenseOption', 'setEntrySense']) {
     const start = app.search(new RegExp(`(?:async )?function ${name}\\(`));
     if (start < 0 && name === 'validateWordEntryFormat') continue;
     assert.ok(start >= 0, name);
     vm.runInContext(app.slice(start, app.indexOf('\n}', start) + 2), context);
   }
-  return { context, calls, notices, input };
+  return { context, calls, notices, input, panel };
 }
+
+test('batch entry must look up senses and must never save bare words', async () => {
+  const h = loadEntry('hormone\naddiction');
+  await h.context.submitWordEntry();
+  assert.equal(h.calls.some(c => c[1]?.method === 'POST'), false);
+  assert.ok(h.calls.some(c => c[0].startsWith('/api/word-senses?')));
+});
+
+test('handwritten meanings cannot enter through either submit action', async () => {
+  for (const action of ['submitWordEntry', 'submitParentWords']) {
+    const h = loadEntry('course | 原因');
+    await h.context[action]();
+    assert.equal(h.calls.some(c => c[1]?.method === 'POST'), false);
+    assert.match(h.notices.join(' '), /选择|英文/);
+  }
+});
 
 for (const parent of [false, true]) {
   test(`${parent ? 'parent' : 'child'} rejects Chinese and malformed entries before lookup or submission`, async () => {
@@ -58,15 +74,14 @@ test('direct dictionary lookup and stale selected-sense confirmation also reject
   }
 });
 
-test('valid English with a Chinese meaning still reaches the normal save flow', async () => {
+test('handwritten glosses are rejected for words and phrases in both forms', async () => {
   for (const parent of [false, true]) {
     for (const value of ['bank | 银行', "don't | 不要", 'ice-cream | 冰淇淋', 'look after | 照顾']) {
       const h = loadEntry(value, parent);
       await h.context.submitWordEntry();
       const request = h.calls.find(call => call[0] === (parent ? '/api/admin/addWords' : '/api/words'));
-      assert.ok(request, value);
-      const body = JSON.parse(request[1].body);
-      assert.equal(body.words[0].cnMeaning, value.split('|')[1].trim());
+      assert.equal(request, undefined, value);
+      assert.match(h.notices.join(' '), /不支持手写/);
     }
   }
 });
@@ -87,12 +102,18 @@ test('entry parser preserves phrases and only splits explicit list separators', 
 });
 
 for (const parent of [false, true]) {
-  test(`${parent ? 'parent' : 'child'} submits two intact phrases and looks up a single intact phrase`, async () => {
+  test(`${parent ? 'parent' : 'child'} requires selection for every intact phrase`, async () => {
     const h = loadEntry('up to\ncarrying the banner', parent);
     await h.context.submitWordEntry();
+    await h.context.submitSelectedSenses();
+    assert.ok(!h.calls.some(call => call[1]?.method === 'POST'));
+    h.context.setEntrySense(0,0,true);
+    await h.context.submitSelectedSenses();
+    assert.ok(!h.calls.some(call => call[1]?.method === 'POST'));
+    h.context.setEntrySense(1,0,true);
+    await h.context.submitSelectedSenses();
     const request = h.calls.find(call => call[0] === (parent ? '/api/admin/addWords' : '/api/words'));
-    assert.ok(request);
-    assert.deepEqual(JSON.parse(request[1].body).words.map(entry => entry.word), ['up to', 'carrying the banner']);
+    assert.deepEqual(JSON.parse(request[1].body).words, [{word:'up to',selectionToken:'offered-token'},{word:'carrying the banner',selectionToken:'offered-token'}]);
     const single = loadEntry('up to', parent);
     await single.context.submitWordEntry();
     assert.ok(single.calls.some(call => call[0] === '/api/word-senses?word=up%20to'));
@@ -105,4 +126,16 @@ test('suffix spelling is not classified as malformed English by the new UI guard
   assert.equal(typeof h.context.validateWordEntryFormat, 'function');
   assert.equal(h.context.validateWordEntryFormat([{ word: '-ish' }, { word: '-ism' }]), true);
   assert.deepEqual(h.notices, []);
+});
+
+test('failed lookup preserves earlier selections and retries only the unresolved word', async () => {
+  const h=loadEntry('bank\ncourse');let failed=true;const looked=[];
+  h.context.api=async url=>{looked.push(url);if(url.endsWith('course')&&failed)throw Error('offline');return {senses:[{definition:'a sense',cnMeaning:'释义',selectionToken:url}]};};
+  await h.context.submitWordEntry();h.context.setEntrySense(0,0,true);
+  assert.equal(h.panel._senseBatch.items[1].senses.length,0);
+  failed=false;await h.context.lookupSelectedSenses();
+  assert.equal(looked.filter(url=>url.endsWith('bank')).length,1);
+  assert.deepEqual(Array.from(h.panel._senseBatch.items[0].selected),[0]);
+  h.input.value='other';await h.context.submitSelectedSenses();
+  assert.match(h.notices.join(' '),/输入已变更/);
 });

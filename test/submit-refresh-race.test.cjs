@@ -36,8 +36,8 @@ for (const timing of ['before submit', 'during submit', 'after submit']) {
 test('sense selection renders only Chinese labels and rejects English-only results', async () => {
   const host = {}, messages = [];
   const c = { state: { user: 'child' }, $: () => ({ value: 'bank' }), parseParentWordEntries: () => [{ word: 'bank' }], showLoading() {}, hideLoading() {},
-    api: async () => ({ senses: [{ cnMeaning: '银行', definition: 'a financial institution', partOfSpeech: 'noun' }, { definition: 'English only' }] }),
+    api: async () => ({ senses: [{ selectionToken:'offered', cnMeaning: '银行', definition: 'a financial institution', partOfSpeech: 'noun' }, { definition: 'English only' }] }),
     getWordEntryDuplicatePanel: () => host, escapeHtml: x => x, showToast: x => messages.push(x) };
-  vm.createContext(c); vm.runInContext(fn('validateWordEntryFormat') + '\n' + fn('renderDictionarySenseOption') + '\n' + fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
-  assert.match(host.innerHTML, /银行/); assert.doesNotMatch(host.innerHTML, /financial|noun|English only/); assert.equal(host._dictionarySenses.length, 1);
+  vm.createContext(c); vm.runInContext(fn('validateWordEntryFormat') + '\n' + fn('renderDictionarySenseOption') + '\n' + fn('renderEntrySenseBatch') + '\n' + fn('lookupSelectedSenses'), c); await c.lookupSelectedSenses();
+  assert.match(host.innerHTML, /银行/); assert.doesNotMatch(host.innerHTML, /financial|noun|English only/); assert.equal(host._senseBatch.items[0].senses.length, 1);
 });

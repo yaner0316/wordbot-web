@@ -2308,7 +2308,7 @@ function openStudentWordEntry() {
       <span>英文单词或短语</span>
       <textarea id="studentWordsInput" rows="2" placeholder="例如 take care of"></textarea>
     </label>
-    <details class="parent-help"><summary>批量输入与指定释义</summary><p>一行一个单词或短语，也可用逗号、分号分隔。短语内部空格会保留。指定释义请单独一行写成 word | 中文释义，例如 promotion | 促销活动。</p></details>
+    <div class="parent-help">可批量输入，一行一个词或短语，也可用逗号、分号分隔。下一步为每个词选择具体意思。</div>
     <div id="studentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
     <div id="studentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
@@ -2594,7 +2594,7 @@ function openParentTool(tool) {
         <span>英文单词或短语</span>
         <textarea id="parentWordsInput" rows="2" placeholder="例如 take care of"></textarea>
       </label>
-      <details class="parent-help"><summary>批量输入与指定释义</summary><p>一行一个单词或短语，也可用逗号、分号分隔。短语内部空格会保留。指定释义请单独一行写成 word | 中文释义，例如 promotion | 促销活动。</p></details>
+      <div class="parent-help">可批量输入，一行一个词或短语，也可用逗号、分号分隔。下一步为每个词选择具体意思。</div>
       <div id="parentWordEntryCooldownNotice" class="parent-cooldown-notice">新录入的单词需要约 18 小时冷却，冷却期结束后才会进入孩子的正式挑战。</div>
       <div id="parentWordEntryDuplicatePanel" class="wordEntryDuplicatePanel"></div>
     <button class="btn btn-primary btn-small" type="button" onclick="submitWordEntry()">下一步</button>
@@ -2753,31 +2753,14 @@ function getWordEntryEndpoint() {
   return $('parentWordsInput') ? '/api/admin/addWords' : '/api/words';
 }
 
-function renderDuplicateWordConfirmation(duplicateWords = []) {
-  const panel = getWordEntryDuplicatePanel();
-  if (!panel) return;
-  const rows = duplicateWords.map(item => {
-    const existing = (item.existing || []).map(record => {
-      const meaning = record.cnMeaning || record.meaning || '暂无释义';
-      return `<li>${escapeHtml(meaning)}</li>`;
-    }).join('');
-    return `<div class="duplicate-word-card"><strong>${escapeHtml(item.word)}</strong><ul>${existing}</ul></div>`;
-  }).join('');
-  panel.innerHTML = `
-    <div class="duplicate-word-confirm">
-      <div class="parent-help">这些单词已经在词库里。若是新义项，请在输入框里写成 <strong>promotion | 促销活动</strong> 后再确认新增。</div>
-      ${rows}
-      <div class="parent-inline-form">
-        <button class="btn btn-secondary btn-small" type="button" onclick="submitParentWords({ skipDuplicateWords: true })">跳过重复，只添加新词</button>
-        <button class="btn btn-primary btn-small" type="button" onclick="submitParentWords({ confirmNewMeanings: true })">作为新义项添加</button>
-      </div>
-    </div>
-  `;
+function renderDuplicateWordConfirmation() {
+  showToast('请从词义列表选择要学习的具体意思', 'info');
+  return lookupSelectedSenses();
 }
 
 function clearDuplicateWordConfirmation() {
   const panel = getWordEntryDuplicatePanel();
-  if (panel) panel.innerHTML = '';
+  if (panel) { panel.innerHTML = ''; delete panel._senseBatch; delete panel._dictionarySenses; }
 }
 
 function buildSelectedSenseEntries(word, senses, selectedIndexes) {
@@ -2788,64 +2771,90 @@ function buildSelectedSenseEntries(word, senses, selectedIndexes) {
     if (!selected.has(index)) return [];
     const meaning = String(sense?.definition || '').trim();
     const cnMeaning = String(sense?.cnMeaning || '').trim();
-    if (!meaning || !/^[\u3400-\u9fff，、；（）·]{1,20}$/.test(cnMeaning)) return [];
-    const pos = String(sense?.partOfSpeech || '').trim();
-    return [{ word: normalizedWord, meaning, cnMeaning, ...(pos ? { POS: pos } : {}) }];
+    if (!meaning || !sense.selectionToken || !/^[\u3400-\u9fff，、；（）·]{1,20}$/.test(cnMeaning)) return [];
+    return [{ word: normalizedWord, selectionToken: sense.selectionToken }];
   });
 }
 
 function shouldChooseDictionarySenses(entries) {
-  return Array.isArray(entries) && entries.length === 1 && !entries[0]?.meaning && !entries[0]?.cnMeaning;
+  return Array.isArray(entries) && entries.length > 0 && entries.every(entry => !entry.meaning && !entry.cnMeaning);
 }
 
 function validateWordEntryFormat(entries) {
+  if (entries.some(entry => entry.meaning || entry.cnMeaning)) {
+    showToast('请只输入英文单词或短语，再从列表选择具体词义；不支持手写释义。', 'warn');
+    return false;
+  }
+  if (entries.length > 50) { showToast('每批最多输入 50 个单词或短语', 'warn'); return false; }
   const invalid = entries.filter(entry => {
     const word = String(entry?.word || '');
     return !/^(?:[a-z]+(?:[ '-][a-z]+)*|-[a-z]+)$/i.test(word);
   });
   if (!invalid.length) return true;
   const examples = invalid.slice(0, 3).map(entry => String(entry.word).slice(0, 30)).join('、');
-  showToast(`“${examples}”不是有效的英文输入。请填写英文单词；中文释义可写在 | 后，例如 solid | 固体。`, 'warn');
+  showToast(`“${examples}”不是有效的英文输入。请填写英文单词或短语，然后选择具体词义。`, 'warn');
   return false;
 }
 
 async function submitWordEntry() {
-  const input = $('parentWordsInput') || $('studentWordsInput');
-  const entries = parseParentWordEntries(input?.value);
-  if (!validateWordEntryFormat(entries)) return;
-  if (shouldChooseDictionarySenses(entries)) return lookupSelectedSenses();
-  return submitParentWords();
+  return lookupSelectedSenses();
 }
 
 async function lookupSelectedSenses() {
   const input = $('parentWordsInput') || $('studentWordsInput');
-  const lookupUser = state.user;
-  const host = getWordEntryDuplicatePanel();
   const entries = parseParentWordEntries(input?.value);
   if (!validateWordEntryFormat(entries)) return;
-  if (entries.length !== 1 || entries[0].meaning || entries[0].cnMeaning) {
-    showToast('选择释义时请先只输入一个英文单词', 'info');
-    return;
-  }
-  showLoading('正在查询释义...');
+  if (!entries.length) { showToast('请先输入英文单词或短语', 'warn'); return; }
+  const host = getWordEntryDuplicatePanel(), user = state.user;
+  if (!host) return;
+  const key = entries.map(entry => entry.word).join('\n');
+  const previous = host._senseBatch;
+  if (previous?.loading || previous?.saving) return;
+  const batch = previous?.user === user && previous.key === key ? previous : {
+    user, key, items: entries.map(entry => previous?.user === user
+      ? previous.items.find(item => item.word === entry.word) || { word: entry.word, senses: [], selected: [] }
+      : { word: entry.word, senses: [], selected: [] })
+  };
+  host._senseBatch = batch; batch.loading = true;
+  showLoading('正在查询词义...');
   try {
-    const word = entries[0].word;
-    const data = await api(`/api/word-senses?word=${encodeURIComponent(word)}`);
-    if (state.user !== lookupUser || getWordEntryDuplicatePanel() !== host) return;
-    const senses = (Array.isArray(data?.senses) ? data.senses : []).filter(sense => /^[\u3400-\u9fff，、；（）·]{1,20}$/.test(String(sense?.cnMeaning || '').trim()));
-    if (!senses.length) throw new Error('没有找到可选择的释义');
-    if (!host) return;
-    host.innerHTML = `<div class="duplicate-word-confirmation sense-picker" data-selected-sense-word="${escapeHtml(word)}"><strong>${escapeHtml(word)}</strong><p>选择要学习的意思；相近释义可展开说明确认区别。</p><div class="sense-options">${senses.map(renderDictionarySenseOption).join('')}</div><div class="sense-picker-actions"><button class="btn btn-primary btn-small" type="button" onclick="submitSelectedSenses()">录入已选释义</button></div></div>`;
-    host._dictionarySenses = senses;
-  } catch (error) {
-    if (state.user !== lookupUser || getWordEntryDuplicatePanel() !== host) return;
-    showToast('暂时未查到中文释义，请稍后重试，或输入“单词 | 中文释义”录入。', 'error');
+    for (const item of batch.items) {
+      if (state.user !== user || getWordEntryDuplicatePanel() !== host || host._senseBatch !== batch) return;
+      if (item.senses.length) continue;
+      try {
+        const data = await api('/api/word-senses?word=' + encodeURIComponent(item.word));
+        if (state.user !== user || getWordEntryDuplicatePanel() !== host || host._senseBatch !== batch) return;
+        item.senses = (Array.isArray(data?.senses) ? data.senses : []).filter(sense => sense.selectionToken && /^[\u3400-\u9fff，、；（）·]{1,20}$/.test(String(sense.cnMeaning || '').trim()));
+        if (!item.senses.length) throw new Error('暂未找到可选词义');
+        item.error = '';
+      } catch (error) { item.error = '词义查询失败，请重试'; }
+    }
   } finally {
+    batch.loading = false;
+    if (state.user === user && getWordEntryDuplicatePanel() === host && host._senseBatch === batch) renderEntrySenseBatch(host);
     hideLoading();
   }
 }
 
-function renderDictionarySenseOption(sense, index) {
+function renderEntrySenseBatch(host) {
+  const batch = host._senseBatch;
+  host.innerHTML = '<div class="sense-picker"><p>每个单词至少选择一个要学习的意思。</p>' + batch.items.map((item, wordIndex) =>
+    '<fieldset class="duplicate-word-card"><legend>' + escapeHtml(item.word) + '</legend>' +
+    (item.error ? '<p role="alert">' + escapeHtml(item.error) + '</p>' : '') +
+    item.senses.map((sense, index) => renderDictionarySenseOption(sense, index, wordIndex, item.selected.includes(index))).join('') + '</fieldset>'
+  ).join('') + (batch.items.some(item => item.error) ? '<button type="button" class="btn btn-secondary btn-small" onclick="lookupSelectedSenses()">重试未查到的词</button>' : '') +
+    '<button type="button" class="btn btn-primary btn-small" onclick="submitSelectedSenses()">确认录入所选词义</button></div>';
+}
+
+function setEntrySense(wordIndex, senseIndex, checked) {
+  const batch = getWordEntryDuplicatePanel()?._senseBatch;
+  if (!batch || batch.user !== state.user || batch.saving) return;
+  const item = batch.items[wordIndex];
+  if (!item?.senses[senseIndex]) return;
+  item.selected = checked ? Array.from(new Set([...item.selected, senseIndex])) : item.selected.filter(index => index !== senseIndex);
+}
+
+function renderDictionarySenseOption(sense, index, wordIndex = 0, checked = false) {
   const posLabels = { noun: '名词', verb: '动词', adjective: '形容词', adverb: '副词', preposition: '介词', pronoun: '代词', conjunction: '连词', interjection: '感叹词', determiner: '限定词', phrase: '短语' };
   const note = String(sense.usageNote || '').trim();
   const chineseNote = /^[\u3400-\u9fff，。、“”；：（）·？！\s]{1,60}$/.test(note) ? note : '';
@@ -2853,102 +2862,47 @@ function renderDictionarySenseOption(sense, index) {
   const example = sense.example && sense.exampleCN
     ? `<p class="sense-example">${escapeHtml(sense.example)}<br>${escapeHtml(sense.exampleCN)}</p>`
     : '<p class="sense-example">此义项暂未提供例句。</p>';
-  return `<div class="sense-option-row"><label class="sense-option"><input type="checkbox" data-selected-sense="${index}" /><span>${escapeHtml(sense.cnMeaning)}</span></label>${example}${explanation ? `<details class="sense-explanation"><summary>查看义项说明</summary><p>${escapeHtml(explanation)}</p></details>` : ''}</div>`;
+  return `<div class="sense-option-row"><label class="sense-option"><input type="checkbox" data-selected-sense="${index}" ${checked ? 'checked' : ''} onchange="setEntrySense(${wordIndex}, ${index}, this.checked)" /><span>${escapeHtml(sense.cnMeaning)}</span></label>${example}${explanation ? `<details class="sense-explanation"><summary>查看义项说明</summary><p>${escapeHtml(explanation)}</p></details>` : ''}</div>`;
 }
 
 async function submitSelectedSenses() {
-  const host = getWordEntryDuplicatePanel();
-  const word = host?.querySelector('[data-selected-sense-word]')?.dataset.selectedSenseWord;
-  const indexes = Array.from(host?.querySelectorAll('[data-selected-sense]:checked') || []).map(node => Number(node.dataset.selectedSense));
-  const entries = buildSelectedSenseEntries(word, host?._dictionarySenses, indexes);
-  if (!validateWordEntryFormat(entries)) return;
-  if (!entries.length) {
-    showToast('请至少选择一个释义', 'info');
-    return;
-  }
-  showLoading('正在录入释义...');
-  try {
-    const result = await api(getWordEntryEndpoint(), {
-      method: 'POST', timeoutMs: 90000,
-      body: JSON.stringify({ targetUser: state.user, words: entries, confirmNewMeanings: true, selectedSenseFlow: true }),
-    });
-    if (!isParentWordSubmissionSuccessful(result)) throw new Error(result?.error || '录入未完成');
-    showToast(buildParentWordCooldownNotice(result.count), 'success');
-    const input = $('parentWordsInput') || $('studentWordsInput');
-    if (input) input.value = '';
-    clearDuplicateWordConfirmation();
-    loadStats(state.user);
-  } catch (error) {
-    showToast('录入失败: ' + normalizeApiError(error).message, 'error');
-  } finally {
-    hideLoading();
-  }
-}
-
-async function submitParentWords(options = {}) {
+  const host = getWordEntryDuplicatePanel(), batch = host?._senseBatch;
   const input = $('parentWordsInput') || $('studentWordsInput');
-  const entries = parseParentWordEntries(input?.value);
-  if (!validateWordEntryFormat(entries)) return;
-  if (!entries.length) {
-    showToast('请先输入至少一个单词', 'warn');
-    return;
+  const current = parseParentWordEntries(input?.value);
+  if (!validateWordEntryFormat(current)) return;
+  if (!batch || batch.user !== state.user || current.map(entry => entry.word).join('\n') !== batch.key) {
+    showToast('输入已变更，请重新查询并选择词义', 'warn'); return;
   }
-  if (options.confirmNewMeanings) {
-    const validation = await api('/api/admin/validateWords', {
-      method: 'POST',
-      body: JSON.stringify({ targetUser: state.user, words: entries })
-    });
-    const duplicateWordSet = new Set((validation.duplicateWords || []).map(item => item.word));
-    const missingMeaning = entries.filter(entry => duplicateWordSet.has(entry.word) && !entry.cnMeaning);
-    if (missingMeaning.length) {
-      showToast('新增义项请写成 promotion | 促销活动 这种格式', 'warn');
-      renderDuplicateWordConfirmation(validation.duplicateWords || []);
-      return;
-    }
+  if (batch.loading || batch.saving) return;
+  const entries = [];
+  for (const item of batch.items) {
+    const selected = buildSelectedSenseEntries(item.word, item.senses, item.selected);
+    if (!selected.length) { showToast('请为 ' + item.word + ' 选择至少一个具体词义', 'warn'); return; }
+    entries.push(...selected);
   }
-  showLoading('正在录入单词...');
+  batch.saving = true; showLoading('正在录入所选词义...');
   try {
-    const result = DEMO_MODE
-      ? { success: true, count: entries.length }
-      : await api(getWordEntryEndpoint(), {
-          method: 'POST',
-          timeoutMs: 90000,
-          body: JSON.stringify({
-            targetUser: state.user,
-            words: entries,
-            confirmNewMeanings: Boolean(options.confirmNewMeanings),
-            skipDuplicateWords: Boolean(options.skipDuplicateWords),
-          })
-        });
-    if (!isParentWordSubmissionSuccessful(result)) {
-      const errors = Array.isArray(result?.errors) ? result.errors : [];
-      const detail = errors.length ? `：${errors.map(error => error?.message || error?.word || String(error)).join('、')}` : '';
-      showToast('录入未完成' + detail, 'error');
-      return;
-    }
-    const count = Number(result.count);
-    const skipped = result.skippedDuplicateWords?.length ? `，跳过重复 ${result.skippedDuplicateWords.length} 个` : '';
-    showToast(buildParentWordCooldownNotice(count) + skipped, 'success');
-    for (const id of ['parentWordEntryCooldownNotice', 'studentWordEntryCooldownNotice']) {
-      const notice = $(id);
-      if (notice) notice.textContent = buildParentWordCooldownNotice(count);
-    }
-    if (input) input.value = '';
-    clearDuplicateWordConfirmation();
-    loadStats(state.user);
+    const result = await api(getWordEntryEndpoint(), { method: 'POST', timeoutMs: 90000,
+      body: JSON.stringify({ targetUser: batch.user, words: entries }) });
+    if (!isParentWordSubmissionSuccessful(result)) throw new Error(result?.error || '录入未完成，请重试');
+    if (state.user !== batch.user || getWordEntryDuplicatePanel() !== host) return;
+    showToast(buildParentWordCooldownNotice(result.count), 'success');
+    if (parseParentWordEntries(input.value).map(entry => entry.word).join('\n') === batch.key) input.value = '';
+    clearDuplicateWordConfirmation(); loadStats(batch.user);
   } catch (error) {
-    const normalized = normalizeApiError(error);
-    if (normalized.code === 'DUPLICATE_WORD_CONFIRMATION_REQUIRED') {
-      renderDuplicateWordConfirmation(normalized.duplicateWords || normalized.payload?.duplicateWords || []);
-      showToast('发现重复单词，请确认是否作为新义项添加', 'info');
-    } else if (normalized.code === 'NEW_MEANING_REQUIRES_MEANING') {
-      showToast('新增义项需要填写中文释义，例如 promotion | 促销活动', 'warn');
-    } else {
+    if (state.user === batch.user && getWordEntryDuplicatePanel() === host) {
+      const normalized = normalizeApiError(error);
+      if (normalized.code === 'SELECTED_SENSE_REQUIRED') {
+        for (const item of batch.items) { item.senses = []; item.selected = []; item.error = '词义选择已失效，请重新查询'; }
+        renderEntrySenseBatch(host);
+      }
       showToast('录入失败: ' + normalized.message, 'error');
     }
-  } finally {
-    hideLoading();
-  }
+  } finally { batch.saving = false; hideLoading(); }
+}
+
+async function submitParentWords() {
+  return lookupSelectedSenses();
 }
 
 async function searchParentWord() {
@@ -3320,11 +3274,11 @@ async function openParentWordEditor(recordId, page = parentWordLibraryState.page
       </label>
       <label class="parent-field">
         <span>中文释义</span>
-        <input id="parentEditCnMeaning" type="text" value="${escapeHtml(cnMeaning)}" />
+        <input id="parentEditCnMeaning" readonly type="text" value="${escapeHtml(cnMeaning)}" />
       </label>
       <label class="parent-field">
         <span>英文释义</span>
-        <input id="parentEditMeaning" type="text" value="${escapeHtml(meaning)}" />
+        <input id="parentEditMeaning" readonly type="text" value="${escapeHtml(meaning)}" />
       </label>
       <label class="parent-field">
         <span>词性</span>
@@ -3353,8 +3307,6 @@ async function saveParentWord() {
           userId: state.user,
           recordId: $('parentEditRecordId')?.value || undefined,
           word,
-          meaning: $('parentEditMeaning')?.value || '',
-          cnMeaning: $('parentEditCnMeaning')?.value || '',
           pos: $('parentEditPos')?.value || '',
           context: $('parentEditContext')?.value || '',
           status: $('parentEditStatus')?.value || undefined

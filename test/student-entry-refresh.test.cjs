@@ -35,10 +35,10 @@ function harness() {
     api: () => new Promise(resolve => release = resolve), minutes: 0,
   };
   vm.createContext(c);
-  vm.runInContext(['renderStudentTools', 'lookupSelectedSenses', 'renderDictionarySenseOption'].map(fn).join('\n'), c);
+  vm.runInContext(['renderStudentTools', 'lookupSelectedSenses', 'renderDictionarySenseOption', 'renderEntrySenseBatch'].map(fn).join('\n'), c);
   c.renderStudentTools();
   const open = () => { panel().style.display = 'block'; panel().input = { value: 'carry the banner' }; panel().host = { innerHTML: '' }; return panel(); };
-  return { c, section, panel, open, respond: () => release({ senses: [{ cnMeaning: '带头', partOfSpeech: 'phrase', example: 'They carry the banner for the team.', exampleCN: '他们为团队带头。' }] }) };
+  return { c, section, panel, open, respond: () => release({ senses: [{ selectionToken:'offered', cnMeaning: '带头', partOfSpeech: 'phrase', example: 'They carry the banner for the team.', exampleCN: '他们为团队带头。' }] }) };
 }
 test('home refresh preserves the open phrase input and pending lookup while updating quick tools', async () => {
   const h = harness(), original = h.open(), input = original.input, host = original.host;

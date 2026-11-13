@@ -57,11 +57,11 @@ test('parent entry cooldown notice clearly states the 18-hour wait', () => {
 test('selected dictionary senses become independent learning-meaning entries', () => {
   const buildEntries = loadFunction('buildSelectedSenseEntries');
   assert.deepEqual(buildEntries('bank', [
-    { partOfSpeech: 'noun', definition: 'a financial institution', cnMeaning: '银行' },
-    { partOfSpeech: 'noun', definition: 'the side of a river', cnMeaning: '河岸' },
+    { partOfSpeech: 'noun', definition: 'a financial institution', cnMeaning: '银行', selectionToken:'finance' },
+    { partOfSpeech: 'noun', definition: 'the side of a river', cnMeaning: '河岸', selectionToken:'river' },
   ], [1, 0]), [
-    { word: 'bank', meaning: 'a financial institution', cnMeaning: '银行', POS: 'noun' },
-    { word: 'bank', meaning: 'the side of a river', cnMeaning: '河岸', POS: 'noun' },
+    { word: 'bank', selectionToken:'finance' },
+    { word: 'bank', selectionToken:'river' },
   ]);
 });
 
@@ -95,7 +95,7 @@ test('a single bare word defaults to dictionary-sense selection', () => {
   const shouldChoose = loadFunction('shouldChooseDictionarySenses');
   assert.equal(shouldChoose([{ word: 'light' }]), true);
   assert.equal(shouldChoose([{ word: 'light', meaning: 'not heavy' }]), false);
-  assert.equal(shouldChoose([{ word: 'light' }, { word: 'bank' }]), false);
+  assert.equal(shouldChoose([{ word: 'light' }, { word: 'bank' }]), true);
 });
 
 test('parent library has continuous loading and per-meaning edit/delete controls', () => {

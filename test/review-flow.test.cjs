@@ -89,5 +89,5 @@ test('selected-sense reviews render four Chinese choices and submit the selected
   assert.match(appSource, /function isSenseChoiceReviewQuestion/);
   assert.match(appSource, /CN 释义选择/);
   assert.match(appSource, /String\.fromCharCode\(65 \+ answer\)/);
-  assert.match(appSource, /selectedSenseFlow: true/);
+  assert.match(appSource, /selectionToken: sense.selectionToken/);
 });
