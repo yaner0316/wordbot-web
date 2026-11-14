@@ -4029,7 +4029,7 @@ function renderResults(data) {
   const masteryFeedbackHtml = hasMeaningFeedback
     ? (newlyMasteredMeanings.length || fullyMasteredWords.length
       ? `<div class="mastered-tag" style="background:#E8F5E9;color:var(--green);margin-top:8px;">
-          ${newlyMasteredMeanings.length ? `✓ 本次新掌握 ${newlyMasteredMeanings.length} 个词义` : ''}
+          ${newlyMasteredMeanings.length && !data.progressSummary ? `✓ 本次新掌握 ${newlyMasteredMeanings.length} 个词义` : ''}
           ${newlyMasteredMeanings.length ? `<ul style="margin:6px 0 0;padding-left:22px;text-align:left;">${newlyMasteredMeanings.map(item => `<li><strong>${escapeHtml(item?.word || '')}</strong>：${escapeHtml(item?.meaningZh || '')}</li>`).join('')}</ul>` : ''}
           ${fullyMasteredWords.length ? `<div style="margin-top:6px;">其中 ${fullyMasteredWords.length} 个单词已全部掌握：${fullyMasteredWords.map(escapeHtml).join('、')}</div>` : ''}
         </div>`
@@ -4153,6 +4153,7 @@ function renderResults(data) {
     <div class="result-hero">
       <div class="big-score ${pass ? 'pass' : 'fail'}"><strong>${correct}</strong><span style="font-size:28px;color:var(--text-secondary);font-weight:400;">/${total}</span></div>
       <div style="font-size:16px;color:var(--text-secondary);margin-top:4px;">正确率 ${escapeHtml(accuracy)}</div>
+      ${state.session.kind === 'quiz' && data.mode !== 'practice' && data.mode !== 'test' && data.progressSummary ? `<div class="mastered-tag" style="margin-top:8px;">本次新掌握 ${escapeHtml(data.progressSummary.newlyMastered)} 个词义 · 巩固中 ${escapeHtml(data.progressSummary.consolidating)} 个词义 · 已认识 ${escapeHtml(data.progressSummary.recognized)} 个词义</div>` : ''}
       <div style="font-size:18px;font-weight:600;margin-top:12px;color:${pass ? 'var(--orange)' : 'var(--text-secondary)'};">${encourage}</div>
       ${data.mode === 'test' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">测试模式：不计入正式统计</div>' : ''}
       ${data.mode === 'practice' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">自选练习：不计掌握、不增减游戏时间，不影响正式冷却。</div>' : ''}
