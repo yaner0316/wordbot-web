@@ -43,6 +43,8 @@ const parentWordLibraryState = {
   demoDeletedIds: new Set(),
 };
 function formatLearningLevel(level) {
+  if (level === '小学') return '小学高年级（4–6年级）';
+  if (level === '小学低年级') return '小学低年级（1–3年级）';
   return LEVEL_LABELS[level] || level || DEFAULT_LEVEL;
 }
 
@@ -155,7 +157,7 @@ function generateDemoQuiz(level) {
   // fill remaining with more words
   const remaining = shuffle(DEMO_WORDS.filter(w => !selected.includes(w)));
   const words = [...selected, ...remaining.slice(0, 4)];
-  const types = level === '小学' ? [1,1,1,1,1,1,1,1,1,1] : [1,1,1,1,1,1,2,2,3,3];
+  const types = ['小学','小学低年级'].includes(level) ? [1,1,1,1,1,1,1,1,1,1] : [1,1,1,1,1,1,2,2,3,3];
   const shuffledTypes = shuffle(types);
   const questions = words.map((w, i) => {
     const type = shuffledTypes[i];
@@ -3389,7 +3391,7 @@ async function loadParentLearningSettings() {
       <label class="parent-field">
         <span>题干语言难度</span>
         <select id="parentLearningLevel" ${levelLocked ? 'disabled' : ''}>
-          ${['小学','中学','高中','CET4_6_TOEFL'].map(level => `<option value="${level}" ${level === currentLevel ? 'selected' : ''}>${formatLearningLevel(level)}</option>`).join('')}
+          ${['小学低年级','小学','中学','高中','CET4_6_TOEFL'].map(level => `<option value="${level}" ${level === currentLevel ? 'selected' : ''}>${formatLearningLevel(level)}</option>`).join('')}
         </select>
       </label>
       <small>${escapeHtml(levelNotice)}</small>

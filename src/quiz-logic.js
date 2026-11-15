@@ -12,13 +12,13 @@
   function adaptDemoContextByLevel(wordInfo, type, level) {
     if (type === 3) return wordInfo.cn;
     if (type === 2) {
-      if (level === '小学') return `A simple way to say: ${wordInfo.meaning}.`;
+      if (['小学','小学低年级'].includes(level)) return `A simple way to say: ${wordInfo.meaning}.`;
       if (level === '高中') return `A word used to describe something that means: ${wordInfo.meaning}.`;
       if (level === 'CET4_6_TOEFL') return `A term denoting the following concept: ${wordInfo.meaning}.`;
       return wordInfo.meaning;
     }
 
-    if (level === '小学') {
+    if (['小学','小学低年级'].includes(level)) {
       return `Something that means "${wordInfo.meaning}" can be called ${wordInfo.word}.`;
     }
     if (level === '高中') {
