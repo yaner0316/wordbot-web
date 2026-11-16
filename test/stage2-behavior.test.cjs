@@ -184,10 +184,11 @@ test('vocabulary progress explains each status through an accessible info popove
     assert.match(progressSource, /button[^>]+class="[^"]*home-v2-progress-info[^"]*"/);
     assert.match(progressSource, /aria-expanded="false"/);
     assert.match(progressSource, /aria-controls="homeVocabProgressDefinitions"/);
-    assert.match(progressSource, /<dt>未开始<\/dt>\s*<dd>还没有正式答题记录<\/dd>/);
-    assert.match(progressSource, /<dt>已认识<\/dt>\s*<dd>已经做过，但最近一次答错后尚未重新答对<\/dd>/);
-    assert.match(progressSource, /<dt>巩固中<\/dt>\s*<dd>最近答错后已经答对，正在等待间隔复测<\/dd>/);
-    assert.match(progressSource, /<dt>已掌握<\/dt>\s*<dd>所有释义均达到间隔掌握条件<\/dd>/);
+    assert.match(progressSource, /<dt>已录入<\/dt>/);
+    assert.doesNotMatch(progressSource, /<dt>已认识<\/dt>/);
+    assert.match(progressSource, /<dt>巩固中<\/dt>\s*<dd>已做过有效学习，答对或答错都算巩固中。达到掌握条件后进入已掌握。<\/dd>/);
+    assert.match(progressSource, /<dt>已掌握<\/dt>/);
+    assert.match(progressSource, /总词义/);
     assert.match(app, /mouseenter|mouseover/);
     assert.match(progressSource, /onfocus="handleVocabularyProgressInfoFocus\(event\)"/);
     assert.match(app, /function handleVocabularyProgressInfoFocus\(event\)/);
@@ -556,9 +557,8 @@ test('home stats and game prompts render clean Chinese text', () => {
     assert.ok(app.includes("const DEFAULT_LEVEL = '\u4e2d\u5b66'"));
     assert.ok(app.includes('\u5df2\u638c\u63e1'));
     assert.ok(app.includes('\u5de9\u56fa\u4e2d'));
-    assert.ok(app.includes('\u5df2\u8ba4\u8bc6'));
-    assert.ok(app.includes('\u672a\u5f00\u59cb'));
-    assert.ok(app.includes('\u603b\u8bcd\u6c47'));
+    assert.ok(app.includes('已录入'));
+    assert.ok(app.includes('总词义'));
     assert.ok(app.includes('\u8003\u6838\u6b21\u6570'));
     assert.ok(app.includes('\u6b63\u786e\u7387'));
     assert.ok(app.includes('\u4e0a\u6b21\u8003\u6838'));
@@ -788,7 +788,7 @@ test('parent word query and library editing are separate tools with Chinese stat
     assert.match(app, /function saveParentWord/);
     assert.match(app, /\/api\/admin\/words\?userId=/);
     assert.match(app, /STATUS_LABELS/);
-    assert.match(app, /待学习/);
+    assert.match(app, /已录入/);
     assert.match(app, /已掌握/);
     const searchStart = app.indexOf('async function searchParentWord()');
     const searchEnd = app.indexOf('async function loadParentWordLibrary', searchStart);

@@ -21,12 +21,12 @@ const {
 const DEFAULT_LEVEL = '中学';
 const LEVEL_LABELS = { '中学': '初中' };
 const STATUS_LABELS = {
-  Pending: '待学习',
-  Recognized: '已认识',
+  Pending: '已录入',
+  Recognized: '巩固中',
   Consolidating: '巩固中',
   Mastered: '已掌握',
 };
-const STATUS_OPTIONS = ['Pending', 'Recognized', 'Consolidating', 'Mastered'];
+const STATUS_OPTIONS = ['Pending', 'Consolidating', 'Mastered'];
 const parentWordLibraryState = {
   page: 1,
   pageSize: 20,
@@ -189,12 +189,13 @@ function generateDemoStats(user) {
   const mastered = Math.floor(total * 0.4);
   const consolidating = Math.floor(total * 0.25);
   const recognized = Math.floor(total * 0.2);
-  const pending = total - mastered;
   const totalTests = 5;
   const correctCount = 32;
   const totalQuestions = 50;
   return {
-    totalWords: total, masteredWords: mastered, consolidatingWords: consolidating, recognizedWords: recognized, unseenWords: Math.max(0, total - mastered - consolidating - recognized), pendingWords: pending,
+    totalMeanings: total, meaningStageCounts: {
+      mastered, consolidating: consolidating + recognized, entered: total - mastered - consolidating - recognized,
+    },
     totalTests, totalQuestions, correctCount,
     accuracyRate: ((correctCount/totalQuestions)*100).toFixed(1) + '%',
     lastTestTime: Date.now() - 86400000
@@ -2957,6 +2958,7 @@ function getParentWordStatusFilter() {
 }
 
 function parentWordStatusOptions(currentStatus) {
+  if (currentStatus === 'Recognized') currentStatus = 'Consolidating';
   const selectedStatus = STATUS_OPTIONS.includes(currentStatus) ? currentStatus : 'Pending';
   return STATUS_OPTIONS.map(status => `<option value="${status}" ${status === selectedStatus ? 'selected' : ''}>${escapeHtml(STATUS_LABELS[status])}</option>`).join('');
 }
@@ -3012,7 +3014,7 @@ async function loadParentWordLibrary(page = 1, options = {}) {
             status: index % 4 === 0 ? 'Mastered' : index % 4 === 1 ? 'Recognized' : index % 4 === 2 ? 'Consolidating' : 'Pending',
           }));
           const visibleWords = allWords.filter(item => !parentWordLibraryState.demoDeletedIds.has(item.recordId));
-          const words = statusFilter ? visibleWords.filter(item => item.status === statusFilter) : visibleWords;
+          const words = statusFilter ? visibleWords.filter(item => (item.status === 'Recognized' ? 'Consolidating' : item.status) === statusFilter) : visibleWords;
           const total = words.length;
           const totalPages = Math.max(1, Math.ceil(total / pageSize));
           const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
@@ -3156,7 +3158,8 @@ function renderParentWordLibrary(data) {
   }
   const rows = words.map(item => {
     const recordId = parentWordRecordId(item);
-    const currentStatus = item.status || item.Status || 'Pending';
+    const storedStatus = item.status || item.Status || 'Pending';
+    const currentStatus = storedStatus === 'Recognized' ? 'Consolidating' : storedStatus;
     const word = item.word || item.Word || '';
     const actionArg = escapeHtml(JSON.stringify(recordId));
     return `
@@ -3258,7 +3261,7 @@ async function openParentWordEditor(recordId, page = parentWordLibraryState.page
   const pos = item.pos || item.POS || '';
   const context = item.context || item.Context || '';
   const currentStatus = item.status || item.Status || 'Pending';
-  const statusOptions = STATUS_OPTIONS.map(status => `<option value="${status}" ${status === currentStatus ? 'selected' : ''}>${STATUS_LABELS[status]}</option>`).join('');
+  const statusOptions = parentWordStatusOptions(currentStatus);
   editorEl.innerHTML = `
     <div class="parent-word-editor-card">
       <div class="parent-word-editor-head">
@@ -3479,19 +3482,17 @@ async function loadStats(user, { showOverlay = true } = {}) {
     const data = DEMO_MODE
       ? generateDemoStats(user)
       : await api('/api/stats/' + encodeURIComponent(user), { timeoutMs: 12000 });
-    const totalWords = Number(data.totalWords || 0);
-    const masteredWords = Number(data.masteredWords || 0);
-    const consolidatingWords = Number(data.consolidatingWords || 0);
-    const recognizedWords = Number(data.recognizedWords || 0);
-    const unseenWords = data.unseenWords === undefined
-      ? Math.max(0, totalWords - masteredWords - consolidatingWords - recognizedWords)
-      : Number(data.unseenWords || 0);
+    const meaningStages = data.meaningStageCounts;
+    const total = Number((meaningStages ? data.totalMeanings : data.totalWords) || 0);
+    const mastered = Number(meaningStages?.mastered ?? data.masteredWords ?? 0);
+    const consolidating = Number(meaningStages?.consolidating ?? (Number(data.consolidatingWords || 0) + Number(data.recognizedWords || 0)));
+    const entered = Number(meaningStages?.entered ?? data.unseenWords ?? Math.max(0, total - mastered - consolidating));
     const totalTests = Number(data.totalTests || 0);
     const totalQuestions = Number(data.totalQuestions || 0);
     const correctCount = Number(data.correctCount || 0);
     const accuracyRate = data.accuracyRate || '0%';
     const lastTestTime = data.lastTestTime;
-    const pct = totalWords > 0 ? Math.round(masteredWords / totalWords * 100) : 0;
+    const pct = total > 0 ? Math.round(mastered / total * 100) : 0;
 
     $('statsContent').innerHTML = `
       <section class="home-v2-progress-card" aria-label="词汇进度">
@@ -3504,10 +3505,9 @@ async function loadStats(user, { showOverlay = true } = {}) {
             </button>
             <div class="home-v2-progress-info-popover" id="homeVocabProgressDefinitions" role="tooltip" hidden>
               <dl>
-                <div><dt>未开始</dt><dd>还没有正式答题记录</dd></div>
-                <div><dt>已认识</dt><dd>已经做过，但最近一次答错后尚未重新答对</dd></div>
-                <div><dt>巩固中</dt><dd>最近答错后已经答对，正在等待间隔复测</dd></div>
-                <div><dt>已掌握</dt><dd>所有释义均达到间隔掌握条件</dd></div>
+                <div><dt>已录入</dt><dd>已加入词库，还没有提交有效学习。</dd></div>
+                <div><dt>巩固中</dt><dd>已做过有效学习，答对或答错都算巩固中。达到掌握条件后进入已掌握。</dd></div>
+                <div><dt>已掌握</dt><dd>同一词义用不同题干连续两次正式答对，间隔为 18 小时至 30 天。也可由家长标记。</dd></div>
               </dl>
             </div>
           </span>
@@ -3517,11 +3517,10 @@ async function loadStats(user, { showOverlay = true } = {}) {
             <div class="home-v2-donut-core"><strong>${escapeHtml(pct)}%</strong><span>已掌握</span></div>
           </div>
           <ul class="home-v2-progress-list">
-            <li><span>已掌握</span><strong>${escapeHtml(masteredWords)}</strong></li>
-            <li><span>巩固中</span><strong>${escapeHtml(consolidatingWords)}</strong></li>
-            <li><span>已认识</span><strong>${escapeHtml(recognizedWords)}</strong></li>
-            <li><span>未开始</span><strong>${escapeHtml(unseenWords)}</strong></li>
-            <li><span>总词汇</span><strong>${escapeHtml(totalWords)}</strong></li>
+            <li><span>已掌握</span><strong>${escapeHtml(mastered)}</strong></li>
+            <li><span>巩固中</span><strong>${escapeHtml(consolidating)}</strong></li>
+            <li><span>已录入</span><strong>${escapeHtml(entered)}</strong></li>
+            <li><span>${meaningStages ? '总词义' : '总单词'}</span><strong>${escapeHtml(total)}</strong></li>
           </ul>
         </div>
       </section>
@@ -4155,7 +4154,7 @@ function renderResults(data) {
     <div class="result-hero">
       <div class="big-score ${pass ? 'pass' : 'fail'}"><strong>${correct}</strong><span style="font-size:28px;color:var(--text-secondary);font-weight:400;">/${total}</span></div>
       <div style="font-size:16px;color:var(--text-secondary);margin-top:4px;">正确率 ${escapeHtml(accuracy)}</div>
-      ${state.session.kind === 'quiz' && data.mode !== 'practice' && data.mode !== 'test' && data.progressSummary ? `<div class="mastered-tag" style="margin-top:8px;">本次新掌握 ${escapeHtml(data.progressSummary.newlyMastered)} 个词义 · 巩固中 ${escapeHtml(data.progressSummary.consolidating)} 个词义 · 已认识 ${escapeHtml(data.progressSummary.recognized)} 个词义</div>` : ''}
+      ${state.session.kind === 'quiz' && data.mode !== 'practice' && data.mode !== 'test' && data.progressSummary ? `<div class="mastered-tag" style="margin-top:8px;">本次新掌握 ${escapeHtml(data.progressSummary.newlyMastered)} 个词义 · 巩固中 ${escapeHtml(Number(data.progressSummary.consolidating || 0) + Number(data.progressSummary.recognized || 0))} 个词义</div>` : ''}
       <div style="font-size:18px;font-weight:600;margin-top:12px;color:${pass ? 'var(--orange)' : 'var(--text-secondary)'};">${encourage}</div>
       ${data.mode === 'test' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">测试模式：不计入正式统计</div>' : ''}
       ${data.mode === 'practice' ? '<div class="mastered-tag" style="background:#FFF3E0;color:#E65100;margin-top:8px;">自选练习：不计掌握、不增减游戏时间，不影响正式冷却。</div>' : ''}

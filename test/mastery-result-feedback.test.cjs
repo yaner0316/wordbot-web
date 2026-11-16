@@ -67,11 +67,11 @@ test('empty mastery feedback does not invent new mastery and keeps legacy fully 
   assert.match(legacy, /新掌握\s*1\s*个单词/);
 });
 
-test('formal result shows all three progress counts, including zero, without inventing historical data', () => {
+test('formal result combines legacy recognized and consolidating meanings', () => {
   const html = render({ correct: 8, total: 10, accuracy: '80%', mode: 'real', masteredWords: [], newlyMasteredMeanings: [],
     progressSummary: { newlyMastered: 0, consolidating: 5, recognized: 3 }, results: [] });
   assert.match(html, /新掌握\s*0\s*个词义/);
-  assert.match(html, /巩固中\s*5\s*个词义/);
-  assert.match(html, /已认识\s*3\s*个词义/);
+  assert.match(html, /巩固中\s*8\s*个词义/);
+  assert.doesNotMatch(html, /已认识/);
   assert.doesNotMatch(render({ correct: 1, total: 1, accuracy: '100%', mode: 'practice', progressSummary: { newlyMastered: 0, consolidating: 1, recognized: 0 }, results: [] }), /巩固中\s*1\s*个词义/);
 });

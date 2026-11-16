@@ -1,11 +1,15 @@
 'use strict';
-const challengePicker = { user: null, mode: 'custom', candidates: [], selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, deadlineTimer: null, pendingIds: null, missingWords: [] };
+const challengePicker = { user: null, mode: 'custom', candidates: [], retest: null, selected: new Set(), filter: 'all', loading: false, busy: false, token: 0, timer: null, deadlineTimer: null, pendingIds: null, missingWords: [] };
 const CHALLENGE_WAIT_MS = 120000;
-const challengeStatusLabels = { pending: '未开始', recognized: '已认识', consolidating: '巩固中' };
+const challengeStatusLabels = { pending: '已录入', consolidating: '巩固中' };
+
+function challengeStage(status) {
+  return status === 'recognized' ? 'consolidating' : status;
+}
 
 function filterChallengeWords(words, search = '', status = 'all') {
   const query = search.trim().toLocaleLowerCase();
-  return words.filter(w => (status === 'all' || w.status === status)
+  return words.filter(w => (status === 'all' || challengeStage(w.status) === status)
     && (!query || w.word.toLocaleLowerCase().includes(query)));
 }
 async function renderHomeChallengeAvailability(status, level) {
@@ -18,7 +22,7 @@ async function renderHomeChallengeAvailability(status, level) {
       : await api(`/api/quiz/candidates?user=${encodeURIComponent(user)}`,{timeoutMs:20000,cache:'no-store'});
     if (state.user !== user) return;
     const ready = status?.queryError ? null : getLevelCacheReadyCount(status,level);
-    const availability = challengeAvailability(data.candidates || [],{ready,queryError:!!status?.queryError});
+    const availability = challengeAvailability(data.candidates || [],{ready,queryError:!!status?.queryError,retest:data.retest});
     host.textContent = availability.message;
     document.querySelectorAll('.challenge-entry').forEach(button => {
       button.classList.toggle('is-unavailable',button.dataset.challengeMode === 'random' && !availability.canStart);
@@ -58,12 +62,13 @@ function cancelChallengePreparation() {
   challengePicker.pendingIds = null;
   challengePicker.missingWords = [];
 }
-function challengeAvailability(words, {ready = null, queryError = false} = {}) {
-  const required = Math.min(10, words.length);
-  const available = words.filter(word => word.eligible).length;
+function challengeAvailability(words, {ready = null, queryError = false, retest = null} = {}) {
+  const required = retest?.requiredCount ?? Math.min(10, words.length);
+  const available = retest?.availableCount ?? words.filter(word => word.eligible).length;
+  if (retest) { ready = retest.readyCount; queryError = false; }
   const ends = words.filter(word => !word.eligible).map(word => word.cooldownEndsAt)
     .filter(value => Number.isFinite(Date.parse(value))).sort((a,b) => Date.parse(a)-Date.parse(b));
-  const cooldownEndsAt = available < required ? ends[required - available - 1] || null : null;
+  const cooldownEndsAt = available < required ? (retest ? retest.cooldownEndsAt : ends[required - available - 1] || null) : null;
   const timeReady = required > 0 && available >= required;
   const canStart = timeReady && !queryError && (ready === null || ready >= required);
   const when = cooldownEndsAt ? `预计 ${new Date(cooldownEndsAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})} 满足本场冷却条件；届时仍需题目就绪。` : '';
@@ -72,7 +77,7 @@ function challengeAvailability(words, {ready = null, queryError = false} = {}) {
     : !timeReady ? `${available} 个词义已符合时间条件，本场需 ${required} 题，暂不能开始。${when}`
     : ready !== null && ready < required ? `本场 ${required} 个词义已符合时间条件，题目正在准备，开始后最多等待 2 分钟。`
     : `本场 ${required} 题可开始${required < 10 ? '，不增减游戏时长' : ''}。`;
-  return {required, available, timeReady, canStart, cooldownEndsAt, message};
+  return {required, available, timeReady, canStart, cooldownEndsAt, message: retest ? '优先复测昨天学过的词。' + message : message};
 }
 function challengeStatus(message) {
   const el = $('challengeStatus');
@@ -97,6 +102,7 @@ async function openCustomChallenge(mode = 'custom') {
   if (!state.user) { showToast('请先登录', 'info'); return; }
   cancelChallengePreparation();
   challengePicker.mode = mode;
+  challengePicker.retest = null;
   if (mode === 'random') challengePicker.selected.clear();
   if (challengePicker.user !== state.user) {
     challengePicker.user = state.user;
@@ -120,6 +126,7 @@ async function refreshChallengeCandidates() {
     } else data = await requestChallengeApi(`/api/quiz/candidates?user=${encodeURIComponent(user)}&mode=${challengePicker.mode === 'custom' ? 'practice' : 'real'}`, {timeoutMs:20000}, token);
     if (state.user !== user || token !== challengePicker.token) return;
     challengePicker.candidates = data.candidates || [];
+    challengePicker.retest = data.retest || null;
     // Refresh must not silently turn a whole-word choice into a partial choice.
     challengePicker.selected = new Set(groupChallengeWords(challengePicker.candidates)
       .filter(word => word.eligible && word.senses.every(sense => challengePicker.selected.has(sense.meaningId)))
@@ -167,10 +174,10 @@ function renderChallengePicker() {
   const words = groupChallengeWords(challengePicker.candidates).filter(word => word.senses.some(sense => matching.has(sense.meaningId)));
   $('challengeSelectionCount').textContent = `已选 ${summary.selected} / ${summary.total} 题`;
   $('challengeAutoCount').textContent = summary.total ? `系统补齐 ${summary.automatic} 题` : '暂时没有可挑战的单词';
-  const availability = challengeAvailability(challengePicker.candidates);
-  $('challengePoolCount').textContent = practice ? `${summary.available} 个词义可练习` : `${summary.available} 个词义已符合时间条件`;
+  const availability = challengeAvailability(challengePicker.candidates, {retest:practice ? null : challengePicker.retest});
+  $('challengePoolCount').textContent = practice ? `${summary.available} 个词义可练习` : `${availability.available} 个词义已符合时间条件`;
   $('challengeShortNote').textContent = practice ? '自选练习：不计掌握、不增减游戏时间，不影响正式测试冷却。'
-    : summary.available < summary.total
+    : challengePicker.retest || summary.available < summary.total
     ? availability.message
     : summary.total > 0 && summary.total < 10
       ? `词库只有 ${summary.total} 个待考词义，这次考 ${summary.total} 题，不增减游戏时长。` : `本场由系统随机安排 ${summary.total} 题。`;
@@ -192,7 +199,7 @@ function renderChallengePicker() {
     return `<button type="button" class="challenge-word ${checked ? 'is-selected' : ''}" data-meaning-id="${escapeHtml(word.meaningId)}" aria-pressed="${checked}" ${!word.eligible || challengePicker.busy || challengePicker.loading ? 'disabled' : ''}>
       <span class="challenge-check" aria-hidden="true">${checked ? '✓' : ''}</span>
       <span class="challenge-word-content"><strong>${escapeHtml(word.word)}</strong>${word.senses.length > 1 ? `<span>${word.senses.length} 个待考释义 · 一起考</span>` : ''}</span>
-      <span class="challenge-word-meta">${[...new Set(word.senses.map(sense => sense.status))].map(status => `<span class="challenge-tag ${escapeHtml(status)}">${challengeStatusLabels[status] || '未开始'}</span>`).join('')}${cooling ? `<small>${cooling}</small>` : ''}</span>
+      <span class="challenge-word-meta">${[...new Set(word.senses.map(sense => challengeStage(sense.status)))].map(status => `<span class="challenge-tag ${escapeHtml(status)}">${challengeStatusLabels[status] || '已录入'}</span>`).join('')}${cooling ? `<small>${cooling}</small>` : ''}</span>
     </button>`;
   }).join('') || '<div class="challenge-empty">没有找到匹配的单词<br><small>试试英文单词，或换一个筛选。</small></div>';
   list.querySelectorAll('[data-meaning-id]').forEach(button => { button.onclick = () => toggleChallengeWord(button.dataset.meaningId); });
@@ -200,8 +207,8 @@ function renderChallengePicker() {
 async function startRandomChallenge() {
   if (DEMO_MODE) return startQuiz();
   await openCustomChallenge('random');
-  const summary = challengeSelectionSummary(challengePicker.candidates, new Set());
-  if (state.currentPage === 'challenge' && !challengePicker.loading && summary.total && summary.available >= summary.total) {
+  const availability = challengeAvailability(challengePicker.candidates, {retest:challengePicker.retest});
+  if (state.currentPage === 'challenge' && !challengePicker.loading && (availability.timeReady || challengePicker.retest)) {
     challengePicker.selected.clear();
     await beginSelectedChallenge('random');
   }
@@ -239,7 +246,7 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
     challengePicker.deadlineTimer = null;
     renderChallengePicker();
     challengeStatus(mode === 'random'
-      ? '随机挑战暂时未能备齐，已停止自动等待。可以稍后重试，或先复习历史错题。'
+      ? (challengePicker.retest ? '昨天的复测题还在准备，稍后回来继续。' : '随机挑战暂时未能备齐，已停止自动等待。可以稍后重试，或先复习历史错题。')
       : '这套题暂时未能备齐，已停止自动等待。你的选择还在，可以换词，或稍后点开始重试。');
   }
   async function attempt() {
@@ -255,14 +262,16 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
         challengePicker.missingWords = data.missingWords || [];
         renderChallengeMissingWords();
         if (Date.now() >= deadline) { stopAtDeadline(); return; }
-        challengeStatus(`已准备 ${data.readyCount} / ${data.requiredCount} 题，准备好后会自动开始，最多自动等 2 分钟。${mode === 'custom' ? '也可以现在换词，你的其他选择会保留。' : ''}`);
+        challengeStatus(`${data.retest ? '昨天的复测题' : ''}已准备 ${data.readyCount} / ${data.requiredCount} 题，准备好后会自动开始，最多自动等 2 分钟。${mode === 'custom' ? '也可以现在换词，你的其他选择会保留。' : ''}`);
         challengePicker.timer = setTimeout(attempt, Math.min(5000, Math.max(0, deadline - Date.now())));
         return;
       }
       if (data.code === 'CHALLENGE_NO_ELIGIBLE_WORDS' || data.code === 'CHALLENGE_COOLDOWN') {
         cancelChallengePreparation();
         await refreshChallengeCandidates();
-        challengeStatus(data.code === 'CHALLENGE_COOLDOWN' ? '还需等待词义冷却满 18 小时，不会因为冷却而缩短试卷。' : '词库里暂时没有待考词义，可以先添加单词。');
+        challengeStatus(data.code === 'CHALLENGE_COOLDOWN'
+          ? (data.retest ? '昨天这批词满 18 小时后开始复测，题目会提前准备。' : '本场词义还需等满 18 小时。')
+          : '词库里暂时没有待考词义，可以先添加单词。');
         return;
       }
       clearTimeout(challengePicker.deadlineTimer);
