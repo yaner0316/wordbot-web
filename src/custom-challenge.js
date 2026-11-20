@@ -77,7 +77,7 @@ function challengeAvailability(words, {ready = null, queryError = false, retest 
     : !timeReady ? `${available} 个词义已符合时间条件，本场需 ${required} 题，暂不能开始。${when}`
     : ready !== null && ready < required ? `本场 ${required} 个词义已符合时间条件，题目正在准备，开始后最多等待 2 分钟。`
     : `本场 ${required} 题可开始${required < 10 ? '，不增减游戏时长' : ''}。`;
-  return {required, available, timeReady, canStart, cooldownEndsAt, message: retest ? '优先复测昨天学过的词。' + message : message};
+  return {required, available, timeReady, canStart, cooldownEndsAt, message: retest ? '旧词优先，错过的先出。' + message : message};
 }
 function challengeStatus(message) {
   const el = $('challengeStatus');
@@ -246,7 +246,7 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
     challengePicker.deadlineTimer = null;
     renderChallengePicker();
     challengeStatus(mode === 'random'
-      ? (challengePicker.retest ? '昨天的复测题还在准备，稍后回来继续。' : '随机挑战暂时未能备齐，已停止自动等待。可以稍后重试，或先复习历史错题。')
+      ? (challengePicker.retest ? '本场正式测验还在准备，稍后回来继续。' : '随机挑战暂时未能备齐，已停止自动等待。可以稍后重试，或先复习历史错题。')
       : '这套题暂时未能备齐，已停止自动等待。你的选择还在，可以换词，或稍后点开始重试。');
   }
   async function attempt() {
@@ -262,7 +262,7 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
         challengePicker.missingWords = data.missingWords || [];
         renderChallengeMissingWords();
         if (Date.now() >= deadline) { stopAtDeadline(); return; }
-        challengeStatus(`${data.retest ? '昨天的复测题' : ''}已准备 ${data.readyCount} / ${data.requiredCount} 题，准备好后会自动开始，最多自动等 2 分钟。${mode === 'custom' ? '也可以现在换词，你的其他选择会保留。' : ''}`);
+        challengeStatus(`${data.retest ? '本场正式测验' : ''}已准备 ${data.readyCount} / ${data.requiredCount} 题，准备好后会自动开始，最多自动等 2 分钟。${mode === 'custom' ? '也可以现在换词，你的其他选择会保留。' : ''}`);
         challengePicker.timer = setTimeout(attempt, Math.min(5000, Math.max(0, deadline - Date.now())));
         return;
       }
@@ -270,7 +270,7 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
         cancelChallengePreparation();
         await refreshChallengeCandidates();
         challengeStatus(data.code === 'CHALLENGE_COOLDOWN'
-          ? (data.retest ? '昨天这批词满 18 小时后开始复测，题目会提前准备。' : '本场词义还需等满 18 小时。')
+          ? (data.retest ? '本场词义满 18 小时后可以开考，题目会提前准备。' : '本场词义还需等满 18 小时。')
           : '词库里暂时没有待考词义，可以先添加单词。');
         return;
       }
