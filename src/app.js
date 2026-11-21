@@ -2827,10 +2827,16 @@ async function lookupSelectedSenses() {
       try {
         const data = await api('/api/word-senses?word=' + encodeURIComponent(item.word));
         if (state.user !== user || getWordEntryDuplicatePanel() !== host || host._senseBatch !== batch) return;
-        item.senses = (Array.isArray(data?.senses) ? data.senses : []).filter(sense => sense.selectionToken && /^[\u3400-\u9fff，、；（）·]{1,20}$/.test(String(sense.cnMeaning || '').trim()));
+        item.suggestedWord = data?.suggestion?.word || '';
+        const senses = item.suggestedWord ? data.suggestion.senses : data?.senses;
+        item.senses = (Array.isArray(senses) ? senses : []).filter(sense => sense.selectionToken && /^[\u3400-\u9fff，、；（）·]{1,20}$/.test(String(sense.cnMeaning || '').trim()));
         if (!item.senses.length) throw new Error('暂未找到可选词义');
         item.error = '';
-      } catch (error) { item.error = '词义查询失败，请重试'; }
+      } catch (error) {
+        item.suggestedWord = '';
+        item.error = normalizeApiError(error).code === 'DICTIONARY_SENSES_NOT_FOUND'
+          ? '未找到可靠的词义或拼写建议，请检查输入' : '词义查询失败，请重试';
+      }
     }
   } finally {
     batch.loading = false;
@@ -2843,6 +2849,7 @@ function renderEntrySenseBatch(host) {
   const batch = host._senseBatch;
   host.innerHTML = '<div class="sense-picker"><p>每个单词至少选择一个要学习的意思。</p>' + batch.items.map((item, wordIndex) =>
     '<fieldset class="duplicate-word-card"><legend>' + escapeHtml(item.word) + '</legend>' +
+    (item.suggestedWord ? '<p role="alert">你想录入的是 <strong>' + escapeHtml(item.suggestedWord) + '</strong> 吗？如是，请选择下面的词义并确认。如需换词，请修改输入后重新查询。</p>' : '') +
     (item.error ? '<p role="alert">' + escapeHtml(item.error) + '</p>' : '') +
     item.senses.map((sense, index) => renderDictionarySenseOption(sense, index, wordIndex, item.selected.includes(index))).join('') + '</fieldset>'
   ).join('') + (batch.items.some(item => item.error) ? '<button type="button" class="btn btn-secondary btn-small" onclick="lookupSelectedSenses()">重试未查到的词</button>' : '') +
@@ -2879,7 +2886,7 @@ async function submitSelectedSenses() {
   if (batch.loading || batch.saving) return;
   const entries = [];
   for (const item of batch.items) {
-    const selected = buildSelectedSenseEntries(item.word, item.senses, item.selected);
+    const selected = buildSelectedSenseEntries(item.suggestedWord || item.word, item.senses, item.selected);
     if (!selected.length) { showToast('请为 ' + item.word + ' 选择至少一个具体词义', 'warn'); return; }
     entries.push(...selected);
   }

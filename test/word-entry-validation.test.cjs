@@ -41,6 +41,27 @@ test('batch entry must look up senses and must never save bare words', async () 
   assert.ok(h.calls.some(c => c[0].startsWith('/api/word-senses?')));
 });
 
+for (const parent of [false, true]) {
+  test(`spelling correction waits for an explicit sense selection in the ${parent ? 'parent' : 'child'} entry flow`, async () => {
+    const h = loadEntry('ninghtmare', parent);
+    let saved;
+    h.context.api = async (url, options) => {
+      if (options?.method === 'POST') { saved = JSON.parse(options.body); return {success:true,count:1}; }
+      return {word:'ninghtmare', senses:[], suggestion:{word:'nightmare', senses:[
+        {definition:'a frightening dream',cnMeaning:'噩梦',selectionToken:'corrected-token'}
+      ]}};
+    };
+    await h.context.submitWordEntry();
+    assert.match(h.panel.innerHTML, /nightmare/);
+    assert.match(h.panel.innerHTML, /噩梦/);
+    await h.context.submitSelectedSenses();
+    assert.equal(saved, undefined);
+    h.context.setEntrySense(0,0,true);
+    await h.context.submitSelectedSenses();
+    assert.deepEqual(saved.words,[{word:'nightmare',selectionToken:'corrected-token'}]);
+  });
+}
+
 test('handwritten meanings cannot enter through either submit action', async () => {
   for (const action of ['submitWordEntry', 'submitParentWords']) {
     const h = loadEntry('course | 原因');
