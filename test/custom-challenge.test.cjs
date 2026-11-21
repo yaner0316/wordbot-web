@@ -33,6 +33,38 @@ const bankSenses = [
   {meaningId:'a',word:'bank',meaning:'银行',status:'pending',eligible:true},
   {meaningId:'b',word:'bank',meaning:'河岸',status:'consolidating',eligible:true},
 ];
+for (const scenario of ['ready', 'cooldown', 'pending']) {
+  test('home random click goes straight to issuance when ' + scenario, async () => {
+    const h = pickerHarness([]);
+    const requests = [];
+    const entered = [];
+    const paper = {mode:'real', questions:Array.from({length:10}, (_,i)=>({meaningId:String(i)}))};
+    const result = {
+      ready: paper,
+      cooldown: {code:'CHALLENGE_COOLDOWN', requiredCount:10, availableCount:8, cooldownEndsAt:'2099-07-03T09:30:00Z', questions:[]},
+      pending: {pending:true, readyCount:8, requiredCount:10, meaningIds:[], questions:[]},
+    }[scenario];
+    h.c.navigateTo = page => { h.c.state.currentPage = page; };
+    h.c.clearActiveReview = () => {};
+    h.c.enterFormalQuiz = async data => { entered.push(data); return true; };
+    h.c.setTimeout = () => 1;
+    h.c.clearTimeout = () => {};
+    h.c.api = async (url, options) => {
+      requests.push(url);
+      if (url !== '/api/quiz') return {candidates:bankSenses};
+      assert.deepEqual(JSON.parse(options.body).selection, {mode:'random',meaningIds:[]});
+      return result;
+    };
+    await h.c.startRandomChallenge();
+    assert.deepEqual(requests, ['/api/quiz']);
+    assert.deepEqual(entered, scenario === 'ready' ? [paper] : []);
+    if (scenario === 'cooldown') {
+      assert.match(h.get('challengeShortNote').textContent, /8 个词义.*10 题.*暂不能开始/);
+      assert.match(h.get('challengeShortNote').textContent, /17:30/);
+    }
+    if (scenario === 'pending') assert.match(h.get('challengeStatus').textContent, /8 \/ 10/);
+  });
+}
 test('cached word buttons are disabled during refresh and explicit selections survive loading',async()=>{
  const h=pickerHarness();h.c.toggleChallengeWord('a');let resolve;
  h.c.api=()=>new Promise(r=>{resolve=r;});

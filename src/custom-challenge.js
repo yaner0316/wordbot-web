@@ -59,6 +59,7 @@ function cancelChallengePreparation() {
   challengePicker.timer = null;
   challengePicker.deadlineTimer = null;
   challengePicker.busy = false;
+  challengePicker.loading = false;
   challengePicker.pendingIds = null;
   challengePicker.missingWords = [];
 }
@@ -100,16 +101,24 @@ async function requestChallengeApi(path, options, token, deadline = Infinity) {
 }
 async function openCustomChallenge(mode = 'custom') {
   if (!state.user) { showToast('请先登录', 'info'); return; }
+  if (mode === 'random' && state.currentPage === 'challenge' && challengePicker.busy) return;
   cancelChallengePreparation();
+  const token = challengePicker.token;
+  const user = state.user;
   challengePicker.mode = mode;
   challengePicker.retest = null;
-  if (mode === 'random') challengePicker.selected.clear();
+  if (mode === 'random') {
+    challengePicker.selected.clear();
+    challengePicker.candidates = [];
+  }
   if (challengePicker.user !== state.user) {
     challengePicker.user = state.user;
     challengePicker.selected = new Set();
     challengePicker.candidates = [];
   }
   await navigateTo('challenge');
+  if (token !== challengePicker.token || state.user !== user || state.currentPage !== 'challenge') return;
+  if (mode === 'random') return beginSelectedChallenge('random');
   await refreshChallengeCandidates();
 }
 async function refreshChallengeCandidates() {
@@ -177,13 +186,15 @@ function renderChallengePicker() {
   const availability = challengeAvailability(challengePicker.candidates, {retest:practice ? null : challengePicker.retest});
   $('challengePoolCount').textContent = practice ? `${summary.available} 个词义可练习` : `${availability.available} 个词义已符合时间条件`;
   $('challengeShortNote').textContent = practice ? '自选练习：不计掌握、不增减游戏时间，不影响正式测试冷却。'
+    : !challengePicker.retest && !summary.total ? ''
     : challengePicker.retest || summary.available < summary.total
     ? availability.message
     : summary.total > 0 && summary.total < 10
       ? `词库只有 ${summary.total} 个待考词义，这次考 ${summary.total} 题，不增减游戏时长。` : `本场由系统随机安排 ${summary.total} 题。`;
   const start = $('challengeStart');
   start.disabled = challengePicker.busy || challengePicker.loading || (practice && (!summary.total || summary.available < summary.total));
-  start.textContent = challengePicker.busy ? '正在准备题目…' : !availability.timeReady ? '本场暂不能开始' : practice ? '就练这些，开始练习' : '开始随机挑战';
+  const confirmedUnavailable = !availability.timeReady && (practice || challengePicker.retest || summary.total);
+  start.textContent = challengePicker.busy ? '正在准备题目…' : confirmedUnavailable ? '本场暂不能开始' : practice ? '就练这些，开始练习' : '开始随机挑战';
   $('challengeCancel').hidden = !challengePicker.busy;
   $('challengeCancel').textContent = practice ? '先不等了，调整选择' : '先不等了，返回首页';
   $('challengeRefresh').disabled = challengePicker.busy || challengePicker.loading;
@@ -206,12 +217,7 @@ function renderChallengePicker() {
 }
 async function startRandomChallenge() {
   if (DEMO_MODE) return startQuiz();
-  await openCustomChallenge('random');
-  const availability = challengeAvailability(challengePicker.candidates, {retest:challengePicker.retest});
-  if (state.currentPage === 'challenge' && !challengePicker.loading && (availability.timeReady || challengePicker.retest)) {
-    challengePicker.selected.clear();
-    await beginSelectedChallenge('random');
-  }
+  return openCustomChallenge('random');
 }
 async function beginSelectedChallenge(mode = challengePicker.mode) {
   if (challengePicker.busy) return;
@@ -268,7 +274,14 @@ async function beginSelectedChallenge(mode = challengePicker.mode) {
       }
       if (data.code === 'CHALLENGE_NO_ELIGIBLE_WORDS' || data.code === 'CHALLENGE_COOLDOWN') {
         cancelChallengePreparation();
-        await refreshChallengeCandidates();
+        if (mode === 'random') {
+          challengePicker.retest = {requiredCount:data.requiredCount, availableCount:data.availableCount || 0,
+            readyCount:0, cooldownEndsAt:data.cooldownEndsAt};
+          renderChallengePicker();
+        } else {
+          await refreshChallengeCandidates();
+          if (state.user !== user || state.currentPage !== 'challenge') return;
+        }
         challengeStatus(data.code === 'CHALLENGE_COOLDOWN'
           ? (data.retest ? '本场词义满 18 小时后可以开考，题目会提前准备。' : '本场词义还需等满 18 小时。')
           : '词库里暂时没有待考词义，可以先添加单词。');
